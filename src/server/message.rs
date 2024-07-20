@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Result;
 
 use serde_json::json;
-use tokio::io::AsyncWriteExt;
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
+use tokio::net::TcpSocket;
 use std::collections::VecDeque;
 
 const PACKET_SIZE: u32 = 1024;
@@ -74,6 +75,38 @@ impl RequestMessageHandler {
         }
     }
 
+    async fn process_json_message(&self, message: &str, socket: &mut tokio::net::TcpStream) {
+        let res: Result<RequestMessage, > = serde_json::from_str(message);
+
+            if let Err(err) = res {
+                error!("{}", err);
+                let data = json!({
+                    "ok": false
+                });
+                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                    return;
+                }
+            } else {
+                let res = res.unwrap();
+                let msg_id = res.common.message_id;
+                
+                let mut data_size: u64 = 0;
+                match res.content {
+                    MessageContent::Media(media) => todo!(),
+                    MessageContent::Text(message) => data_size = message.text.len() as u64,
+                }
+
+                let data = json!({
+                    "ok": true,
+                    "data_size": data_size,
+                    "message_id": msg_id
+                });
+                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                    return;
+                }
+            }
+    }
+
     pub async fn handle_segmented_frame(
         &mut self,
         buffer: &[u8],
@@ -129,24 +162,8 @@ impl RequestMessageHandler {
 
         if self.temp_buffer.len() == self.message_size.unwrap() as usize {
             let message = String::from_utf8_lossy(&self.temp_buffer).into_owned();
-            let res: Result<RequestMessage, > = serde_json::from_str(message.as_str());
 
-            if let Err(err) = res {
-                error!("{}", err);
-                let data = json!({
-                    "ok": false
-                });
-                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                    return;
-                }
-            } else {
-                let data = json!({
-                    "ok": true
-                });
-                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                    return;
-                }
-            }
+            self.process_json_message(message.as_str(), socket).await;
 
             self.temp_buffer.clear();
         }

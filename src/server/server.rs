@@ -55,6 +55,7 @@ impl Server {
                                 continue;
                             }
                             
+                            info!("{}", buffer.len());
                             handler.handle_segmented_frame(&buffer[0..n], &mut socket).await;
                         }
                         Err(_) => {
