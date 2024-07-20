@@ -55,7 +55,7 @@ async fn main() {
     }"#;
 
     let json2 = r#"
-    {"method": "sendMessage","message_id": 123,"to": 111111,"date": 3819273812,"has_reply": true,"reply_to": 12312312,"content": {"text": "Pepuk pidor"}}
+    {"method":"sendMessage","message_id":123,"to":111111,"date":3819273812,"has_reply":true,"reply_to":12312312,"content":{"text":"Pepukpidor"}}
     "#;
 
     let message1: RequestMessage = serde_json::from_str(json1).unwrap();

@@ -48,7 +48,3 @@ pub(crate) struct RequestMessage {
     pub common: CommonFields,
     pub content: MessageContent,
 }
-
-impl RequestMessage {
-    
-}

@@ -9,6 +9,7 @@ dependencies = [
  "async-trait",
  "env_logger",
  "log",
+ "regex",
  "serde",
  "serde_json",
  "tokio",
