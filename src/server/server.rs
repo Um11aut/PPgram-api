@@ -6,7 +6,7 @@ use std::future::Future;
 
 use crate::server::{message::{self, RequestMessage, RequestMessageHandler}, session::Session};
 
-const PACKET_SIZE: u32 = 1024;
+const PACKET_SIZE: u32 = 65000;
 
 pub(crate) struct Server {
     listener: TcpListener
@@ -47,7 +47,7 @@ impl Server {
                 let mut handler = RequestMessageHandler::new();
 
                 loop {
-                    let mut buffer = [0; 1024];
+                    let mut buffer = [0; PACKET_SIZE as usize];
                     match socket.read(&mut buffer).await {
                         Ok(0) => break,
                         Ok(n) => {
@@ -55,7 +55,6 @@ impl Server {
                                 continue;
                             }
                             
-                            info!("{}", buffer.len());
                             handler.handle_segmented_frame(&buffer[0..n], &mut socket).await;
                         }
                         Err(_) => {
