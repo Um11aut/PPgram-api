@@ -4,7 +4,7 @@ use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 use log::{debug, error, info, trace};
 use std::future::Future;
 
-use crate::server::{message::{self, RequestMessage}, session::Session};
+use crate::server::{message::{self, RequestMessage, RequestMessageHandler}, session::Session};
 
 const PACKET_SIZE: u32 = 1024;
 
@@ -44,13 +44,7 @@ impl Server {
                 debug!("Connection established: {}", addr);
 
                 let session: Session = Session::new(addr);
-
-                let mut temp_buffer: Vec<u8> = Vec::new();
-                let mut parts: VecDeque<u32> = VecDeque::new();
-                let mut is_header = false;
-
-
-                let mut message_size: Option<_> = None;
+                let mut handler = RequestMessageHandler::new();
 
                 loop {
                     let mut buffer = [0; 1024];
@@ -61,90 +55,8 @@ impl Server {
                                 continue;
                             }
                             
-                            let mut message = std::str::from_utf8(&buffer[0..n]).unwrap();
-
-                            let mut pos: Option<_> = None;
-                            let mut rest: Option<&str> = None;
-                            if message.starts_with("size") {
-                                let re = regex::Regex::new(r"size=(\d+)").unwrap();
-
-                                if let Some(caps) = re.captures(message) {
-                                    if let Ok(size) = caps[1].parse::<u32>() {
-                                        message_size = Some(size);
-                                    }
-                                }
-
-                                is_header = true;
-                                pos = Some(message.find("\\n").unwrap());
-                                rest = Some(&message[0..pos.unwrap()+2]);
-                                message = &message[pos.unwrap() + 2..];
-
-                                if let Some(message_size) = message_size {
-                                    info!("Got the header message: {}", message_size);
-                                    
-                                    temp_buffer = Vec::with_capacity(1024);
-                                    
-                                    let mut remaining = message_size;
-                                    
-                                    while remaining > 0 {
-                                        let chunk = if remaining > PACKET_SIZE {
-                                            PACKET_SIZE
-                                        } else {
-                                            remaining
-                                        };
-                                        parts.push_back(chunk);
-                                        remaining -= chunk;
-                                    }
-
-                                    if parts[0] == PACKET_SIZE {
-                                        parts[0] -= rest.unwrap().len() as u32;
-                                        parts[1] += rest.unwrap().len() as u32;
-                                    }
-                                }
-                            }
-
-                            if parts.is_empty() && is_header {
-                                continue;
-                            }
-
-                            if *parts.front().unwrap() != message.len() as u32 {
-                                error!("Invalid parts: {} != {}", message.len(), *parts.front().unwrap());
-                                continue;
-                            }
-
-                            temp_buffer.extend_from_slice(message.as_bytes());
-
-                            if temp_buffer.len() == message_size.unwrap() as usize {
-                                let message = String::from_utf8_lossy(&temp_buffer).into_owned();
-                                let res: Result<RequestMessage, _> = serde_json::from_str(message.as_str());
-
-                                if let Err(err) = res {
-                                    error!("{}", err);
-                                    let data = json!({
-                                        "ok": false
-                                    });
-                                    if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                                        break;
-                                    }
-                                } else {
-                                    let data = json!({
-                                        "ok": true
-                                    });
-                                    if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                                        break;
-                                    }
-                                }
-
-                                temp_buffer.clear();
-                            } else {
-                                info!("{}, {}", temp_buffer.len(), parts.iter().sum::<u32>());
-                            }
-
-                            parts.pop_front();
+                            handler.handle_segmented_frame(&buffer[0..n], &mut socket).await;
                         }
-                        // if socket.write_all(&buffer[0..n]).await.is_err() {
-                        //     break;
-                        // }
                         Err(_) => {
                             break;
                         }
