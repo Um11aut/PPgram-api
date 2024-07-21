@@ -4,7 +4,7 @@ use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 use log::{debug, error, info, trace};
 use std::future::Future;
 
-use crate::server::{message::{self, RequestMessage, RequestMessageHandler}, session::Session};
+use crate::server::{message::{self, message::RequestMessage, handler::RequestMessageHandler}, session::Session};
 
 const PACKET_SIZE: u32 = 65000;
 
@@ -43,7 +43,7 @@ impl Server {
             tokio::spawn(async move {
                 debug!("Connection established: {}", addr);
 
-                let session: Session = Session::new(addr);
+                let mut session: Session = Session::new();
                 let mut handler = RequestMessageHandler::new();
 
                 loop {
@@ -52,6 +52,7 @@ impl Server {
                         Ok(0) => break,
                         Ok(n) => {
                             if !session.is_authenticated() {
+                                handler.handle_auth_session(&buffer[0..n], &mut socket, &mut session).await;
                                 continue;
                             }
                             
