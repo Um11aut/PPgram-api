@@ -1,11 +1,4 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct RequestAuthMessage {
-    method: String,
-    user_id: u64,
-    session_id: String
-}
+use super::message::auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 
 pub struct Session {
     session_id: Option<String>,
@@ -25,6 +18,16 @@ impl Session {
         
         self.session_id = Some(msg.session_id);
         self.user_id = Some(msg.user_id);
+    }
+
+    pub fn login(&mut self, msg: RequestLoginMessage) {
+        // TODO: implement session checking in DB
+                
+        
+    }
+
+    pub fn register(&mut self, msg: RequestRegisterMessage) {
+
     }
 
     pub fn is_authenticated(&self) -> bool {

@@ -1,11 +1,11 @@
 use log::{debug, error, info};
 use serde::de::Error as _;
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
 
-use crate::server::session::{RequestAuthMessage, Session};
+use crate::server::session::Session;
 
-use super::message::{MessageContent, RequestMessage};
+use super::{auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, message::{MessageContent, RequestMessage}};
 
 pub(crate) struct RequestMessageHandler {
     temp_buffer: Vec<u8>,
@@ -119,31 +119,95 @@ impl RequestMessageHandler {
         }
     }
 
-    pub async fn handle_auth_session(
+    pub async fn handle_authentication(
         &self,
         buffer: &[u8],
         socket: &mut tokio::net::TcpStream,
         session: &mut Session
     ) {
-        let json_parsed: Result<RequestAuthMessage, _> = serde_json::from_slice(&buffer);
+        let value: Result<Value, serde_json::Error> = serde_json::from_slice(&buffer);
 
-        if let Ok(json_parsed) = json_parsed {
-            session.auth(json_parsed);
+        if let Ok(value) = value {
+            let method = value.get("method").and_then(Value::as_str);
 
-            if session.is_authenticated() {
-                let data = json!({
-                    "ok": true
-                });
-                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                    return;
+            if let Some(method) = method {
+                match method {
+                    "login" => {
+                        let json_parsed: Result<RequestLoginMessage, _> = serde_json::from_slice(&buffer);
+
+                        if let Ok(json_parsed) = json_parsed {
+                            session.login(json_parsed);
+
+                            if session.is_authenticated() {
+                                let data = json!({
+                                    "ok": true
+                                });
+                                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                                    return;
+                                }
+                            } else {
+                                self.send_error_message(socket, Some(serde_json::Error::custom("Failed to authenticate with the given data"))).await;
+                            }
+                        } else {
+                            if let Err(err) = json_parsed {
+                                self.send_error_message(socket, Some(err)).await;
+                            }
+                        }
+                    }
+                    "auth" => {
+                        let json_parsed: Result<RequestAuthMessage, _> = serde_json::from_slice(&buffer);
+
+                        if let Ok(json_parsed) = json_parsed {
+                            session.auth(json_parsed);
+
+                            if session.is_authenticated() {
+                                let data = json!({
+                                    "ok": true
+                                });
+                                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                                    return;
+                                }
+                            } else {
+                                self.send_error_message(socket, Some(serde_json::Error::custom("Failed to authenticate with the given data"))).await;
+                            }
+                        } else {
+                            if let Err(err) = json_parsed {
+                                self.send_error_message(socket, Some(err)).await;
+                            }
+                        }
+                    },
+                    "register" => {
+                        let json_parsed: Result<RequestRegisterMessage, _> = serde_json::from_slice(&buffer);
+
+                        if let Ok(json_parsed) = json_parsed {
+                            session.register(json_parsed);
+
+                            if session.is_authenticated() {
+                                let data = json!({
+                                    "ok": true
+                                });
+                                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                                    return;
+                                }
+                            } else {
+                                self.send_error_message(socket, Some(serde_json::Error::custom("Failed to authenticate with the given data"))).await;
+                            }
+                        } else {
+                            if let Err(err) = json_parsed {
+                                self.send_error_message(socket, Some(err)).await;
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-            } else {
-                self.send_error_message(socket, Some(serde_json::Error::custom("Failed to authenticate with the given data"))).await;
+            } else if let None = method {
+                self.send_error_message(socket, Some(serde_json::Error::custom("Didn't get the method value from json!"))).await;
             }
-        } else {
-            if let Err(err) = json_parsed {
-                self.send_error_message(socket, Some(err)).await;
-            }
+
+        } else if let Err(err) = value {
+            self.send_error_message(socket, Some(err)).await;
         }
+
+        
     }
 }

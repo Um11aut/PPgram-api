@@ -43,7 +43,7 @@ impl Server {
             tokio::spawn(async move {
                 debug!("Connection established: {}", addr);
 
-                let mut session: Session = Session::new();
+                let mut session = Session::new();
                 let mut handler = RequestMessageHandler::new();
 
                 loop {
@@ -51,8 +51,9 @@ impl Server {
                     match socket.read(&mut buffer).await {
                         Ok(0) => break,
                         Ok(n) => {
-                            if !session.is_authenticated() {
-                                handler.handle_auth_session(&buffer[0..n], &mut socket, &mut session).await;
+                            if !session.is_authenticated() 
+                            {
+                                handler.handle_authentication(&buffer[0..n], &mut socket, &mut session).await;
                                 continue;
                             }
                             
