@@ -1,4 +1,4 @@
-use std::{hash::Hasher, hash::Hash, net::SocketAddr};
+use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
 use super::message::auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 
@@ -34,7 +34,7 @@ impl Session {
         Session {
             session_id: None,
             user_id: None,
-            ip_addr: ip_addr
+            ip_addr
         }
     }
 
@@ -48,11 +48,9 @@ impl Session {
     pub fn login(&mut self, msg: RequestLoginMessage) {
         // TODO: implement session checking in DB
                 
-        
     }
 
     pub fn register(&mut self, msg: RequestRegisterMessage) {
-
     }
 
     pub fn is_authenticated(&self) -> bool {

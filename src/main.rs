@@ -1,7 +1,6 @@
 pub mod server;
 pub mod db;
 
-use cassandra_cpp::UuidGen;
 use log::error;
 use server::server::Server;
 

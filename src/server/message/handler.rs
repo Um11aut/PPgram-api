@@ -1,14 +1,15 @@
 use std::fmt::Write;
 
 use log::{debug, error, info};
-use serde::de::Error as _;
+use serde::de::Error as SerdeError;
 use serde_json::{json, Value};
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf};
-use tokio::net::tcp::WriteHalf;
 
 use crate::server::session::Session;
-
-use super::{auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, message::{MessageContent, RequestMessage}};
+use super::{
+    auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage},
+    message::{MessageContent, RequestMessage},
+};
 
 pub(crate) struct RequestMessageHandler {
     temp_buffer: Vec<u8>,
@@ -23,194 +24,128 @@ impl RequestMessageHandler {
         }
     }
 
-    async fn send_error_message<'a>(&self, socket: &mut OwnedWriteHalf, error: Option<serde_json::Error>) {
-        if let Some(err) = error {
-            let data = json!({
-                "ok": false,
-                "error": err.to_string()
-            });
-            if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                return;
-            }
+    async fn send_error_message(&self, socket: &mut OwnedWriteHalf, error: Option<serde_json::Error>) {
+        let data = if let Some(err) = error {
+            json!({ "ok": false, "error": err.to_string() })
         } else {
-            let data = json!({
-                "ok": false,
-            });
-            if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                return;
-            }
+            json!({ "ok": false })
+        };
+
+        if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+            error!("Failed to send error message");
         }
     }
 
-    async fn process_json_message<'a>(&self, message: &str, socket: &mut OwnedWriteHalf) {
-        let res: Result<RequestMessage, _> = serde_json::from_str(message);
-    
-        match self.message_size {
-            Some(message_size) => {
-                if message_size > 1_000_000 {
-                    debug!("Processing json message! message_size: {:.1}MB", message_size as f32 / 1_048_576 as f32);
-                } else {
-                    debug!("Processing json message! message_size: {:.1}KB", message_size as f32 / 1024 as f32);
+    async fn process_json_message(&self, message: &str, socket: &mut OwnedWriteHalf) {
+        match serde_json::from_str::<RequestMessage>(message) {
+            Ok(res) => {
+                let msg_id = res.common.message_id;
+                let data_size = match res.content {
+                    MessageContent::Media(_) => todo!(),
+                    MessageContent::Text(ref message) => message.text.len() as u64,
+                };
+
+                let data = json!({
+                    "ok": true,
+                    "data_size": data_size,
+                    "message_id": msg_id
+                });
+
+                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                    error!("Failed to send message response");
                 }
-            },
-            None => {},
-        }
-
-        if let Err(err) = res {
-            error!("{}", err);
-            self.send_error_message(socket, Some(err)).await;
-        } else {
-            let res = res.unwrap();
-            let msg_id = res.common.message_id;
-            
-            let mut data_size: u64 = 0;
-            match res.content {
-                MessageContent::Media(_) => todo!(),
-                MessageContent::Text(message) => data_size = message.text.len() as u64,
             }
-
-            let data = json!({
-                "ok": true,
-                "data_size": data_size,
-                "message_id": msg_id
-            });
-            if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                return;
+            Err(err) => {
+                error!("Failed to process JSON message: {}", err);
+                self.send_error_message(socket, Some(err)).await;
             }
         }
     }
 
-    pub async fn handle_segmented_frame(
-        &mut self,
-        buffer: &[u8],
-        socket: &mut OwnedWriteHalf,
-    ) {
-        let mut message = std::str::from_utf8(&buffer).unwrap();
-
+    async fn parse_message_size<'a>(&mut self, message: &'a str) -> Result<&'a str, serde_json::Error> {
         if message.starts_with("size") {
-            let re = regex::Regex::new(r"size=(\d+)").unwrap();
-
+            let re = regex::Regex::new(r"size=(\d+)").map_err(|e| SerdeError::custom(e.to_string()))?;
             if let Some(caps) = re.captures(message) {
                 if let Ok(size) = caps[1].parse::<u32>() {
                     self.message_size = Some(size);
                 }
             }
 
-            let pos = message.find("\\n").unwrap();
-            message = &message[pos + "\\n".len()..];
+            if let Some(pos) = message.find("\\n") {
+                return Ok(&message[pos + "\\n".len()..]);
+            }
         }
 
-        if self.message_size.is_none() {
-            let error = serde_json::Error::custom("Message size wasn't provided.");
-            self.send_error_message(socket,Some(error)).await;
-            return;
-        }
+        Err(SerdeError::custom("Message size wasn't provided."))
+    }
 
-        self.temp_buffer.extend_from_slice(message.as_bytes());
+    pub async fn handle_segmented_frame(&mut self, buffer: &[u8], socket: &mut OwnedWriteHalf) {
+        match std::str::from_utf8(&buffer) {
+            Ok(mut message) => {
+                if self.message_size.is_none() {
+                    match self.parse_message_size(message).await {
+                        Ok(parsed_message) => message = parsed_message,
+                        Err(err) => {
+                            self.send_error_message(socket, Some(err)).await;
+                            return;
+                        }
+                    }
+                }
 
-        if self.temp_buffer.len() == self.message_size.unwrap() as usize {
-            let message = String::from_utf8_lossy(&self.temp_buffer).into_owned();
+                self.temp_buffer.extend_from_slice(message.as_bytes());
 
-            self.process_json_message(message.as_str(), socket).await;
-
-            self.temp_buffer.clear();
-        } else if self.temp_buffer.len() > self.message_size.unwrap() as usize {
-            self.temp_buffer.clear();
-
-            let error = serde_json::Error::custom("Provided size of the message is less than the message itself.");
-            self.send_error_message(socket, Some(error)).await;
+                if let Some(message_size) = self.message_size {
+                    if self.temp_buffer.len() == message_size as usize {
+                        let message = String::from_utf8_lossy(&self.temp_buffer).into_owned();
+                        self.process_json_message(&message, socket).await;
+                        self.temp_buffer.clear();
+                    } else if self.temp_buffer.len() > message_size as usize {
+                        self.temp_buffer.clear();
+                        self.send_error_message(socket, Some(SerdeError::custom("Provided size of the message is less than the message itself."))).await;
+                    }
+                }
+            }
+            Err(err) => {
+                self.send_error_message(socket, Some(SerdeError::custom(format!("Invalid UTF-8 sequence: {}", err)))).await;
+            }
         }
     }
 
-    pub async fn handle_authentication<'a>(
-        &self,
-        buffer: &[u8],
-        socket: &mut OwnedWriteHalf,
-        session: &mut Session
-    ) {
-        let value: Result<Value, serde_json::Error> = serde_json::from_slice(&buffer);
-
-        if let Ok(value) = value {
-            let method = value.get("method").and_then(Value::as_str);
-
-            if let Some(method) = method {
-                match method {
-                    "login" => {
-                        let json_parsed: Result<RequestLoginMessage, _> = serde_json::from_slice(&buffer);
-
-                        if let Ok(json_parsed) = json_parsed {
-                            session.login(json_parsed);
-
-                            if session.is_authenticated() {
-                                let data = json!({
-                                    "ok": true
-                                });
-                                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                                    return;
-                                }
-                            } else {
-                                self.send_error_message(socket, Some(serde_json::Error::custom("Failed to authenticate with the given data"))).await;
-                            }
-                        } else {
-                            if let Err(err) = json_parsed {
-                                self.send_error_message(socket, Some(err)).await;
-                            }
-                        }
+    async fn handle_auth_message<T>(&self, buffer: &[u8], socket: &mut OwnedWriteHalf, session: &mut Session, handler: fn(&mut Session, T) -> ())
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        match serde_json::from_slice::<T>(buffer) {
+            Ok(auth_message) => {
+                handler(session, auth_message);
+                if session.is_authenticated() {
+                    let data = json!({ "ok": true });
+                    if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                        error!("Failed to send authentication response");
                     }
-                    "auth" => {
-                        let json_parsed: Result<RequestAuthMessage, _> = serde_json::from_slice(&buffer);
-
-                        if let Ok(json_parsed) = json_parsed {
-                            session.auth(json_parsed);
-
-                            if session.is_authenticated() {
-                                let data = json!({
-                                    "ok": true
-                                });
-                                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                                    return;
-                                }
-                            } else {
-                                self.send_error_message(socket, Some(serde_json::Error::custom("Failed to authenticate with the given data"))).await;
-                            }
-                        } else {
-                            if let Err(err) = json_parsed {
-                                self.send_error_message(socket, Some(err)).await;
-                            }
-                        }
-                    },
-                    "register" => {
-                        let json_parsed: Result<RequestRegisterMessage, _> = serde_json::from_slice(&buffer);
-
-                        if let Ok(json_parsed) = json_parsed {
-                            session.register(json_parsed);
-
-                            if session.is_authenticated() {
-                                let data = json!({
-                                    "ok": true
-                                });
-                                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
-                                    return;
-                                }
-                            } else {
-                                self.send_error_message(socket, Some(serde_json::Error::custom("Failed to authenticate with the given data"))).await;
-                            }
-                        } else {
-                            if let Err(err) = json_parsed {
-                                self.send_error_message(socket, Some(err)).await;
-                            }
-                        }
-                    }
-                    _ => {}
+                } else {
+                    self.send_error_message(socket, Some(SerdeError::custom("Failed to authenticate with the given data"))).await;
                 }
-            } else if let None = method {
-                self.send_error_message(socket, Some(serde_json::Error::custom("Didn't get the method value from json!"))).await;
             }
-
-        } else if let Err(err) = value {
-            self.send_error_message(socket, Some(err)).await;
+            Err(err) => self.send_error_message(socket, Some(err)).await,
         }
+    }
 
-        
+    pub async fn handle_authentication(&self, buffer: &[u8], socket: &mut OwnedWriteHalf, session: &mut Session) {
+        match serde_json::from_slice::<Value>(buffer) {
+            Ok(value) => {
+                if let Some(method) = value.get("method").and_then(Value::as_str) {
+                    match method {
+                        "login" => self.handle_auth_message::<RequestLoginMessage>(buffer, socket, session, Session::login).await,
+                        "auth" => self.handle_auth_message::<RequestAuthMessage>(buffer, socket, session, Session::auth).await,
+                        "register" => self.handle_auth_message::<RequestRegisterMessage>(buffer, socket, session, Session::register).await,
+                        _ => self.send_error_message(socket, Some(SerdeError::custom("Unknown method"))).await,
+                    }
+                } else {
+                    self.send_error_message(socket, Some(SerdeError::custom("Didn't get the method value from json!"))).await;
+                }
+            }
+            Err(err) => self.send_error_message(socket, Some(err)).await,
+        }
     }
 }

@@ -69,8 +69,6 @@ impl Server {
                 }
                 Err(_) => break,
             }
-
-            tokio::task::yield_now().await;
         }
     
         {
@@ -81,49 +79,53 @@ impl Server {
         debug!("Connection closed: {}", addr);
     }
 
+    async fn handle_outgoing_messages(mut rx: mpsc::Receiver<String>, writer: Arc<Mutex<OwnedWriteHalf>>) {
+        let writer = Arc::clone(&writer);
+
+        while let Some(message) = rx.recv().await {
+            let mut writer = writer.lock().await;
+            if let Err(e) = writer.write_all(message.as_bytes()).await {
+                error!("Failed to send message: {}", e);
+            } else {
+            }
+        }
+    }
+
     pub async fn listen(&mut self)
     {
         loop {
-            let res = self.listener.accept().await;
+            match self.listener.accept().await {
+                Ok((socket, addr)) => {
+                    let (tx, rx) = mpsc::channel::<String>(1000);
+                    let session = Session::new(addr);
 
-            if let Err(err) = res {
-                error!("Error while establishing new connection: {}", err);
-                continue;
-            }
-
-            let (tx, mut rx) = mpsc::channel::<String>(1000);
-            let (socket, addr) = res.unwrap();
-            let session = Session::new(addr);
-
-            {
-                let mut connections = self.connections.lock().await;
-                connections.insert(session.clone(), tx);
-            }
-
-            let (reader, writer) = socket.into_split();
-            let reader = Arc::new(Mutex::new(reader));
-            let writer = Arc::new(Mutex::new(writer));
-
-            tokio::spawn(Self::handle_connection(
-                Arc::clone(&reader),
-                Arc::clone(&writer),
-                Arc::clone(&self.connections),
-                session,
-                addr,
-            ));
-
-            tokio::spawn({
-                let (_, writer) = {(Arc::clone(&reader), Arc::clone(&writer))};
-
-                async move {
-                    while let Some(message) = rx.recv().await {
-                        let mut writer = writer.lock().await;
-                        if let Err(e) = writer.write_all(message.as_bytes()).await {
-                            error!("Failed to send message: {}", e);
-                        }
+                    {
+                        self.connections.lock().await.insert(session.clone(), tx);
                     }
+
+                    let (reader, writer) = {
+                        let (r, w) = socket.into_split();
+
+                        (Arc::new(Mutex::new(r)), Arc::new(Mutex::new(w)))
+                    };
+
+                    tokio::spawn(Self::handle_connection(
+                        Arc::clone(&reader),
+                        Arc::clone(&writer),
+                        Arc::clone(&self.connections),
+                        session,
+                        addr,
+                    ));
+
+                    tokio::spawn(Self::handle_outgoing_messages(
+                        rx,
+                        writer
+                    ));
                 }
-            });
+                Err(err) => {
+                    error!("Error while establishing new connection: {}", err);
+                }
+            }
         }
     }
 }
