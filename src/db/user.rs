@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use log::error;
+use log::{error, info};
 use rand::{distributions::Alphanumeric, Rng};
 use std::{str::FromStr, sync::Mutex};
 use cassandra_cpp::*;
@@ -46,7 +46,12 @@ impl UsersDB {
         }
     }
 
-    pub async fn register(&self, name: &str, username: &str, password_hash: &str) {
+    pub async fn register(
+            &self, 
+            name: &str, 
+            username: &str, 
+            password_hash: &str
+        ) {
         let user_id = UuidGen::new_with_node(0);
         let query = r#"
             INSERT INTO users (id, name, username, password_hash, sessions) VALUES (?, ?, ?, ?, ?)
@@ -57,7 +62,7 @@ impl UsersDB {
         statement.bind_string(1, name).unwrap();
         statement.bind_string(2, username).unwrap();
         statement.bind_string(3, password_hash).unwrap();
-        statement.bind_list(4, List::new()).unwrap();
+        statement.bind_set(4, Set::new()).unwrap();
 
         match statement.execute().await {
             Ok(_) => {},
@@ -77,6 +82,18 @@ impl UsersDB {
         let query = "SELECT sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_uuid(0, Uuid::from_str(user_id.to_string().as_str()).unwrap()).unwrap();
+
+        let existing_sessions: Option<Vec<String>> = match statement.execute().await {
+            Ok(result) => {
+                
+                
+                None
+            },
+            Err(err) => {
+                error!("{}", err);
+                return None;
+            },
+        };
 
         None
     }
