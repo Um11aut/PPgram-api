@@ -1,7 +1,10 @@
+use std::fmt::Write;
+
 use log::{debug, error, info};
 use serde::de::Error as _;
 use serde_json::{json, Value};
-use tokio::io::AsyncWriteExt;
+use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf};
+use tokio::net::tcp::WriteHalf;
 
 use crate::server::session::Session;
 
@@ -20,7 +23,7 @@ impl RequestMessageHandler {
         }
     }
 
-    async fn send_error_message(&self, socket: &mut tokio::net::TcpStream, error: Option<serde_json::Error>) {
+    async fn send_error_message<'a>(&self, socket: &mut OwnedWriteHalf, error: Option<serde_json::Error>) {
         if let Some(err) = error {
             let data = json!({
                 "ok": false,
@@ -39,7 +42,7 @@ impl RequestMessageHandler {
         }
     }
 
-    async fn process_json_message(&self, message: &str, socket: &mut tokio::net::TcpStream) {
+    async fn process_json_message<'a>(&self, message: &str, socket: &mut OwnedWriteHalf) {
         let res: Result<RequestMessage, _> = serde_json::from_str(message);
     
         match self.message_size {
@@ -80,7 +83,7 @@ impl RequestMessageHandler {
     pub async fn handle_segmented_frame(
         &mut self,
         buffer: &[u8],
-        socket: &mut tokio::net::TcpStream,
+        socket: &mut OwnedWriteHalf,
     ) {
         let mut message = std::str::from_utf8(&buffer).unwrap();
 
@@ -119,10 +122,10 @@ impl RequestMessageHandler {
         }
     }
 
-    pub async fn handle_authentication(
+    pub async fn handle_authentication<'a>(
         &self,
         buffer: &[u8],
-        socket: &mut tokio::net::TcpStream,
+        socket: &mut OwnedWriteHalf,
         session: &mut Session
     ) {
         let value: Result<Value, serde_json::Error> = serde_json::from_slice(&buffer);
