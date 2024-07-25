@@ -1,4 +1,5 @@
 pub mod server;
+pub mod db;
 
 use log::error;
 use server::server::Server;

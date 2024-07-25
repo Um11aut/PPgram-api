@@ -15,7 +15,7 @@ use super::text::TextMessage;
 pub struct CommonFields {
     pub method: String,
     pub message_id: u64,
-    pub to: u64,
+    pub to: String,
     pub date: u64,
     pub has_reply: bool,
     pub reply_to: u64,
