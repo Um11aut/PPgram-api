@@ -8,7 +8,7 @@ use tokio::net::tcp::WriteHalf;
 
 use crate::server::{message::{self, message::RequestMessage, handler::RequestMessageHandler}, session::Session};
 
-const PACKET_SIZE: u32 = 65000;
+const PACKET_SIZE: u32 = 65535;
 
 pub(crate) struct Server {
     listener: TcpListener,
@@ -97,6 +97,7 @@ impl Server {
             match self.listener.accept().await {
                 Ok((socket, addr)) => {
                     let (tx, rx) = mpsc::channel::<String>(1000);
+                    
                     let session = Session::new(addr);
 
                     {

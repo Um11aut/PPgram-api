@@ -14,3 +14,7 @@ regex = "1"
 cassandra-cpp = "3.0.2"
 lazy_static = "1.5.0"
 rand = "0.8.5"
+
+[profile.release]
+strip=true
+opt-level = "z"

@@ -1,29 +1,21 @@
 use lazy_static::lazy_static;
 use log::{error, info};
 use rand::{distributions::Alphanumeric, Rng};
-use std::{str::FromStr, sync::Mutex};
+use std::str::FromStr;
+use tokio::sync::Mutex;
 use cassandra_cpp::*;
 use std::sync::Arc;
-
-lazy_static! {
-    pub static ref USERS_DB: Mutex<UsersDB> = Mutex::new(UsersDB::new("127.0.0.1")); 
-}
 
 pub struct UsersDB {
     session: Arc<Session>
 }
 
 impl UsersDB {
-    pub fn new(contact_points: &str) -> UsersDB {
+    pub async fn new(contact_points: &str) -> UsersDB {
         let mut cluster = Cluster::default();
         let cluster = cluster.set_contact_points(contact_points).expect("Failed to set contact points");
 
-        let rt = tokio::runtime::Runtime::new().unwrap();
-
-        let session = rt.block_on(async {
-            cluster.connect().await.unwrap()
-        });
-
+        let session = cluster.connect().await.unwrap();
         UsersDB { session: Arc::new(session) }
     }
 
@@ -34,7 +26,7 @@ impl UsersDB {
                 name TEXT, 
                 username TEXT, 
                 password_hash TEXT, 
-                sessions LIST<TEXT>
+                sessions SET<TEXT>
             )
         "#;
         
