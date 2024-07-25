@@ -8,16 +8,16 @@ pub(crate) struct Message {
 }
 
 impl Message {
-    pub fn build_from<T: Into<Cow<'static, str>>>(message: T) -> Option<Self> {
+    pub fn build_from<T: Into<Cow<'static, str>>>(message: T) -> Self {
         let message: Cow<'static, str> = message.into();
         let message = message.into_owned();
 
         let size = message.len() as u32;
 
-        Some(Self {
+        Self {
             size,
             content: Arc::from(message),
-        })
+        }
     }
 
     pub fn parse(message: &[u8]) -> Option<Self> {

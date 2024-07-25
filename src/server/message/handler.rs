@@ -30,7 +30,8 @@ impl RequestMessageHandler {
             json!({ "ok": false })
         };
 
-        if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+        let message_builder = Message::build_from(serde_json::to_string(&data).unwrap());
+        if socket.write_all(message_builder.packed().as_bytes()).await.is_err() {
             error!("Failed to send error message");
         }
     }
@@ -50,7 +51,8 @@ impl RequestMessageHandler {
                     "message_id": msg_id
                 });
 
-                if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                let message_builder = Message::build_from(serde_json::to_string(&data).unwrap());
+                if socket.write_all(message_builder.packed().as_bytes()).await.is_err() {
                     error!("Failed to send message response");
                 }
             }
@@ -101,7 +103,8 @@ impl RequestMessageHandler {
                 if session.is_authenticated() {
                     let data = json!({ "ok": true });
 
-                    if socket.write_all(serde_json::to_string(&data).unwrap().as_bytes()).await.is_err() {
+                    let message_builder = Message::build_from(serde_json::to_string(&data).unwrap());
+                    if socket.write_all(message_builder.packed().as_bytes()).await.is_err() {
                         error!("Failed to send authentication response");
                     }
                 } else {

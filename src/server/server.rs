@@ -6,7 +6,7 @@ use std::future::Future;
 use tokio::sync::mpsc;
 use tokio::net::tcp::WriteHalf;
 
-use crate::server::{message::{self, message::RequestMessage, handler::RequestMessageHandler}, session::Session};
+use crate::server::{message::{self, builder::Message, handler::RequestMessageHandler, message::RequestMessage}, session::Session};
 
 const PACKET_SIZE: u32 = 65535;
 
@@ -43,7 +43,8 @@ impl Server {
         
         for (s, tx) in connections.lock().await.iter() {
             if *s != session {
-                tx.send(String::from("Hello!")).await.unwrap();
+                let message_builder = Message::build_from("Hello!");
+                tx.send(message_builder.packed()).await.unwrap();
             }
         }
 
@@ -86,7 +87,6 @@ impl Server {
             let mut writer = writer.lock().await;
             if let Err(e) = writer.write_all(message.as_bytes()).await {
                 error!("Failed to send message: {}", e);
-            } else {
             }
         }
     }
