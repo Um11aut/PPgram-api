@@ -1,5 +1,7 @@
 use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
+use crate::db::user::USERS_DB;
+
 use super::message::auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 
 #[derive(Debug)]
@@ -38,19 +40,29 @@ impl Session {
         }
     }
 
-    pub fn auth(&mut self, msg: RequestAuthMessage) {
+    pub async fn auth(&mut self, msg: RequestAuthMessage) -> bool
+    {
         // TODO: implement session checking in DB
         
         self.session_id = Some(msg.session_id);
         self.user_id = Some(msg.user_id);
+
+        self.is_authenticated()
     }
 
-    pub fn login(&mut self, msg: RequestLoginMessage) {
+    pub async fn login(&mut self, msg: RequestLoginMessage) -> bool
+    {
         // TODO: implement session checking in DB
-                
+
+        self.is_authenticated()
     }
 
-    pub fn register(&mut self, msg: RequestRegisterMessage) {
+    pub async fn register(&mut self, msg: RequestRegisterMessage)  -> bool
+    {
+        let db = USERS_DB.get().unwrap();
+        db.register(&msg.name, &msg.username, &msg.password_hash).await;
+
+        self.is_authenticated()
     }
 
     pub fn is_authenticated(&self) -> bool {

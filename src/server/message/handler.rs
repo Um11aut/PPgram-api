@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::{fmt::Write, future::Future, process::Output};
 
 use log::{debug, error, info};
 use serde::de::Error as SerdeError;
@@ -77,13 +77,10 @@ impl RequestMessageHandler {
                 self.temp_buffer.extend_from_slice(slice);
             
                 if let Some(message_size) = self.message_size {
-                    if self.temp_buffer.len() == message_size as usize {
+                    if self.temp_buffer.len() >= message_size as usize {
                         let message = String::from_utf8_lossy(&self.temp_buffer).into_owned();
                         self.process_json_message(&message, socket).await;
                         self.temp_buffer.clear();
-                    } else if self.temp_buffer.len() > message_size as usize {
-                        self.temp_buffer.clear();
-                        self.send_error_message(socket, Some(SerdeError::custom("Provided size of the message is less than the message itself."))).await;
                     }
                 }
             },
@@ -93,27 +90,31 @@ impl RequestMessageHandler {
         }
     }
 
-    async fn handle_auth_message<T>(&mut self, buffer: &str, socket: &mut OwnedWriteHalf, session: &mut Session, handler: fn(&mut Session, T) -> ())
+    async fn handle_auth_message<'a, T, F, Fut>(&mut self, buffer: &str, socket: &mut OwnedWriteHalf, session: &'a mut Session, handler: F)
     where
         T: serde::de::DeserializeOwned,
+        F: FnOnce(&'a mut Session, T) -> Fut,
+        Fut: Future<Output = bool>,
     {
         match serde_json::from_str::<T>(buffer) {
             Ok(auth_message) => {
-                handler(session, auth_message);
-                if session.is_authenticated() {
-                    let data = json!({ "ok": true });
-
-                    let message_builder = Message::build_from(serde_json::to_string(&data).unwrap());
-                    if socket.write_all(message_builder.packed().as_bytes()).await.is_err() {
-                        error!("Failed to send authentication response");
-                    }
+                let data = if handler(session, auth_message).await {
+                    json!({ "ok": true })
                 } else {
-                    self.send_error_message(socket, Some(SerdeError::custom("Failed to authenticate with the given data"))).await;
+                    json!({ "ok": false, "error": "Failed to authenticate with the given data" })
+                };
+
+                let message_builder = Message::build_from(serde_json::to_string(&data).unwrap());
+                if socket.write_all(message_builder.packed().as_bytes()).await.is_err() {
+                    error!("Failed to send authentication response");
                 }
             }
-            Err(err) => self.send_error_message(socket, Some(err)).await,
+            Err(err) => {
+                self.send_error_message(socket, Some(err)).await;
+            }
         }
     }
+
 
     pub async fn handle_authentication(&mut self, buffer: &[u8], socket: &mut OwnedWriteHalf, session: &mut Session) {
         let message_builder = Message::parse(buffer);
@@ -137,9 +138,9 @@ impl RequestMessageHandler {
                     Ok(value) => {
                         if let Some(method) = value.get("method").and_then(Value::as_str) {
                             match method {
-                                "login" => self.handle_auth_message::<RequestLoginMessage>(&buffer, socket, session, Session::login).await,
-                                "auth" => self.handle_auth_message::<RequestAuthMessage>(&buffer, socket, session, Session::auth).await,
-                                "register" => self.handle_auth_message::<RequestRegisterMessage>(&buffer, socket, session, Session::register).await,
+                                "login" => self.handle_auth_message::<RequestLoginMessage, _, _>(&buffer, socket, session, Session::login).await,
+                                "auth" => self.handle_auth_message::<RequestAuthMessage, _, _>(&buffer, socket, session, Session::auth).await,
+                                "register" => self.handle_auth_message::<RequestRegisterMessage, _, _>(&buffer, socket, session, Session::register).await,
                                 _ => self.send_error_message(socket, Some(SerdeError::custom("Unknown method"))).await,
                             }
                         } else {

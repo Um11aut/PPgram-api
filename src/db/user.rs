@@ -5,8 +5,11 @@ use std::str::FromStr;
 use tokio::sync::Mutex;
 use cassandra_cpp::*;
 use std::sync::Arc;
+use tokio::sync::OnceCell;
 
-pub struct UsersDB {
+pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
+
+pub(crate) struct UsersDB {
     session: Arc<Session>
 }
 
@@ -89,4 +92,14 @@ impl UsersDB {
 
         None
     }
+}
+
+pub async fn init_db()
+{
+    USERS_DB.get_or_init(|| async {
+        UsersDB::new("127.0.0.1").await
+    }).await;
+
+    USERS_DB.get().unwrap().create_table().await;
+
 }
