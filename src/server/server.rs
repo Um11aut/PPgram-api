@@ -32,7 +32,7 @@ impl Server {
         )
     }
 
-    async fn handle_connection(
+    async fn event_handler(
         reader: Arc<Mutex<OwnedReadHalf>>,
         writer: Arc<Mutex<OwnedWriteHalf>>,
         connections: Arc<Mutex<HashMap<Session, mpsc::Sender<String>>>>,
@@ -80,7 +80,7 @@ impl Server {
         debug!("Connection closed: {}", addr);
     }
 
-    async fn handle_outgoing_messages(mut rx: mpsc::Receiver<String>, writer: Arc<Mutex<OwnedWriteHalf>>) {
+    async fn receiver_handler(mut rx: mpsc::Receiver<String>, writer: Arc<Mutex<OwnedWriteHalf>>) {
         let writer = Arc::clone(&writer);
 
         while let Some(message) = rx.recv().await {
@@ -110,7 +110,7 @@ impl Server {
                         (Arc::new(Mutex::new(r)), Arc::new(Mutex::new(w)))
                     };
 
-                    tokio::spawn(Self::handle_connection(
+                    tokio::spawn(Self::event_handler(
                         Arc::clone(&reader),
                         Arc::clone(&writer),
                         Arc::clone(&self.connections),
@@ -118,7 +118,7 @@ impl Server {
                         addr,
                     ));
 
-                    tokio::spawn(Self::handle_outgoing_messages(
+                    tokio::spawn(Self::receiver_handler(
                         rx,
                         writer
                     ));
