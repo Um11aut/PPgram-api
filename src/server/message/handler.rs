@@ -6,9 +6,11 @@ use serde_json::{json, Value};
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf};
 
 use crate::server::session::Session;
-use super::{
-    auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, builder::Message, message::{MessageContent, RequestMessage}
+use crate::server::message::types::{
+    authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, message::{MessageContent, RequestMessage}
 };
+
+use super::builder::Message;
 
 pub(crate) struct RequestMessageHandler {
     temp_buffer: Vec<u8>,

@@ -1,13 +1,15 @@
 use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
+use log::error;
+
 use crate::db::user::USERS_DB;
 
-use super::message::auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
+use super::message::types::authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 
 #[derive(Debug)]
 pub struct Session {
     session_id: Option<String>,
-    user_id: Option<String>,
+    user_id: Option<i32>,
     ip_addr: SocketAddr
 }
 
@@ -60,7 +62,13 @@ impl Session {
     pub async fn register(&mut self, msg: RequestRegisterMessage)  -> bool
     {
         let db = USERS_DB.get().unwrap();
-        db.register(&msg.name, &msg.username, &msg.password_hash).await;
+        match db.register(&msg.name, &msg.username, &msg.password_hash).await {
+            Ok(_) => {},
+            Err(err) => {
+                error!("Error on registration: {}", err);
+                return false
+            },
+        }
 
         self.is_authenticated()
     }

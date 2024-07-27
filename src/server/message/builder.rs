@@ -1,4 +1,4 @@
-use std::{borrow::Cow, rc::Rc, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)

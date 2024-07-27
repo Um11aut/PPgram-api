@@ -17,15 +17,16 @@ impl UsersDB {
     pub async fn new(contact_points: &str) -> UsersDB {
         let mut cluster = Cluster::default();
         let cluster = cluster.set_contact_points(contact_points).expect("Failed to set contact points");
-
+        
         let session = cluster.connect().await.unwrap();
+        session.execute("USE usersdb_keyspace").await.unwrap();
         UsersDB { session: Arc::new(session) }
     }
 
     pub async fn create_table(&self) {
-        let query = r#"
+        let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY, 
+                id int PRIMARY KEY, 
                 name TEXT, 
                 username TEXT, 
                 password_hash TEXT, 
@@ -33,12 +34,23 @@ impl UsersDB {
             )
         "#;
         
-        match self.session.execute(&query).await {
+        let create_index_query = r#"
+            CREATE INDEX IF NOT EXISTS username_idx ON users (username)
+        "#;
+
+        match self.session.execute(create_table_query).await {
             Ok(_) => {},
             Err(err) => {
                 error!("{}", err);
             },
         }
+
+        match self.session.execute(create_index_query).await {
+            Ok(_) => {},
+            Err(err) => {
+                error!("{}", err);
+            },
+    }
     }
 
     pub async fn register(
@@ -46,28 +58,42 @@ impl UsersDB {
             name: &str, 
             username: &str, 
             password_hash: &str
-        ) {
-        let user_id = UuidGen::new_with_node(0);
+        ) -> std::result::Result<(), Error> {
+        let query = "SELECT id FROM users WHERE username = ?";
+        let mut statement = self.session.statement(query);
+        statement.bind_string(0, username).unwrap();
+    
+        let user_exists: bool = match statement.execute().await {
+            Ok(result) => result.first_row().is_some(),
+            Err(err) => {
+                return Err(err);
+            },
+        };
+    
+        if user_exists {
+            return Err(Error::from("Username already taken"));
+        }
+
+        let user_id = rand::random::<i32>();
         let query = r#"
             INSERT INTO users (id, name, username, password_hash, sessions) VALUES (?, ?, ?, ?, ?)
         "#;
         let mut statement = self.session.statement(query);
 
-        statement.bind_uuid(0, user_id.gen_random()).unwrap();
+        statement.bind_int32(0, user_id).unwrap();
         statement.bind_string(1, name).unwrap();
         statement.bind_string(2, username).unwrap();
         statement.bind_string(3, password_hash).unwrap();
         statement.bind_set(4, Set::new()).unwrap();
 
-        match statement.execute().await {
-            Ok(_) => {},
-            Err(err) => {
-                error!("{}", err);
-            },
-        }
+        statement.execute().await?;
+
+        self.create_session(user_id).await;
+
+        Ok(())
     }
 
-    pub async fn create_session(&self, user_id: u64) -> Option<String> {
+    pub async fn create_session(&self, user_id: i32) -> Option<String> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -76,16 +102,18 @@ impl UsersDB {
         
         let query = "SELECT sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
-        statement.bind_uuid(0, Uuid::from_str(user_id.to_string().as_str()).unwrap()).unwrap();
+        statement.bind_int32(0, user_id).unwrap();
 
         let existing_sessions: Option<Vec<String>> = match statement.execute().await {
             Ok(result) => {
-                
-                
+                let row= result.first_row().unwrap();
+                let value: Result<String, > = row.get(0);
+                info!("{}", value.unwrap());
+
                 None
             },
             Err(err) => {
-                error!("{}", err);
+                error!("[::create_session] {}", err);
                 return None;
             },
         };

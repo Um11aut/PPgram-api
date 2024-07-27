@@ -6,7 +6,7 @@ use std::future::Future;
 use tokio::sync::mpsc;
 use tokio::net::tcp::WriteHalf;
 
-use crate::server::{message::{self, builder::Message, handler::RequestMessageHandler, message::RequestMessage}, session::Session};
+use crate::server::{message::{self, builder::Message, handler::RequestMessageHandler, types::message::RequestMessage}, session::Session};
 
 const PACKET_SIZE: u32 = 65535;
 

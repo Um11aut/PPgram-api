@@ -1,15 +1,7 @@
-use log::error;
-use log::info;
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
 
-use serde_json::json;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
-use tokio::net::TcpSocket;
-use std::collections::VecDeque;
-
-use super::media::MediaMessage;
-use super::text::TextMessage;
+use super::events::media::MediaMessage;
+use super::events::text::TextMessage;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommonFields {
