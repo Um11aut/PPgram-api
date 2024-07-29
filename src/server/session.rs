@@ -63,7 +63,10 @@ impl Session {
     {
         let db = USERS_DB.get().unwrap();
         match db.register(&msg.name, &msg.username, &msg.password_hash).await {
-            Ok(_) => {},
+            Ok((user_id, session_id)) => {
+                self.user_id = Some(user_id);
+                self.session_id = Some(session_id)
+            },
             Err(err) => {
                 error!("Error on registration: {}", err);
                 return false

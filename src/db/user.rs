@@ -1,11 +1,13 @@
 use lazy_static::lazy_static;
-use log::{error, info};
+use log::{debug, error, info};
 use rand::{distributions::Alphanumeric, Rng};
 use std::str::FromStr;
 use tokio::sync::Mutex;
 use cassandra_cpp::*;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
+
+use crate::server;
 
 pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
 
@@ -58,7 +60,7 @@ impl UsersDB {
             name: &str, 
             username: &str, 
             password_hash: &str
-        ) -> std::result::Result<(), Error> {
+        ) -> std::result::Result<(i32, String), Error> { // Return user_id, session_id
         let query = "SELECT id FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username).unwrap();
@@ -85,15 +87,20 @@ impl UsersDB {
         statement.bind_string(2, username).unwrap();
         statement.bind_string(3, password_hash).unwrap();
         statement.bind_set(4, Set::new()).unwrap();
-
+        
         statement.execute().await?;
-
-        self.create_session(user_id).await;
-
-        Ok(())
+        
+        match self.create_session(user_id).await {
+            Ok(session_id) => {
+                return Ok((user_id, session_id))
+            },
+            Err(err) => {
+                return Err(err)
+            }
+        }
     }
 
-    pub async fn create_session(&self, user_id: i32) -> Option<String> {
+    pub async fn create_session(&self, user_id: i32) -> std::result::Result<String, Error> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -104,21 +111,50 @@ impl UsersDB {
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id).unwrap();
 
-        let existing_sessions: Option<Vec<String>> = match statement.execute().await {
+        let existing_sessions: Vec<String> = match statement.execute().await {
             Ok(result) => {
-                let row= result.first_row().unwrap();
-                let value: Result<String, > = row.get(0);
-                info!("{}", value.unwrap());
+                let mut o = Vec::new();
 
-                None
+                let mut iter = result.iter();
+                while let Some(row) = iter.next() {
+                    
+                    let session: String = row.get(0).unwrap_or_default();
+                    
+                    if !session.is_empty() {
+                        debug!("Got the sessions row: {}", row);
+                        o.push(session);
+                    }
+                }
+
+                o
             },
             Err(err) => {
                 error!("[::create_session] {}", err);
-                return None;
+                return Err(err);
             },
         };
 
-        None
+        let mut updated_sessions = existing_sessions;
+        updated_sessions.push(new_session.clone());
+
+        let query = "UPDATE users SET sessions = ? WHERE id = ?";
+        let mut statement = self.session.statement(query);
+
+        let mut set = Set::new();
+        for session in updated_sessions {
+            set.append_string(session.as_str()).unwrap();
+        }
+        
+        statement.bind_set(0, set).unwrap();
+        statement.bind_int32(1, user_id).unwrap();
+
+        match statement.execute().await {
+            Ok(_) => Ok(new_session),
+            Err(err) => {
+                error!("[::create_session] {}", err);
+                return Err(err)
+            }
+        }
     }
 }
 

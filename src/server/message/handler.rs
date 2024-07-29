@@ -1,3 +1,4 @@
+use std::slice;
 use std::{fmt::Write, future::Future, process::Output};
 
 use log::{debug, error, info};
@@ -128,10 +129,12 @@ impl RequestMessageHandler {
 
         let message = message_builder.unwrap();
         let buffer = message.content();
+        debug!("Got auth message: {}", buffer);
 
         if message.has_header() {
             self.message_size = Some(message.size())
         }
+
         self.temp_buffer.extend_from_slice(buffer.as_bytes());
 
         if let Some(message_size) = self.message_size {
