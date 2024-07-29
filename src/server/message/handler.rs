@@ -101,16 +101,7 @@ impl RequestMessageHandler {
     {
         match serde_json::from_str::<T>(buffer) {
             Ok(auth_message) => {
-                let data = if handler(session, auth_message).await {
-                    json!({ "ok": true })
-                } else {
-                    json!({ "ok": false, "error": "Failed to authenticate with the given data" })
-                };
-
-                let message_builder = Message::build_from(serde_json::to_string(&data).unwrap());
-                if socket.write_all(message_builder.packed().as_bytes()).await.is_err() {
-                    error!("Failed to send authentication response");
-                }
+                handler(session, auth_message).await;
             }
             Err(err) => {
                 self.send_error_message(socket, Some(err)).await;
@@ -150,6 +141,20 @@ impl RequestMessageHandler {
                             }
                         } else {
                             self.send_error_message(socket, Some(SerdeError::custom("Didn't get the method value from json!"))).await;
+                        }
+
+                        let result = session.get_credentials();
+
+                        let data: Value = if session.is_authenticated() {
+                            let (user_id, session_id) = result.unwrap();
+                            json!({ "ok": true, "user_id": user_id, "session_id": session_id })
+                        } else {
+                            json!({ "ok": false, "error": "Failed to authenticate with the given data" })
+                        };
+
+                        let message_builder = Message::build_from(serde_json::to_string(&data).unwrap());
+                        if socket.write_all(message_builder.packed().as_bytes()).await.is_err() {
+                            error!("Failed to send authentication response");
                         }
                     }
                     Err(err) => self.send_error_message(socket, Some(err)).await,

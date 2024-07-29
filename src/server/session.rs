@@ -76,6 +76,15 @@ impl Session {
         self.is_authenticated()
     }
 
+    // `(i32, String)` -> user_id, session_id 
+    pub fn get_credentials(&self) -> Option<(i32, String)> {
+        if self.is_authenticated() {
+            return Some((self.user_id.unwrap(), self.session_id.clone().unwrap()))
+        }
+
+        None
+    }
+
     pub fn is_authenticated(&self) -> bool {
         self.session_id.is_some() && self.user_id.is_some()
     }
