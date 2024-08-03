@@ -1,5 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
+use log::info;
+
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)
 #[derive(Clone)]
@@ -30,13 +32,18 @@ impl Message {
         let size_bytes = &message[..4];
         let size = u32::from_be_bytes([size_bytes[0], size_bytes[1], size_bytes[2], size_bytes[3]]);
 
-        let content = (&message[4..]).to_vec();
+        let content: Vec<u8>;
+        if size < message.len() as u32 {
+            content = (&message[4..size as usize + 4]).to_vec();
+        } else {
+            content = (&message[4..]).to_vec();
+        }
 
         if let Ok(content) = String::from_utf8(content) {
             return Some(
                 Self {
                     size,
-                    content: content
+                    content
                 }
             );
         }

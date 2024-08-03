@@ -1,6 +1,6 @@
 use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
-use log::error;
+use log::{error, info};
 
 use crate::db::user::USERS_DB;
 
@@ -44,10 +44,16 @@ impl Session {
 
     pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), cassandra_cpp::Error>
     {
-        // TODO: implement session checking in DB
-        
-        self.session_id = Some(msg.session_id);
-        self.user_id = Some(msg.user_id);
+        let db = USERS_DB.get().unwrap();
+        match db.authenticate(msg.user_id, &msg.session_id, &msg.password_hash).await {
+            Ok(_) => {
+                self.session_id = Some(msg.session_id);
+                self.user_id = Some(msg.user_id);
+            }
+            Err(err) => {
+                return Err(err)
+            }
+        }
 
         Ok(())
     }
@@ -61,7 +67,6 @@ impl Session {
                 self.session_id = Some(session_id)
             },
             Err(err) => {
-                error!("Error on login: {}", err);
                 return Err(err)
             },
         }
@@ -78,7 +83,6 @@ impl Session {
                 self.session_id = Some(session_id)
             },
             Err(err) => {
-                error!("Error on registration: {}", err);
                 return Err(err)
             },
         }

@@ -69,10 +69,13 @@ impl RequestMessageHandler {
     pub async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
         if self.is_first {
             self.builder = Message::parse(buffer);
+            self.is_first = false;
         }
         
         if let Some(mut message) = self.builder.clone() {
-            message.extend(buffer);
+            if !message.ready() {
+                message.extend(buffer);
+            }
     
             if message.ready() {
                 self.handle_message().await;

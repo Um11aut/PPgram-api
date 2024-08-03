@@ -78,25 +78,20 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         _ => Ok(()),
     };
 
-    match method {
-        "login" | "register" => {
-            if let Some((user_id, session_id)) = handler.session.get_credentials() {
-                let data = json!({ "ok": true, "user_id": user_id, "session_id": session_id });
-                handler
-                    .writer
-                    .lock()
-                    .await
-                    .write_all(
-                        Message::build_from(serde_json::to_string(&data).unwrap())
-                            .packed()
-                            .as_bytes(),
-                    )
-                    .await
-                    .unwrap();
-            };
-        },
-        _ => {}
-    }
+    if let Some((user_id, session_id)) = handler.session.get_credentials() {
+        let data = json!({ "ok": true, "user_id": user_id, "session_id": session_id });
+        handler
+            .writer
+            .lock()
+            .await
+            .write_all(
+                Message::build_from(serde_json::to_string(&data).unwrap())
+                    .packed()
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+    };
 
     if let Err(err) = res {
         PPgramError::send(err.to_string(), Arc::clone(&handler.writer)).await;

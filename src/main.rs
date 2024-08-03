@@ -1,3 +1,5 @@
+#![feature(vec_push_within_capacity)]
+
 pub mod server;
 pub mod db;
 

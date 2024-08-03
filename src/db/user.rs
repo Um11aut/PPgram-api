@@ -1,3 +1,4 @@
+
 use cassandra_cpp::*;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
@@ -111,30 +112,82 @@ impl UsersDB {
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username).unwrap();
 
-        let (user_id, stored_password_hash): (Option<i32>, Option<String>) = match statement.execute().await {
-            Ok(result) => {
-                if let Some(row) = result.first_row() {
-                    let user_id: i32 = row.get(0).unwrap_or_default();
-                    let stored_password_hash: String = row.get(1).unwrap_or_default();
-                    (Some(user_id), Some(stored_password_hash))
-                } else {
-                    (None, None)
+        let (user_id, stored_password_hash): (Option<i32>, Option<String>) =
+            match statement.execute().await {
+                Ok(result) => {
+                    if let Some(row) = result.first_row() {
+                        let user_id: i32 = row.get(0).unwrap_or_default();
+                        let stored_password_hash: String = row.get(1).unwrap_or_default();
+                        (Some(user_id), Some(stored_password_hash))
+                    } else {
+                        (None, None)
+                    }
                 }
-            },
-            Err(err) => {
-                return Err(err);
-            }
-        };
+                Err(err) => {
+                    return Err(err);
+                }
+            };
 
         if let (Some(user_id), Some(stored_password_hash)) = (user_id, stored_password_hash) {
             if stored_password_hash != password_hash {
                 return Err(Error::from("Invalid password"));
             }
-            
+
             match self.create_session(user_id).await {
                 Ok(session_id) => return Ok((user_id, session_id)),
                 Err(err) => return Err(err),
             }
+        } else {
+            return Err(Error::from("User with the given credentials not found!"));
+        }
+    }
+
+
+    pub async fn authenticate(&self, user_id: i32, session_id: &str, password_hash: &str) -> std::result::Result<(), Error> {
+
+        let query = "SELECT password_hash, sessions FROM users WHERE id = ?";
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, user_id).unwrap();
+
+        let (id, stored_password_hash, sessions): (Option<i32>, Option<String>, Option<Vec<String>>) =
+            match statement.execute().await {
+                Ok(result) => {
+                    if let Some(row) = result.first_row() {
+                        let stored_password_hash: String = row.get(0).unwrap_or_default();
+                        let result: Result<SetIterator, > = row.get(1);
+
+                        let mut o: Vec<String> = Vec::with_capacity(3);
+                        if let Ok(mut sessions) = result {
+                            while let Some(session) = sessions.next() {
+                                o.push_within_capacity(session.to_string()).unwrap();
+                            }
+                        }
+
+                        (Some(user_id), Some(stored_password_hash), Some(o))
+                    } else {
+                        (None, None, None)
+                    }
+                }
+                Err(err) => {
+                    error!("{}", err);
+                    return Err(err);
+                }
+            };
+
+        if let (Some(id), Some(stored_password_hash), Some(sessions)) = (id, stored_password_hash, sessions) {
+            if stored_password_hash != password_hash {
+                return Err(Error::from("Invalid password"));
+            }
+
+            if id != user_id {
+                return Err(Error::from("User Id wasn't found!"));
+            }
+
+            if sessions.iter().find(|&s| s == session_id).is_none() {
+                return Err(Error::from("Your Session is expired!"));
+            }
+
+            Ok(())
         } else {
             return Err(Error::from("User with the given credentials not found!"));
         }
@@ -153,15 +206,15 @@ impl UsersDB {
 
         let mut existing_sessions: Vec<String> = match statement.execute().await {
             Ok(result) => {
-                let mut o = Vec::new();
+                let mut o = Vec::with_capacity(3);
 
                 let mut iter = result.iter();
                 while let Some(row) = iter.next() {
-                    let res: Result<SetIterator, > = row.get(0);
+                    let res: Result<SetIterator> = row.get(0);
 
                     if let Ok(mut sessions) = res {
                         while let Some(session) = sessions.next() {
-                            o.push(session.to_string());
+                            o.push_within_capacity(session.to_string()).unwrap();
                         }
                     }
                 }
@@ -170,7 +223,7 @@ impl UsersDB {
             }
             Err(err) => {
                 error!("[::create_session] {}", err);
-                return Err(err);
+                return Err(Error::from("Internal error."));
             }
         };
 
@@ -187,8 +240,10 @@ impl UsersDB {
             updated_sessions.append_string(session.as_str()).unwrap();
         }
 
-        updated_sessions.append_string(new_session.as_str()).unwrap();
-        
+        updated_sessions
+            .append_string(new_session.as_str())
+            .unwrap();
+
         statement.bind_list(0, updated_sessions).unwrap();
         statement.bind_int32(1, user_id).unwrap();
 
@@ -196,7 +251,7 @@ impl UsersDB {
             Ok(_) => Ok(new_session),
             Err(err) => {
                 error!("[::create_session] {}", err);
-                return Err(err);
+                return Err(Error::from("Internal error."));
             }
         }
     }
