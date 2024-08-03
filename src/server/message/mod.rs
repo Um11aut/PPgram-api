@@ -1,6 +1,4 @@
-pub mod message;
 pub mod handler;
-pub mod media;
-pub mod text;
-pub mod auth_message;
 pub mod builder;
+pub mod types;
+pub mod handlers;

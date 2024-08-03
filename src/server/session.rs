@@ -1,11 +1,15 @@
 use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
-use super::message::auth_message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
+use log::{error, info};
+
+use crate::db::user::USERS_DB;
+
+use super::message::types::authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 
 #[derive(Debug)]
 pub struct Session {
     session_id: Option<String>,
-    user_id: Option<String>,
+    user_id: Option<i32>,
     ip_addr: SocketAddr
 }
 
@@ -38,19 +42,61 @@ impl Session {
         }
     }
 
-    pub fn auth(&mut self, msg: RequestAuthMessage) {
-        // TODO: implement session checking in DB
-        
-        self.session_id = Some(msg.session_id);
-        self.user_id = Some(msg.user_id);
+    pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), cassandra_cpp::Error>
+    {
+        let db = USERS_DB.get().unwrap();
+        match db.authenticate(msg.user_id, &msg.session_id, &msg.password_hash).await {
+            Ok(_) => {
+                self.session_id = Some(msg.session_id);
+                self.user_id = Some(msg.user_id);
+            }
+            Err(err) => {
+                return Err(err)
+            }
+        }
+
+        Ok(())
     }
 
-    pub fn login(&mut self, msg: RequestLoginMessage) {
-        // TODO: implement session checking in DB
-                
+    pub async fn login(&mut self, msg: RequestLoginMessage) -> Result<(), cassandra_cpp::Error>
+    {
+        let db = USERS_DB.get().unwrap();
+        match db.login(&msg.username, &msg.password_hash).await {
+            Ok((user_id, session_id)) => {
+                self.user_id = Some(user_id);
+                self.session_id = Some(session_id)
+            },
+            Err(err) => {
+                return Err(err)
+            },
+        }
+
+        Ok(())
     }
 
-    pub fn register(&mut self, msg: RequestRegisterMessage) {
+    pub async fn register(&mut self, msg: RequestRegisterMessage) -> Result<(), cassandra_cpp::Error>
+    {
+        let db = USERS_DB.get().unwrap();
+        match db.register(&msg.name, &msg.username, &msg.password_hash).await {
+            Ok((user_id, session_id)) => {
+                self.user_id = Some(user_id);
+                self.session_id = Some(session_id)
+            },
+            Err(err) => {
+                return Err(err)
+            },
+        }
+
+        Ok(())
+    }
+
+    // `(i32, String)` -> user_id, session_id 
+    pub fn get_credentials(&self) -> Option<(i32, String)> {
+        if self.is_authenticated() {
+            return Some((self.user_id.unwrap(), self.session_id.clone().unwrap()))
+        }
+
+        None
     }
 
     pub fn is_authenticated(&self) -> bool {

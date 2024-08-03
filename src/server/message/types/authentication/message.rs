@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RequestAuthMessage {
     pub method: String,
-    pub user_id: String,
+    pub user_id: i32,
+    pub password_hash: String,
     pub session_id: String
 }
 

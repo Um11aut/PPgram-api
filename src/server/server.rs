@@ -6,7 +6,7 @@ use std::future::Future;
 use tokio::sync::mpsc;
 use tokio::net::tcp::WriteHalf;
 
-use crate::server::{message::{self, builder::Message, handler::RequestMessageHandler, message::RequestMessage}, session::Session};
+use crate::server::{message::{self, builder::Message, handler::RequestMessageHandler, types::message::RequestMessage}, session::Session};
 
 const PACKET_SIZE: u32 = 65535;
 
@@ -32,7 +32,7 @@ impl Server {
         )
     }
 
-    async fn handle_connection(
+    async fn event_handler(
         reader: Arc<Mutex<OwnedReadHalf>>,
         writer: Arc<Mutex<OwnedWriteHalf>>,
         connections: Arc<Mutex<HashMap<Session, mpsc::Sender<String>>>>,
@@ -48,25 +48,15 @@ impl Server {
             }
         }
 
-        let mut handler = RequestMessageHandler::new();
+        let mut handler = RequestMessageHandler::new(Arc::clone(&writer), session.clone());
         
         loop {
             let mut buffer = [0; PACKET_SIZE as usize];
 
-            let mut reader = reader.lock().await;
-
-            match reader.read(&mut buffer).await {
+            match reader.lock().await.read(&mut buffer).await {
                 Ok(0) => break,
                 Ok(n) => {
-                    let mut writer = writer.lock().await;
-                    if !session.is_authenticated() {
-                        handler
-                            .handle_authentication(&buffer[0..n], &mut writer, &mut session)
-                            .await;
-                        continue;
-                    }
-    
-                    handler.handle_segmented_frame(&buffer[0..n], &mut writer).await;
+                    handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
                 Err(_) => break,
             }
@@ -80,7 +70,7 @@ impl Server {
         debug!("Connection closed: {}", addr);
     }
 
-    async fn handle_outgoing_messages(mut rx: mpsc::Receiver<String>, writer: Arc<Mutex<OwnedWriteHalf>>) {
+    async fn receiver_handler(mut rx: mpsc::Receiver<String>, writer: Arc<Mutex<OwnedWriteHalf>>) {
         let writer = Arc::clone(&writer);
 
         while let Some(message) = rx.recv().await {
@@ -110,7 +100,7 @@ impl Server {
                         (Arc::new(Mutex::new(r)), Arc::new(Mutex::new(w)))
                     };
 
-                    tokio::spawn(Self::handle_connection(
+                    tokio::spawn(Self::event_handler(
                         Arc::clone(&reader),
                         Arc::clone(&writer),
                         Arc::clone(&self.connections),
@@ -118,7 +108,7 @@ impl Server {
                         addr,
                     ));
 
-                    tokio::spawn(Self::handle_outgoing_messages(
+                    tokio::spawn(Self::receiver_handler(
                         rx,
                         writer
                     ));

@@ -1,10 +1,13 @@
-use std::{borrow::Cow, rc::Rc, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
+
+use log::info;
 
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)
+#[derive(Clone)]
 pub(crate) struct Message {
     size: u32,
-    content: Arc<str>
+    content: String
 }
 
 impl Message {
@@ -16,7 +19,7 @@ impl Message {
 
         Self {
             size,
-            content: Arc::from(message),
+            content: message,
         }
     }
 
@@ -29,27 +32,40 @@ impl Message {
         let size_bytes = &message[..4];
         let size = u32::from_be_bytes([size_bytes[0], size_bytes[1], size_bytes[2], size_bytes[3]]);
 
-        let content = (&message[4..]).to_vec();
+        let content: Vec<u8>;
+        if size < message.len() as u32 {
+            content = (&message[4..size as usize + 4]).to_vec();
+        } else {
+            content = (&message[4..]).to_vec();
+        }
 
         if let Ok(content) = String::from_utf8(content) {
-            let content = content.as_str();
-
             return Some(
                 Self {
                     size,
-                    content: Arc::from(content)
+                    content
                 }
             );
         }
         None
     }
 
-    pub fn has_header(&self) -> bool {
-        self.size != 0
+    pub fn extend(&mut self, buffer: &[u8]) 
+    {
+        unsafe { self.content.as_mut_vec().extend_from_slice(buffer) };
     }
 
-    pub fn content(&self) -> Arc<str> {
-        Arc::clone(&self.content)
+    pub fn ready(&self) -> bool {
+        self.content.len() >= self.size as usize
+    }
+
+    pub fn clear(&mut self) {
+        self.content.clear();
+        self.size = 0;
+    }
+
+    pub fn content(&self) -> &String {
+        &self.content
     }
 
     pub fn size(&self) -> u32 {
