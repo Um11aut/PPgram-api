@@ -21,6 +21,7 @@ impl UsersDB {
         let cluster = cluster
             .set_contact_points(contact_points)
             .expect("Failed to set contact points");
+        cluster.set_load_balance_round_robin();
 
         let session = cluster.connect().await.unwrap();
         session.execute("USE usersdb_keyspace").await.unwrap();
@@ -36,7 +37,7 @@ impl UsersDB {
                 name TEXT, 
                 username TEXT, 
                 password_hash TEXT, 
-                sessions SET<TEXT>
+                sessions LIST<TEXT>
             )
         "#;
 
@@ -91,7 +92,7 @@ impl UsersDB {
         statement.bind_string(1, name).unwrap();
         statement.bind_string(2, username).unwrap();
         statement.bind_string(3, password_hash).unwrap();
-        statement.bind_set(4, Set::new()).unwrap();
+        statement.bind_list(4, List::new()).unwrap();
 
         statement.execute().await?;
 
@@ -146,20 +147,22 @@ impl UsersDB {
             .map(char::from)
             .collect();
 
-        let query = "SELECT sessions FROM users WHERE id = ?";
+        let query = "SELECT sessions FROM users WHERE id = ?;";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id).unwrap();
 
-        let existing_sessions: Vec<String> = match statement.execute().await {
+        let mut existing_sessions: Vec<String> = match statement.execute().await {
             Ok(result) => {
                 let mut o = Vec::new();
 
                 let mut iter = result.iter();
                 while let Some(row) = iter.next() {
-                    let session: String = row.get(0).unwrap_or_default();
+                    let res: Result<SetIterator, > = row.get(0);
 
-                    if !session.is_empty() {
-                        o.push(session);
+                    if let Ok(mut sessions) = res {
+                        while let Some(session) = sessions.next() {
+                            o.push(session.to_string());
+                        }
                     }
                 }
 
@@ -171,18 +174,22 @@ impl UsersDB {
             }
         };
 
-        let mut updated_sessions = existing_sessions;
-        updated_sessions.push(new_session.clone());
+        // If session exceed the maximum size, delete the first one
+        if existing_sessions.len() == 3 {
+            existing_sessions.drain(..1);
+        }
 
         let query = "UPDATE users SET sessions = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
-        let mut set = Set::new();
-        for session in updated_sessions {
-            set.append_string(session.as_str()).unwrap();
+        let mut updated_sessions = List::new();
+        for session in existing_sessions {
+            updated_sessions.append_string(session.as_str()).unwrap();
         }
 
-        statement.bind_set(0, set).unwrap();
+        updated_sessions.append_string(new_session.as_str()).unwrap();
+        
+        statement.bind_list(0, updated_sessions).unwrap();
         statement.bind_int32(1, user_id).unwrap();
 
         match statement.execute().await {
