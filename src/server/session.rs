@@ -42,24 +42,34 @@ impl Session {
         }
     }
 
-    pub async fn auth(&mut self, msg: RequestAuthMessage) -> bool
+    pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), cassandra_cpp::Error>
     {
         // TODO: implement session checking in DB
         
         self.session_id = Some(msg.session_id);
         self.user_id = Some(msg.user_id);
 
-        self.is_authenticated()
+        Ok(())
     }
 
-    pub async fn login(&mut self, msg: RequestLoginMessage) -> bool
+    pub async fn login(&mut self, msg: RequestLoginMessage) -> Result<(), cassandra_cpp::Error>
     {
-        // TODO: implement session checking in DB
+        let db = USERS_DB.get().unwrap();
+        match db.login(&msg.username, &msg.password_hash).await {
+            Ok((user_id, session_id)) => {
+                self.user_id = Some(user_id);
+                self.session_id = Some(session_id)
+            },
+            Err(err) => {
+                error!("Error on login: {}", err);
+                return Err(err)
+            },
+        }
 
-        self.is_authenticated()
+        Ok(())
     }
 
-    pub async fn register(&mut self, msg: RequestRegisterMessage)  -> bool
+    pub async fn register(&mut self, msg: RequestRegisterMessage) -> Result<(), cassandra_cpp::Error>
     {
         let db = USERS_DB.get().unwrap();
         match db.register(&msg.name, &msg.username, &msg.password_hash).await {
@@ -69,11 +79,11 @@ impl Session {
             },
             Err(err) => {
                 error!("Error on registration: {}", err);
-                return false
+                return Err(err)
             },
         }
 
-        self.is_authenticated()
+        Ok(())
     }
 
     // `(i32, String)` -> user_id, session_id 

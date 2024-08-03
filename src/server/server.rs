@@ -48,25 +48,15 @@ impl Server {
             }
         }
 
-        let mut handler = RequestMessageHandler::new();
+        let mut handler = RequestMessageHandler::new(Arc::clone(&writer), session.clone());
         
         loop {
             let mut buffer = [0; PACKET_SIZE as usize];
 
-            let mut reader = reader.lock().await;
-
-            match reader.read(&mut buffer).await {
+            match reader.lock().await.read(&mut buffer).await {
                 Ok(0) => break,
                 Ok(n) => {
-                    let mut writer = writer.lock().await;
-                    if !session.is_authenticated() {
-                        handler
-                            .handle_authentication(&buffer[0..n], &mut writer, &mut session)
-                            .await;
-                        continue;
-                    }
-    
-                    handler.handle_segmented_frame(&buffer[0..n], &mut writer).await;
+                    handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
                 Err(_) => break,
             }
