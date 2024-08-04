@@ -24,7 +24,19 @@ impl UsersDB {
             .expect("Failed to set contact points");
         cluster.set_load_balance_round_robin();
 
+        while let Err(err) = cluster.connect().await {
+            error!("{}", err);
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
         let session = cluster.connect().await.unwrap();
+        info!("Successfully connected to the Cassandra DB!");
+
+        let create_keyspace_cql = "
+            CREATE KEYSPACE IF NOT EXISTS usersdb_keyspace
+            WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };
+        ";
+
+        session.execute(create_keyspace_cql).await.unwrap();
         session.execute("USE usersdb_keyspace").await.unwrap();
         UsersDB {
             session: Arc::new(session),
@@ -259,7 +271,7 @@ impl UsersDB {
 
 pub async fn init_db() {
     USERS_DB
-        .get_or_init(|| async { UsersDB::new("127.0.0.1").await })
+        .get_or_init(|| async { UsersDB::new("cassandra").await })
         .await;
 
     USERS_DB.get().unwrap().create_table().await;
