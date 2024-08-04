@@ -12,7 +12,7 @@ async fn main() {
     init_db().await;
 
     env_logger::init();
-    let server = Server::new("127.0.0.1:8080").await;
+    let server = Server::new("0.0.0.0:8080").await;
 
     if let Some(mut server) = server {
         server.listen().await;
