@@ -1,4 +1,3 @@
-
 use cassandra_cpp::*;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
@@ -154,39 +153,47 @@ impl UsersDB {
         }
     }
 
-
-    pub async fn authenticate(&self, user_id: i32, session_id: &str, password_hash: &str) -> std::result::Result<(), Error> {
-
+    pub async fn authenticate(
+        &self,
+        user_id: i32,
+        session_id: &str,
+        password_hash: &str,
+    ) -> std::result::Result<(), Error> {
         let query = "SELECT password_hash, sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id).unwrap();
 
-        let (id, stored_password_hash, sessions): (Option<i32>, Option<String>, Option<Vec<String>>) =
-            match statement.execute().await {
-                Ok(result) => {
-                    if let Some(row) = result.first_row() {
-                        let stored_password_hash: String = row.get(0).unwrap_or_default();
-                        let result: Result<SetIterator, > = row.get(1);
+        let (id, stored_password_hash, sessions): (
+            Option<i32>,
+            Option<String>,
+            Option<Vec<String>>,
+        ) = match statement.execute().await {
+            Ok(result) => {
+                if let Some(row) = result.first_row() {
+                    let stored_password_hash: String = row.get(0).unwrap_or_default();
+                    let result: Result<SetIterator> = row.get(1);
 
-                        let mut o: Vec<String> = Vec::with_capacity(3);
-                        if let Ok(mut sessions) = result {
-                            while let Some(session) = sessions.next() {
-                                o.push_within_capacity(session.to_string()).unwrap();
-                            }
+                    let mut o: Vec<String> = Vec::with_capacity(3);
+                    if let Ok(mut sessions) = result {
+                        while let Some(session) = sessions.next() {
+                            o.push_within_capacity(session.to_string()).unwrap();
                         }
-
-                        (Some(user_id), Some(stored_password_hash), Some(o))
-                    } else {
-                        (None, None, None)
                     }
-                }
-                Err(err) => {
-                    error!("{}", err);
-                    return Err(err);
-                }
-            };
 
-        if let (Some(id), Some(stored_password_hash), Some(sessions)) = (id, stored_password_hash, sessions) {
+                    (Some(user_id), Some(stored_password_hash), Some(o))
+                } else {
+                    (None, None, None)
+                }
+            }
+            Err(err) => {
+                error!("{}", err);
+                return Err(err);
+            }
+        };
+
+        if let (Some(id), Some(stored_password_hash), Some(sessions)) =
+            (id, stored_password_hash, sessions)
+        {
             if stored_password_hash != password_hash {
                 return Err(Error::from("Invalid password"));
             }
@@ -270,8 +277,9 @@ impl UsersDB {
 }
 
 pub async fn init_db() {
+    let contact_points = std::env::var("CASSANDRA_HOST").unwrap_or(String::from("127.0.0.1"));
     USERS_DB
-        .get_or_init(|| async { UsersDB::new("cassandra").await })
+        .get_or_init(|| async { UsersDB::new(contact_points.as_str()).await })
         .await;
 
     USERS_DB.get().unwrap().create_table().await;

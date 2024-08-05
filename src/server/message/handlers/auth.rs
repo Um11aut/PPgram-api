@@ -50,11 +50,13 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
     let builder = handler.builder.clone().unwrap();
     let buffer = builder.content();
 
+    let mut session = handler.session.lock().await;
+
     let res = match method {
         "login" => {
             handle_auth_message::<RequestLoginMessage, _, _>(
                 buffer.as_str(),
-                &mut handler.session,
+                &mut session,
                 Session::login,
             )
             .await
@@ -62,7 +64,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         "auth" => {
             handle_auth_message::<RequestAuthMessage, _, _>(
                 buffer.as_str(),
-                &mut handler.session,
+                &mut session,
                 Session::auth,
             )
             .await
@@ -70,7 +72,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         "register" => {
             handle_auth_message::<RequestRegisterMessage, _, _>(
                 buffer.as_str(),
-                &mut handler.session,
+                &mut session,
                 Session::register,
             )
             .await
@@ -78,7 +80,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         _ => Ok(()),
     };
 
-    if let Some((user_id, session_id)) = handler.session.get_credentials() {
+    if let Some((user_id, session_id)) = session.get_credentials() {
         let data = json!({ "ok": true, "user_id": user_id, "session_id": session_id });
         handler
             .writer

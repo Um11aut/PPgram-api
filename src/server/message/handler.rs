@@ -22,12 +22,12 @@ pub struct RequestMessageHandler {
     pub(crate) builder: Option<Message>,
     pub(crate) writer: Arc<Mutex<OwnedWriteHalf>>,
     #[allow(dead_code)]
-    pub(crate) session: Session,
+    pub(crate) session: Arc<Mutex<Session>>,
     pub(crate) is_first: bool
 }
 
 impl RequestMessageHandler {
-    pub fn new(writer: Arc<Mutex<OwnedWriteHalf>>, session: Session) -> Self {
+    pub fn new(writer: Arc<Mutex<OwnedWriteHalf>>, session: Arc<Mutex<Session>>) -> Self {
         RequestMessageHandler {
             builder: None,
             writer,

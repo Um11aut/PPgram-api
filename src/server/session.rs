@@ -5,12 +5,14 @@ use log::{error, info};
 use crate::db::user::USERS_DB;
 
 use super::message::types::authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
+use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub struct Session {
     session_id: Option<String>,
     user_id: Option<i32>,
-    ip_addr: SocketAddr
+    ip_addr: SocketAddr,
+    msg_sender: mpsc::Sender<String>
 }
 
 impl Hash for Session {
@@ -27,18 +29,13 @@ impl PartialEq for Session {
 
 impl Eq for Session {}
 
-impl Clone for Session {
-    fn clone(&self) -> Self {
-        Self { session_id: self.session_id.clone(), user_id: self.user_id.clone(), ip_addr: self.ip_addr.clone() }
-    }
-}
-
 impl Session {
-    pub fn new(ip_addr: SocketAddr) -> Session {
+    pub fn new(ip_addr: SocketAddr, msg_sender: mpsc::Sender<String>) -> Session {
         Session {
             session_id: None,
             user_id: None,
-            ip_addr
+            ip_addr,
+            msg_sender
         }
     }
 
@@ -89,6 +86,10 @@ impl Session {
 
         Ok(())
     }
+
+    pub async fn send(&self, message: String) {
+        self.msg_sender.send(message).await.unwrap();
+    } 
 
     // `(i32, String)` -> user_id, session_id 
     pub fn get_credentials(&self) -> Option<(i32, String)> {

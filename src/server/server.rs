@@ -1,18 +1,36 @@
-use serde_json::json;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{tcp::{OwnedReadHalf, OwnedWriteHalf, ReadHalf}, TcpListener, TcpSocket, TcpStream}, sync::Mutex};
-use std::{collections::{HashMap, VecDeque}, net::SocketAddr, ops::{Deref, DerefMut}, sync::Arc};
 use log::{debug, error, info, trace};
-use std::future::Future;
-use tokio::sync::mpsc;
+use serde_json::json;
+use std::{future::Future, net::IpAddr};
+use tokio::sync::RwLock;
+use std::{
+    collections::{HashMap, VecDeque},
+    net::SocketAddr,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 use tokio::net::tcp::WriteHalf;
+use tokio::sync::mpsc;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf, ReadHalf},
+        TcpListener, TcpSocket, TcpStream,
+    },
+    sync::Mutex,
+};
 
-use crate::server::{message::{self, builder::Message, handler::RequestMessageHandler, types::message::RequestMessage}, session::Session};
+use crate::server::{
+    message::{
+        self, builder::Message, handler::RequestMessageHandler, types::message::RequestMessage,
+    },
+    session::Session,
+};
 
 const PACKET_SIZE: u32 = 65535;
 
 pub(crate) struct Server {
     listener: TcpListener,
-    connections: Arc<Mutex<HashMap<Session, mpsc::Sender<String>>>>
+    connections: Arc<RwLock<HashMap<SocketAddr, Arc<Mutex<Session>>>>>,
 }
 
 impl Server {
@@ -21,52 +39,63 @@ impl Server {
 
         if let Err(err) = listener {
             error!("Error while initializing the listener on the port: {}", err);
-            return None
+            return None;
         }
-        
-        Some(
-            Server {
-                listener: listener.unwrap(),
-                connections: Arc::new(Mutex::new(HashMap::new()))
-            }
-        )
+
+        Some(Server {
+            listener: listener.unwrap(),
+            connections: Arc::new(RwLock::new(HashMap::new())),
+        })
     }
 
     async fn event_handler(
         reader: Arc<Mutex<OwnedReadHalf>>,
         writer: Arc<Mutex<OwnedWriteHalf>>,
-        connections: Arc<Mutex<HashMap<Session, mpsc::Sender<String>>>>,
-        mut session: Session,
+        connections: Arc<RwLock<HashMap<SocketAddr, Arc<Mutex<Session>>>>>,
+        session: Arc<Mutex<Session>>,
         addr: SocketAddr,
     ) {
         debug!("Connection established: {}", addr);
-        
-        for (s, tx) in connections.lock().await.iter() {
-            if *s != session {
-                let message_builder = Message::build_from("Hello!");
-                tx.send(message_builder.packed()).await.unwrap();
+
+        for (ip, s) in connections.read().await.iter() {
+            {
+                let s = s.lock().await;
+
+                if let Some(s) = s.get_credentials() {
+                    info!("ip: {}. [user_id: {}, session_id: {}]", ip, s.0, s.1);
+                }
+            }
+            
+            if *ip != addr {
+                if *s.lock().await != *session.lock().await {
+                    let message_builder = Message::build_from("Hello!");
+                    s.lock().await.send(message_builder.packed()).await;
+                }
             }
         }
 
-        let mut handler = RequestMessageHandler::new(Arc::clone(&writer), session.clone());
-        
+        let mut handler = RequestMessageHandler::new(
+            Arc::clone(&writer),
+            Arc::clone(&session),
+        );
+
         loop {
             let mut buffer = [0; PACKET_SIZE as usize];
 
             match reader.lock().await.read(&mut buffer).await {
                 Ok(0) => break,
                 Ok(n) => {
-                    handler.handle_segmented_frame(&buffer[0..n]).await;
+                    handler.handle_segmented_frame(&buffer[0..n]).await
                 }
                 Err(_) => break,
             }
         }
-    
+
         {
-            let mut connections = connections.lock().await;
-            connections.remove(&session);
+            let mut connections = connections.write().await;
+            connections.remove(&addr);
         }
-    
+
         debug!("Connection closed: {}", addr);
     }
 
@@ -81,17 +110,16 @@ impl Server {
         }
     }
 
-    pub async fn listen(&mut self)
-    {
+    pub async fn listen(&mut self) {
         loop {
             match self.listener.accept().await {
                 Ok((socket, addr)) => {
-                    let (tx, rx) = mpsc::channel::<String>(1000);
-                    
-                    let session = Session::new(addr);
+                    let (sender, receiver) = mpsc::channel::<String>(PACKET_SIZE as usize);
+
+                    let session = Arc::new(Mutex::new(Session::new(addr, sender)));
 
                     {
-                        self.connections.lock().await.insert(session.clone(), tx);
+                        self.connections.write().await.insert(addr, Arc::clone(&session));
                     }
 
                     let (reader, writer) = {
@@ -104,14 +132,11 @@ impl Server {
                         Arc::clone(&reader),
                         Arc::clone(&writer),
                         Arc::clone(&self.connections),
-                        session,
+                        Arc::clone(&session),
                         addr,
                     ));
 
-                    tokio::spawn(Self::receiver_handler(
-                        rx,
-                        writer
-                    ));
+                    tokio::spawn(Self::receiver_handler(receiver, writer));
                 }
                 Err(err) => {
                     error!("Error while establishing new connection: {}", err);
