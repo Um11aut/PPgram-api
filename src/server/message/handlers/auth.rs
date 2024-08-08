@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc};
 
-use crate::server::{
+use crate::{db::internal::error::DatabaseError, server::{
     message::{
         builder::Message,
         handler::RequestMessageHandler,
@@ -12,7 +12,8 @@ use crate::server::{
         },
     },
     session::Session,
-};
+}};
+use log::error;
 use serde::de::Error;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
@@ -25,7 +26,7 @@ async fn handle_auth_message<'a, T, F, Fut>(
 where
     T: serde::de::DeserializeOwned,
     F: FnOnce(&'a mut Session, T) -> Fut,
-    Fut: Future<Output = Result<(), cassandra_cpp::Error>>,
+    Fut: Future<Output = Result<(), DatabaseError>>,
 {
     if session.is_authenticated() {
         return Err(Box::new(serde_json::Error::custom(
@@ -37,7 +38,15 @@ where
         Ok(auth_message) => match handler(session, auth_message).await {
             Ok(()) => {}
             Err(err) => {
-                return Err(Box::new(serde_json::Error::custom(err)));
+                match err {
+                    DatabaseError::Cassandra(internal_err) => {
+                        error!("{}", internal_err);
+                        return Err(Box::new(DatabaseError::from("Internal error.")))
+                    }
+                    DatabaseError::Client(_) => {
+                        return Err(Box::new(err));
+                    },
+                }
             }
         },
         Err(err) => return Err(Box::new(err)),

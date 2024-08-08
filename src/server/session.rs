@@ -2,7 +2,7 @@ use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
 use log::{error, info};
 
-use crate::db::user::USERS_DB;
+use crate::db::{internal::error::DatabaseError, user::USERS_DB};
 
 use super::message::types::authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 use tokio::sync::mpsc;
@@ -39,7 +39,7 @@ impl Session {
         }
     }
 
-    pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), cassandra_cpp::Error>
+    pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), DatabaseError>
     {
         let db = USERS_DB.get().unwrap();
         match db.authenticate(msg.user_id, &msg.session_id, &msg.password_hash).await {
@@ -55,7 +55,7 @@ impl Session {
         Ok(())
     }
 
-    pub async fn login(&mut self, msg: RequestLoginMessage) -> Result<(), cassandra_cpp::Error>
+    pub async fn login(&mut self, msg: RequestLoginMessage) -> Result<(), DatabaseError>
     {
         let db = USERS_DB.get().unwrap();
         match db.login(&msg.username, &msg.password_hash).await {
@@ -71,7 +71,7 @@ impl Session {
         Ok(())
     }
 
-    pub async fn register(&mut self, msg: RequestRegisterMessage) -> Result<(), cassandra_cpp::Error>
+    pub async fn register(&mut self, msg: RequestRegisterMessage) -> Result<(), DatabaseError>
     {
         let db = USERS_DB.get().unwrap();
         match db.register(&msg.name, &msg.username, &msg.password_hash).await {

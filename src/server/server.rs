@@ -57,22 +57,22 @@ impl Server {
     ) {
         debug!("Connection established: {}", addr);
 
-        for (ip, s) in connections.read().await.iter() {
-            {
-                let s = s.lock().await;
+        // for (ip, s) in connections.read().await.iter() {
+        //     {
+        //         let s = s.lock().await;
 
-                if let Some(s) = s.get_credentials() {
-                    info!("ip: {}. [user_id: {}, session_id: {}]", ip, s.0, s.1);
-                }
-            }
+        //         if let Some(s) = s.get_credentials() {
+        //             info!("ip: {}. [user_id: {}, session_id: {}]", ip, s.0, s.1);
+        //         }
+        //     }
             
-            if *ip != addr {
-                if *s.lock().await != *session.lock().await {
-                    let message_builder = Message::build_from("Hello!");
-                    s.lock().await.send(message_builder.packed()).await;
-                }
-            }
-        }
+        //     if *ip != addr {
+        //         if *s.lock().await != *session.lock().await {
+        //             let message_builder = Message::build_from("Hello!");
+        //             s.lock().await.send(message_builder.packed()).await;
+        //         }
+        //     }
+        // }
 
         let handler = Arc::new(Mutex::new(RequestMessageHandler::new(
             Arc::clone(&writer),

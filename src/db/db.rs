@@ -7,7 +7,12 @@ use super::{
     user::{UsersDB, USERS_DB},
 };
 
-pub async fn init_db() {
+pub(crate) trait Database {
+    async fn new(session: Arc<cassandra_cpp::Session>) -> Self;
+    async fn create_table(&self);
+}
+
+pub async fn init_dbs() {
     let contact_points = std::env::var("CASSANDRA_HOST").unwrap_or(String::from("127.0.0.1"));
 
     let mut cluster = cassandra_cpp::Cluster::default();

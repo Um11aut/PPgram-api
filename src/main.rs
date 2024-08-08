@@ -5,11 +5,11 @@ pub mod db;
 
 use log::error;
 use server::server::Server;
-use db::db::init_db;
+use db::db::init_dbs;
 
 #[tokio::main]
 async fn main() {
-    init_db().await;
+    init_dbs().await;
 
     env_logger::init();
     let server = Server::new("0.0.0.0:8080").await;

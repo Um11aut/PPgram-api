@@ -11,6 +11,8 @@ use crate::db::messages::MessagesDB;
 use crate::db::messages::MESSAGES_DB;
 use crate::server::session;
 
+use super::internal::error::DatabaseError;
+
 pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
 
 pub(crate) struct UsersDB {
@@ -58,7 +60,7 @@ impl UsersDB {
         name: &str,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), cassandra_cpp::Error>
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError>
     {
         let query = "SELECT id FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
@@ -67,12 +69,12 @@ impl UsersDB {
         let user_exists: bool = match statement.execute().await {
             Ok(result) => result.first_row().is_some(),
             Err(err) => {
-                return Err(err);
+                return Err(DatabaseError::from(err));
             }
         };
 
         if user_exists {
-            return Err(cassandra_cpp::Error::from("Username already taken"));
+            return Err(DatabaseError::from("Username already taken"));
         }
 
         let user_id = rand::random::<i32>();
@@ -91,7 +93,7 @@ impl UsersDB {
 
         match self.create_session(user_id).await {
             Ok(session_id) => return Ok((user_id, session_id)),
-            Err(err) => return Err(err),
+            Err(err) => return Err(DatabaseError::from(err)),
         }
     }
 
@@ -99,7 +101,7 @@ impl UsersDB {
         &self,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), cassandra_cpp::Error>
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError>
     {
         let query = "SELECT id, password_hash FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
@@ -108,30 +110,33 @@ impl UsersDB {
         let (user_id, stored_password_hash): (Option<i32>, Option<String>) =
             match statement.execute().await {
                 Ok(result) => {
-                    if let Some(row) = result.first_row() {
-                        let user_id: i32 = row.get(0).unwrap_or_default();
-                        let stored_password_hash: String = row.get(1).unwrap_or_default();
-                        (Some(user_id), Some(stored_password_hash))
-                    } else {
-                        (None, None)
+                    match result.first_row() {
+                        Some(row) => {
+                            let user_id: i32 = row.get(0).unwrap_or_default();
+                            let stored_password_hash: String = row.get(1).unwrap_or_default();
+                            (Some(user_id), Some(stored_password_hash))
+                        }
+                        None => {
+                            (None, None)
+                        },
                     }
                 }
                 Err(err) => {
-                    return Err(err);
+                    return Err(DatabaseError::from(err));
                 }
             };
 
         if let (Some(user_id), Some(stored_password_hash)) = (user_id, stored_password_hash) {
             if stored_password_hash != password_hash {
-                return Err(cassandra_cpp::Error::from("Invalid password"));
+                return Err(DatabaseError::from("Invalid password"));
             }
 
             match self.create_session(user_id).await {
                 Ok(session_id) => return Ok((user_id, session_id)),
-                Err(err) => return Err(err),
+                Err(err) => return Err(DatabaseError::from(err)),
             }
         } else {
-            return Err(cassandra_cpp::Error::from(
+            return Err(DatabaseError::from(
                 "User with the given credentials not found!",
             ));
         }
@@ -142,7 +147,7 @@ impl UsersDB {
         user_id: i32,
         session_id: &str,
         password_hash: &str,
-    ) -> std::result::Result<(), cassandra_cpp::Error> {
+    ) -> std::result::Result<(), DatabaseError> {
         let query = "SELECT password_hash, sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id).unwrap();
@@ -171,7 +176,7 @@ impl UsersDB {
             }
             Err(err) => {
                 error!("{}", err);
-                return Err(err);
+                return Err(DatabaseError::from(err));
             }
         };
 
@@ -179,20 +184,20 @@ impl UsersDB {
             (id, stored_password_hash, sessions)
         {
             if stored_password_hash != password_hash {
-                return Err(cassandra_cpp::Error::from("Invalid password"));
+                return Err(DatabaseError::from("Invalid password"));
             }
 
             if id != user_id {
-                return Err(cassandra_cpp::Error::from("User Id wasn't found!"));
+                return Err(DatabaseError::from("User Id wasn't found!"));
             }
 
             if sessions.iter().find(|&s| s == session_id).is_none() {
-                return Err(cassandra_cpp::Error::from("Your Session is expired!"));
+                return Err(DatabaseError::from("Your Session isn't valid. Please log in again"));
             }
 
             Ok(())
         } else {
-            return Err(cassandra_cpp::Error::from(
+            return Err(DatabaseError::from(
                 "User with the given credentials not found!",
             ));
         }
@@ -201,7 +206,7 @@ impl UsersDB {
     async fn create_session(
         &self,
         user_id: i32,
-    ) -> std::result::Result<String, cassandra_cpp::Error> {
+    ) -> std::result::Result<String, DatabaseError> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -230,8 +235,7 @@ impl UsersDB {
                 o
             }
             Err(err) => {
-                error!("[::create_session] {}", err);
-                return Err(cassandra_cpp::Error::from("Internal error."));
+                return Err(DatabaseError::from(err));
             }
         };
 
@@ -258,8 +262,7 @@ impl UsersDB {
         match statement.execute().await {
             Ok(_) => Ok(new_session),
             Err(err) => {
-                error!("[::create_session] {}", err);
-                return Err(cassandra_cpp::Error::from("Internal error."));
+                return Err(DatabaseError::from(err));
             }
         }
     }
