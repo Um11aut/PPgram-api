@@ -4,6 +4,8 @@ services:
   cassandra:
     image: cassandra:4.0.9
     container_name: cassandra
+    logging:
+      driver: none
     ports:
       - "9042:9042"
     networks: 
@@ -12,8 +14,6 @@ services:
       CASSANDRA_START_RPC: 'true'
     volumes:
       - cassandra_data:/var/lib/cassandra
-    logging:
-      driver: "none"
 
   rust-app:
     build:
@@ -30,7 +30,9 @@ services:
       - 8080
     environment:
       CASSANDRA_HOST: cassandra
-    command: ["./target/release/PPgram-api"]
+    stdin_open: true
+    tty: true
+    command: ["bash"]
 
 volumes:
   cassandra_data:
