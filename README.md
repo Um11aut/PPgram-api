@@ -3,6 +3,8 @@
 Using docker:
 ```bash
 docker-compose up --build
+docker exec -ti rust-app /bin/bash
+$ cargo run --build
 ```
 Wait until the database is fully started.
 
