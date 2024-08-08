@@ -5,7 +5,7 @@ pub mod db;
 
 use log::error;
 use server::server::Server;
-use db::user::init_db;
+use db::db::init_db;
 
 #[tokio::main]
 async fn main() {

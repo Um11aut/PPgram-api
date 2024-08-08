@@ -69,6 +69,9 @@ impl RequestMessageHandler {
     pub async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
         if self.is_first {
             self.builder = Message::parse(buffer);
+            if let Some(builder) = self.builder.clone() {
+                info!("Got the message! \n Message size: {} \n Content: {}", builder.size(), builder.content());
+            }
             self.is_first = false;
         }
         
@@ -82,6 +85,7 @@ impl RequestMessageHandler {
 
                 message.clear();
                 self.builder = None;
+                self.is_first = true;
             }
         }
     }

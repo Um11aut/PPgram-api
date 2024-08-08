@@ -1,45 +1,25 @@
-use cassandra_cpp::*;
-use lazy_static::lazy_static;
-use log::{debug, error, info};
+use cassandra_cpp;
+use cassandra_cpp::AsRustType;
+use cassandra_cpp::CassCollection;
+use cassandra_cpp::LendingIterator;
+use log::{error, info};
 use rand::{distributions::Alphanumeric, Rng};
-use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::sync::OnceCell;
 
-use crate::server;
+use crate::db::messages::MessagesDB;
+use crate::db::messages::MESSAGES_DB;
+use crate::server::session;
 
 pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
 
 pub(crate) struct UsersDB {
-    session: Arc<Session>,
+    session: Arc<cassandra_cpp::Session>,
 }
 
 impl UsersDB {
-    pub async fn new(contact_points: &str) -> UsersDB {
-        let mut cluster = Cluster::default();
-        let cluster = cluster
-            .set_contact_points(contact_points)
-            .expect("Failed to set contact points");
-        cluster.set_load_balance_round_robin();
-
-        while let Err(err) = cluster.connect().await {
-            error!("{}", err);
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-        let session = cluster.connect().await.unwrap();
-        info!("Successfully connected to the Cassandra DB!");
-
-        let create_keyspace_cql = "
-            CREATE KEYSPACE IF NOT EXISTS usersdb_keyspace
-            WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };
-        ";
-
-        session.execute(create_keyspace_cql).await.unwrap();
-        session.execute("USE usersdb_keyspace").await.unwrap();
-        UsersDB {
-            session: Arc::new(session),
-        }
+    pub async fn new(session: Arc<cassandra_cpp::Session>) -> UsersDB {
+        UsersDB { session }
     }
 
     pub async fn create_table(&self) {
@@ -78,7 +58,8 @@ impl UsersDB {
         name: &str,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), Error> {
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), cassandra_cpp::Error>
+    {
         let query = "SELECT id FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username).unwrap();
@@ -91,7 +72,7 @@ impl UsersDB {
         };
 
         if user_exists {
-            return Err(Error::from("Username already taken"));
+            return Err(cassandra_cpp::Error::from("Username already taken"));
         }
 
         let user_id = rand::random::<i32>();
@@ -104,7 +85,7 @@ impl UsersDB {
         statement.bind_string(1, name).unwrap();
         statement.bind_string(2, username).unwrap();
         statement.bind_string(3, password_hash).unwrap();
-        statement.bind_list(4, List::new()).unwrap();
+        statement.bind_list(4, cassandra_cpp::List::new()).unwrap();
 
         statement.execute().await?;
 
@@ -118,7 +99,8 @@ impl UsersDB {
         &self,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), Error> {
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), cassandra_cpp::Error>
+    {
         let query = "SELECT id, password_hash FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username).unwrap();
@@ -141,7 +123,7 @@ impl UsersDB {
 
         if let (Some(user_id), Some(stored_password_hash)) = (user_id, stored_password_hash) {
             if stored_password_hash != password_hash {
-                return Err(Error::from("Invalid password"));
+                return Err(cassandra_cpp::Error::from("Invalid password"));
             }
 
             match self.create_session(user_id).await {
@@ -149,7 +131,9 @@ impl UsersDB {
                 Err(err) => return Err(err),
             }
         } else {
-            return Err(Error::from("User with the given credentials not found!"));
+            return Err(cassandra_cpp::Error::from(
+                "User with the given credentials not found!",
+            ));
         }
     }
 
@@ -158,7 +142,7 @@ impl UsersDB {
         user_id: i32,
         session_id: &str,
         password_hash: &str,
-    ) -> std::result::Result<(), Error> {
+    ) -> std::result::Result<(), cassandra_cpp::Error> {
         let query = "SELECT password_hash, sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id).unwrap();
@@ -171,7 +155,7 @@ impl UsersDB {
             Ok(result) => {
                 if let Some(row) = result.first_row() {
                     let stored_password_hash: String = row.get(0).unwrap_or_default();
-                    let result: Result<SetIterator> = row.get(1);
+                    let result: cassandra_cpp::Result<cassandra_cpp::SetIterator> = row.get(1);
 
                     let mut o: Vec<String> = Vec::with_capacity(3);
                     if let Ok(mut sessions) = result {
@@ -195,24 +179,29 @@ impl UsersDB {
             (id, stored_password_hash, sessions)
         {
             if stored_password_hash != password_hash {
-                return Err(Error::from("Invalid password"));
+                return Err(cassandra_cpp::Error::from("Invalid password"));
             }
 
             if id != user_id {
-                return Err(Error::from("User Id wasn't found!"));
+                return Err(cassandra_cpp::Error::from("User Id wasn't found!"));
             }
 
             if sessions.iter().find(|&s| s == session_id).is_none() {
-                return Err(Error::from("Your Session is expired!"));
+                return Err(cassandra_cpp::Error::from("Your Session is expired!"));
             }
 
             Ok(())
         } else {
-            return Err(Error::from("User with the given credentials not found!"));
+            return Err(cassandra_cpp::Error::from(
+                "User with the given credentials not found!",
+            ));
         }
     }
 
-    async fn create_session(&self, user_id: i32) -> std::result::Result<String, Error> {
+    async fn create_session(
+        &self,
+        user_id: i32,
+    ) -> std::result::Result<String, cassandra_cpp::Error> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -229,7 +218,7 @@ impl UsersDB {
 
                 let mut iter = result.iter();
                 while let Some(row) = iter.next() {
-                    let res: Result<SetIterator> = row.get(0);
+                    let res: cassandra_cpp::Result<cassandra_cpp::SetIterator> = row.get(0);
 
                     if let Ok(mut sessions) = res {
                         while let Some(session) = sessions.next() {
@@ -242,7 +231,7 @@ impl UsersDB {
             }
             Err(err) => {
                 error!("[::create_session] {}", err);
-                return Err(Error::from("Internal error."));
+                return Err(cassandra_cpp::Error::from("Internal error."));
             }
         };
 
@@ -254,7 +243,7 @@ impl UsersDB {
         let query = "UPDATE users SET sessions = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
-        let mut updated_sessions = List::new();
+        let mut updated_sessions = cassandra_cpp::List::new();
         for session in existing_sessions {
             updated_sessions.append_string(session.as_str()).unwrap();
         }
@@ -270,17 +259,8 @@ impl UsersDB {
             Ok(_) => Ok(new_session),
             Err(err) => {
                 error!("[::create_session] {}", err);
-                return Err(Error::from("Internal error."));
+                return Err(cassandra_cpp::Error::from("Internal error."));
             }
         }
     }
-}
-
-pub async fn init_db() {
-    let contact_points = std::env::var("CASSANDRA_HOST").unwrap_or(String::from("127.0.0.1"));
-    USERS_DB
-        .get_or_init(|| async { UsersDB::new(contact_points.as_str()).await })
-        .await;
-
-    USERS_DB.get().unwrap().create_table().await;
 }
