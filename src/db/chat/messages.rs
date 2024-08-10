@@ -7,7 +7,7 @@ use rand::{distributions::Alphanumeric, Rng};
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-use super::db::Database;
+use crate::db::db::Database;
 
 pub(crate) static MESSAGES_DB: OnceCell<MessagesDB> = OnceCell::const_new();
 
@@ -34,22 +34,15 @@ impl Database for MessagesDB {
             )
         "#;
 
-        let create_index_query = r#"
-            CREATE INDEX IF NOT EXISTS username_idx ON users (username)
-        "#;
-
         match self.session.execute(create_table_query).await {
             Ok(_) => {}
             Err(err) => {
                 error!("{}", err);
             }
         }
-
-        match self.session.execute(create_index_query).await {
-            Ok(_) => {}
-            Err(err) => {
-                error!("{}", err);
-            }
-        }
     }
+}
+
+impl MessagesDB {
+    
 }

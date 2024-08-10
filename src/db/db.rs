@@ -1,15 +1,19 @@
 use std::sync::Arc;
 
+use tokio::sync::OnceCell;
+
 use log::error;
 
-use super::{
-    messages::{MessagesDB, MESSAGES_DB},
-    user::{UsersDB, USERS_DB},
-};
+use super::{chat::{chats::CHATS_DB, messages::MESSAGES_DB}, user::USERS_DB};
 
 pub(crate) trait Database {
     async fn new(session: Arc<cassandra_cpp::Session>) -> Self;
     async fn create_table(&self);
+}
+
+async fn init<T: Database>(db: &OnceCell<T>, session: Arc<cassandra_cpp::Session>) {
+    db.get_or_init(|| async { T::new(Arc::clone(&session)).await }).await;
+    db.get().unwrap().create_table().await;
 }
 
 pub async fn init_dbs() {
@@ -39,14 +43,9 @@ pub async fn init_dbs() {
     session.execute("USE main_keyspace").await.unwrap();
 
     let session = Arc::new(session);
-    USERS_DB
-        .get_or_init(|| async { UsersDB::new(Arc::clone(&session)).await })
-        .await;
+    init(&USERS_DB, Arc::clone(&session)).await;
+    init(&CHATS_DB, Arc::clone(&session)).await;
+    init(&MESSAGES_DB, Arc::clone(&session)).await;
 
-    MESSAGES_DB
-        .get_or_init(|| async { MessagesDB::new(Arc::clone(&session)).await })
-        .await;
-
-    MESSAGES_DB.get().unwrap();
-    USERS_DB.get().unwrap().create_table().await;
+    CHATS_DB.get().unwrap().create_chat(111, 111).await.unwrap();
 }

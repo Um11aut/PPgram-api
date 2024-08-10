@@ -2,15 +2,13 @@ use cassandra_cpp;
 use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
-use log::{error, info};
+use log::error;
 use rand::{distributions::Alphanumeric, Rng};
+use std::borrow::Cow;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-use crate::db::messages::MessagesDB;
-use crate::db::messages::MESSAGES_DB;
-use crate::server::session;
-
+use super::db::Database;
 use super::internal::error::DatabaseError;
 
 pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
@@ -19,17 +17,18 @@ pub(crate) struct UsersDB {
     session: Arc<cassandra_cpp::Session>,
 }
 
-impl UsersDB {
-    pub async fn new(session: Arc<cassandra_cpp::Session>) -> UsersDB {
+impl Database for UsersDB {
+    async fn new(session: Arc<cassandra_cpp::Session>) -> UsersDB {
         UsersDB { session }
     }
 
-    pub async fn create_table(&self) {
+    async fn create_table(&self) {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS users (
                 id int PRIMARY KEY, 
                 name TEXT, 
-                username TEXT, 
+                username TEXT,
+                photo BLOB,
                 password_hash TEXT, 
                 sessions LIST<TEXT>
             )
@@ -53,18 +52,19 @@ impl UsersDB {
             }
         }
     }
+}
 
+impl UsersDB {
     // Register the user in database. Returns `user_id` and `session_id` if successfull
     pub async fn register(
         &self,
         name: &str,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError>
-    {
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError> {
         let query = "SELECT id FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
-        statement.bind_string(0, username).unwrap();
+        statement.bind_string(0, username)?;
 
         let user_exists: bool = match statement.execute().await {
             Ok(result) => result.first_row().is_some(),
@@ -83,11 +83,11 @@ impl UsersDB {
         "#;
         let mut statement = self.session.statement(query);
 
-        statement.bind_int32(0, user_id).unwrap();
-        statement.bind_string(1, name).unwrap();
-        statement.bind_string(2, username).unwrap();
-        statement.bind_string(3, password_hash).unwrap();
-        statement.bind_list(4, cassandra_cpp::List::new()).unwrap();
+        statement.bind_int32(0, user_id)?;
+        statement.bind_string(1, name)?;
+        statement.bind_string(2, username)?;
+        statement.bind_string(3, password_hash)?;
+        statement.bind_list(4, cassandra_cpp::List::new())?;
 
         statement.execute().await?;
 
@@ -101,26 +101,21 @@ impl UsersDB {
         &self,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError>
-    {
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError> {
         let query = "SELECT id, password_hash FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
-        statement.bind_string(0, username).unwrap();
+        statement.bind_string(0, username)?;
 
         let (user_id, stored_password_hash): (Option<i32>, Option<String>) =
             match statement.execute().await {
-                Ok(result) => {
-                    match result.first_row() {
-                        Some(row) => {
-                            let user_id: i32 = row.get(0).unwrap_or_default();
-                            let stored_password_hash: String = row.get(1).unwrap_or_default();
-                            (Some(user_id), Some(stored_password_hash))
-                        }
-                        None => {
-                            (None, None)
-                        },
+                Ok(result) => match result.first_row() {
+                    Some(row) => {
+                        let user_id: i32 = row.get(0).unwrap_or_default();
+                        let stored_password_hash: String = row.get(1).unwrap_or_default();
+                        (Some(user_id), Some(stored_password_hash))
                     }
-                }
+                    None => (None, None),
+                },
                 Err(err) => {
                     return Err(DatabaseError::from(err));
                 }
@@ -150,7 +145,7 @@ impl UsersDB {
     ) -> std::result::Result<(), DatabaseError> {
         let query = "SELECT password_hash, sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
-        statement.bind_int32(0, user_id).unwrap();
+        statement.bind_int32(0, user_id)?;
 
         let (id, stored_password_hash, sessions): (
             Option<i32>,
@@ -192,7 +187,9 @@ impl UsersDB {
             }
 
             if sessions.iter().find(|&s| s == session_id).is_none() {
-                return Err(DatabaseError::from("Your Session isn't valid. Please log in again"));
+                return Err(DatabaseError::from(
+                    "Your Session isn't valid. Please log in again",
+                ));
             }
 
             Ok(())
@@ -203,10 +200,7 @@ impl UsersDB {
         }
     }
 
-    async fn create_session(
-        &self,
-        user_id: i32,
-    ) -> std::result::Result<String, DatabaseError> {
+    async fn create_session(&self, user_id: i32) -> std::result::Result<String, DatabaseError> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -215,7 +209,7 @@ impl UsersDB {
 
         let query = "SELECT sessions FROM users WHERE id = ?;";
         let mut statement = self.session.statement(query);
-        statement.bind_int32(0, user_id).unwrap();
+        statement.bind_int32(0, user_id)?;
 
         let mut existing_sessions: Vec<String> = match statement.execute().await {
             Ok(result) => {
@@ -249,15 +243,13 @@ impl UsersDB {
 
         let mut updated_sessions = cassandra_cpp::List::new();
         for session in existing_sessions {
-            updated_sessions.append_string(session.as_str()).unwrap();
+            updated_sessions.append_string(session.as_str())?;
         }
 
-        updated_sessions
-            .append_string(new_session.as_str())
-            .unwrap();
+        updated_sessions.append_string(new_session.as_str())?;
 
-        statement.bind_list(0, updated_sessions).unwrap();
-        statement.bind_int32(1, user_id).unwrap();
+        statement.bind_list(0, updated_sessions)?;
+        statement.bind_int32(1, user_id)?;
 
         match statement.execute().await {
             Ok(_) => Ok(new_session),
@@ -266,4 +258,23 @@ impl UsersDB {
             }
         }
     }
+
+    pub async fn update_photo<T: Into<Cow<'static, Vec<u8>>>>(
+        &self,
+        user_id: i32,
+        photo: T,
+    ) -> std::result::Result<(), DatabaseError> {
+        let query = "UPDATE users SET photo = ? WHERE id = ?";
+        let mut statement = self.session.statement(query);
+        let photo = photo.into().to_vec();
+
+        statement.bind_bytes(0, photo)?;
+        statement.bind_int32(1, user_id)?;
+
+        match statement.execute().await {
+            Ok(_) => Ok(()),
+            Err(err) => Err(DatabaseError::from(err)),
+        }
+    }
+
 }

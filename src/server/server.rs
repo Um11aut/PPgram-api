@@ -74,10 +74,10 @@ impl Server {
         //     }
         // }
 
-        let handler = Arc::new(Mutex::new(RequestMessageHandler::new(
+        let mut handler = RequestMessageHandler::new(
             Arc::clone(&writer),
             Arc::clone(&session),
-        )));
+        );
 
         loop {
             let mut buffer = [0; PACKET_SIZE as usize];
@@ -85,13 +85,7 @@ impl Server {
             match reader.lock().await.read(&mut buffer).await {
                 Ok(0) => break,
                 Ok(n) => {
-                    tokio::spawn({
-                        let handler = Arc::clone(&handler);
-                        async move {
-                            let mut handler = handler.lock().await;
-                            handler.handle_segmented_frame(&buffer[0..n]).await;
-                        }
-                    });
+                    handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
                 Err(_) => break,
             }

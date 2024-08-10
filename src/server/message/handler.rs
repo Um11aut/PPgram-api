@@ -36,8 +36,8 @@ impl RequestMessageHandler {
         }
     }
 
-    async fn send_error<T: Into<Cow<'static, str>>>(&self, what: T) {
-        PPgramError::send(what, Arc::clone(&self.writer)).await;
+    async fn send_error<T: Into<Cow<'static, str>>>(&self, method: &str, what: T) {
+        PPgramError::send(method, what, Arc::clone(&self.writer)).await;
     }
 
     async fn handle_message(&mut self) {
@@ -54,14 +54,14 @@ impl RequestMessageHandler {
                             "edit_message" => edit::handle(self).await,
                             "fetch" => fetch::handle(self).await,
                             "check" => check::handle(self).await,
-                            _ => self.send_error("Unknown method given!").await
+                            _ => self.send_error(method, "Unknown method given!").await
                         }
                     },  
-                    None => self.send_error("Failed to get the method from the json message!").await
+                    None => self.send_error("none", "Failed to get the method from the json message!").await
                 }
             },
             Err(err) => {
-                self.send_error(err.to_string()).await;
+                self.send_error("none", err.to_string()).await;
             }
         }
     }

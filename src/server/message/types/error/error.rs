@@ -12,11 +12,12 @@ pub struct PPgramError {
 
 impl PPgramError 
 {
-    pub async fn send<T: Into<Cow<'static, str>>>(what: T, writer: Arc<Mutex<OwnedWriteHalf>>) {
+    pub async fn send<T: Into<Cow<'static, str>>>(method: &str, what: T, writer: Arc<Mutex<OwnedWriteHalf>>) {
         let what: String = what.into().to_string();
-        
+
         let error = json!({
             "ok": false,
+            "method": method,
             "error": what
         });
 
