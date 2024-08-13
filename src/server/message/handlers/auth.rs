@@ -16,7 +16,7 @@ use crate::{
         session::Session,
     },
 };
-use log::{debug, error};
+use log::error;
 use serde::de::Error;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
@@ -31,7 +31,7 @@ where
     Fut: Future<Output = Result<(), DatabaseError>>
 {
     if session.is_authenticated() {
-        return Err(Box::new(serde_json::Error::custom(
+        return Err(Box::new(DatabaseError::from(
             "You are already authenticated!",
         )));
     }
@@ -94,11 +94,16 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         return;
     }
 
+
     if let Some((user_id, session_id)) = session.get_credentials() {
-        let data = if method != "auth" {
-            json!({ "method": method, "ok": true, "user_id": user_id, "session_id": session_id })
-        } else {
-            json!({"ok": true})
+        {
+            let mut connections = handler.connections.write().await;
+            connections.insert(user_id, Arc::clone(&handler.session));
+        }
+
+        let data = match method {
+            "auth" => json!({ "method": method, "ok": true }),
+            _ => json!({ "method": method, "ok": true, "user_id": user_id, "session_id": session_id }),
         };
         handler
             .writer

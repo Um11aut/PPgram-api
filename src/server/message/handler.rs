@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf};
 
+use crate::server::server::Connections;
 use crate::server::session::Session;
 use crate::server::message::types::{
     authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, message::{MessageContent, RequestMessage},
@@ -21,18 +22,19 @@ use super::handlers::{auth, check, edit, fetch, send};
 pub struct RequestMessageHandler {
     pub(crate) builder: Option<Message>,
     pub(crate) writer: Arc<Mutex<OwnedWriteHalf>>,
-    #[allow(dead_code)]
     pub(crate) session: Arc<Mutex<Session>>,
-    pub(crate) is_first: bool
+    pub(crate) is_first: bool,
+    pub(crate) connections: Connections
 }
 
 impl RequestMessageHandler {
-    pub fn new(writer: Arc<Mutex<OwnedWriteHalf>>, session: Arc<Mutex<Session>>) -> Self {
+    pub fn new(writer: Arc<Mutex<OwnedWriteHalf>>, session: Arc<Mutex<Session>>, connections: Connections) -> Self {
         RequestMessageHandler {
             builder: None,
             writer,
             session,
-            is_first: true
+            is_first: true,
+            connections
         }
     }
 
@@ -50,10 +52,10 @@ impl RequestMessageHandler {
                     Some(method) => {
                         match method {
                             "login" | "auth" | "register" => auth::handle(self, method).await,
-                            "send_message" | "send_media" => send::handle(self).await,
-                            "edit_message" => edit::handle(self).await,
-                            "fetch" => fetch::handle(self).await,
-                            "check" => check::handle(self).await,
+                            "send_message" | "send_media" => send::handle(self, method).await,
+                            "edit_message" => edit::handle(self, method).await,
+                            "fetch" => fetch::handle(self, method).await,
+                            "check" => check::handle(self, method).await,
                             _ => self.send_error(method, "Unknown method given!").await
                         }
                     },  
@@ -70,7 +72,7 @@ impl RequestMessageHandler {
         if self.is_first {
             self.builder = Message::parse(buffer);
             if let Some(builder) = self.builder.clone() {
-                info!("Got the message! \n Message size: {} \n Content: {}", builder.size(), builder.content());
+                debug!("Got the message! \n Message size: {} \n Content: {}", builder.size(), builder.content());
             }
             self.is_first = false;
         }
@@ -88,5 +90,22 @@ impl RequestMessageHandler {
                 self.is_first = true;
             }
         }
+    }
+}
+
+impl Drop for RequestMessageHandler {
+    fn drop(&mut self) {
+        tokio::spawn({
+            let connections: Connections = Arc::clone(&self.connections);    
+            let session = Arc::clone(&self.session);
+
+            async move {
+                let mut connections = connections.write().await;
+                let session = session.lock().await;
+                if let Some((user_id, _)) = session.get_credentials() {
+                    connections.remove(&user_id);
+                }
+            }
+        });
     }
 }

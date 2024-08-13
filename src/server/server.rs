@@ -1,36 +1,28 @@
-use log::{debug, error, info, trace};
-use serde_json::json;
-use std::{future::Future, net::IpAddr};
-use tokio::sync::RwLock;
-use std::{
-    collections::{HashMap, VecDeque},
-    net::SocketAddr,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
-use tokio::net::tcp::WriteHalf;
+use log::debug;
+use log::error;
+use std::collections::hash_map;
+use std::collections::HashMap;
+use std::{net::SocketAddr, sync::Arc};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf, ReadHalf},
-        TcpListener, TcpSocket, TcpStream,
-    },
+    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     sync::Mutex,
 };
 
-use crate::server::{
-    message::{
-        self, builder::Message, handler::RequestMessageHandler, types::message::RequestMessage,
-    },
-    session::Session,
-};
+use crate::server::{message::handler::RequestMessageHandler, session::Session};
+
+use super::message::builder::Message;
 
 const PACKET_SIZE: u32 = 65535;
 
+pub(super) type Connections = Arc<RwLock<HashMap<i32, Arc<Mutex<Session>>>>>;
+
 pub(crate) struct Server {
     listener: TcpListener,
-    connections: Arc<RwLock<HashMap<SocketAddr, Arc<Mutex<Session>>>>>,
+    connections: Connections,
 }
 
 impl Server {
@@ -51,32 +43,16 @@ impl Server {
     async fn event_handler(
         reader: Arc<Mutex<OwnedReadHalf>>,
         writer: Arc<Mutex<OwnedWriteHalf>>,
-        connections: Arc<RwLock<HashMap<SocketAddr, Arc<Mutex<Session>>>>>,
+        connections: Connections,
         session: Arc<Mutex<Session>>,
         addr: SocketAddr,
     ) {
         debug!("Connection established: {}", addr);
 
-        // for (ip, s) in connections.read().await.iter() {
-        //     {
-        //         let s = s.lock().await;
-
-        //         if let Some(s) = s.get_credentials() {
-        //             info!("ip: {}. [user_id: {}, session_id: {}]", ip, s.0, s.1);
-        //         }
-        //     }
-            
-        //     if *ip != addr {
-        //         if *s.lock().await != *session.lock().await {
-        //             let message_builder = Message::build_from("Hello!");
-        //             s.lock().await.send(message_builder.packed()).await;
-        //         }
-        //     }
-        // }
-
         let mut handler = RequestMessageHandler::new(
             Arc::clone(&writer),
             Arc::clone(&session),
+            Arc::clone(&connections),
         );
 
         loop {
@@ -91,11 +67,6 @@ impl Server {
             }
         }
 
-        {
-            let mut connections = connections.write().await;
-            connections.remove(&addr);
-        }
-
         debug!("Connection closed: {}", addr);
     }
 
@@ -104,23 +75,19 @@ impl Server {
 
         while let Some(message) = rx.recv().await {
             let mut writer = writer.lock().await;
-            if let Err(e) = writer.write_all(message.as_bytes()).await {
+            if let Err(e) = writer.write_all(Message::build_from(message).packed().as_bytes()).await {
                 error!("Failed to send message: {}", e);
             }
         }
     }
 
-    pub async fn listen(&mut self) {
+    pub async fn poll_events(&mut self) {
         loop {
             match self.listener.accept().await {
                 Ok((socket, addr)) => {
                     let (sender, receiver) = mpsc::channel::<String>(PACKET_SIZE as usize);
 
                     let session = Arc::new(Mutex::new(Session::new(addr, sender)));
-
-                    {
-                        self.connections.write().await.insert(addr, Arc::clone(&session));
-                    }
 
                     let (reader, writer) = {
                         let (r, w) = socket.into_split();

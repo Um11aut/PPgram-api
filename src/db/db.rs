@@ -4,16 +4,16 @@ use tokio::sync::OnceCell;
 
 use log::error;
 
-use super::{chat::{chats::CHATS_DB, messages::MESSAGES_DB}, user::USERS_DB};
+use super::{chat::{chats::CHATS_DB, messages::MESSAGES_DB}, internal::error::DatabaseError, user::USERS_DB};
 
 pub(crate) trait Database {
     async fn new(session: Arc<cassandra_cpp::Session>) -> Self;
-    async fn create_table(&self);
+    async fn create_table(&self) -> Result<(), DatabaseError>;
 }
 
 async fn init<T: Database>(db: &OnceCell<T>, session: Arc<cassandra_cpp::Session>) {
     db.get_or_init(|| async { T::new(Arc::clone(&session)).await }).await;
-    db.get().unwrap().create_table().await;
+    db.get().unwrap().create_table().await.unwrap();
 }
 
 pub async fn init_dbs() {
@@ -46,6 +46,4 @@ pub async fn init_dbs() {
     init(&USERS_DB, Arc::clone(&session)).await;
     init(&CHATS_DB, Arc::clone(&session)).await;
     init(&MESSAGES_DB, Arc::clone(&session)).await;
-
-    CHATS_DB.get().unwrap().create_chat(111, 111).await.unwrap();
 }

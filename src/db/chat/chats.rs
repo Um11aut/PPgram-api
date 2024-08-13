@@ -2,6 +2,7 @@ use cassandra_cpp;
 use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
+use cassandra_cpp::SetIterator;
 use cassandra_cpp::TimestampGen;
 use log::{error, info};
 use rand::{distributions::Alphanumeric, Rng};
@@ -30,70 +31,127 @@ impl Database for ChatsDB {
         }
     }
 
-    async fn create_table(&self) {
+    async fn create_table(&self) -> Result<(), DatabaseError> {
         let create_table_query = r#"
-            CREATE TABLE chats (
-                chat_id int PRIMARY KEY,
-                from_id int,
-                peer_id int,
-                created_at bigint
+            CREATE TABLE IF NOT EXISTS chats (
+                id int PRIMARY KEY,
+                is_group boolean,
+                participants LIST<int>            
             );
         "#;
 
-        match self.session.execute(create_table_query).await {
-            Ok(_) => {}
-            Err(err) => {
-                error!("{}", err);
-            }
-        }
+        self.session.execute(create_table_query).await?;
+    
+        Ok(())
     }
 }
 
 impl ChatsDB {
-    pub async fn create_chat(&self, from_id: i32, peer_id: i32) -> Result<i32 /* chat_id */, DatabaseError> {
+    pub async fn create_chat(&self, participants: Vec<i32/* user_id */>) -> Result<i32 /* chat_id */, DatabaseError> {
         let chat_id = rand::random::<i32>();
-        let insert_query = "INSERT INTO chats (chat_id, created_at, from_id, peer_id) VALUES (?, ?, ?, ?);";
+        let insert_query = "INSERT INTO chats (id, is_group, participants) VALUES (?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
         statement.bind_int32(0, chat_id)?;
+        statement.bind_bool(1, participants.len() == 2)?;
         
-        statement.bind_int64(1, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64)?;
+        let mut list = cassandra_cpp::List::new();
+        for participant in participants {
+            list.append_int32(participant)?;
+        }
+        statement.bind_list(2, list)?;
 
-        statement.bind_int32(2, from_id)?;
-        statement.bind_int32(3, peer_id)?;
+        statement.execute().await.map_err(DatabaseError::from)?;
+
+        Ok(chat_id)
+    }
+
+    pub async fn add_participant(&self, chat_id: i32, participant: i32 /* user_id */) -> Result<(), DatabaseError> {
+        let current_participants = self.fetch_participants(chat_id).await?;
+
+        let is_group = current_participants.len() + 1 > 2;
+
+        let update_query = "UPDATE chats SET participants = participants + ? WHERE id = ?;";
+        
+        let mut statement = self.session.statement(update_query);
+        let mut list = cassandra_cpp::List::new();
+        list.append_int32(participant)?;
+        statement.bind_list(0, list)?;
+        statement.bind_int32(1, chat_id)?;
+
+        statement.execute().await.map_err(DatabaseError::from)?;
+
+        if !is_group {
+            let update_is_group_query = "UPDATE chats SET is_group = ? WHERE id = ?;";
+            
+            let mut statement = self.session.statement(update_is_group_query);
+            statement.bind_bool(0, false)?;
+            statement.bind_int32(1, chat_id)?;
+            
+            statement.execute().await.map_err(DatabaseError::from)?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn fetch_participants(&self, chat_id: i32) -> Result<Vec<i32>, DatabaseError> {
+        let select_query = "SELECT participants FROM chats WHERE id = ?";
+
+        let mut statement = self.session.statement(&select_query);
+        statement.bind_int32(0, chat_id)?;
 
         match statement.execute().await {
-            Ok(_) => Ok(chat_id),
-            Err(err) => Err(DatabaseError::from(err)),
+            Ok(result) => {
+                if let Some(row) = result.first_row() {
+                    let participants: cassandra_cpp::Result<SetIterator> = row.get(0);
+
+                    let mut p: Vec<i32> = vec![];
+                    if let Ok(mut participants) = participants {
+                        while let Some(participant) = participants.next() {
+                            p.push(participant.get_i32()?);
+                        }
+                    } 
+
+                    return Ok(p)
+                }
+                return Err(DatabaseError::from("chat_id not found"))
+            },
+            Err(err) => return Err(DatabaseError::from(err))
         }
     }
 
     // Fetches all chats that have a chat with the given user_id
-    pub async fn fetch_chats(&self, user_id: i32) -> Result<Vec<ChatInfo>, DatabaseError> {
-        let select_query = "SELECT chat_id, created_at, from_id, peer_id FROM chats WHERE from_id = ? OR peer_id = ? ALLOW FILTERING;";
+    // pub async fn fetch_chats(&self, user_id: i32) -> Result<Vec<ChatInfo>, DatabaseError> {
+    //     let select_query = "SELECT * FROM chats WHERE participants CONTAINS ?";
 
-        let mut statement = self.session.statement(select_query);
-        statement.bind_int32(0, user_id)?;
-        statement.bind_int32(1, user_id)?;
+    //     let mut statement = self.session.statement(select_query);
+    //     statement.bind_int32(0, user_id)?;
 
-        match statement.execute().await {
-            Ok(result) => {
-                let mut users: Vec<ChatInfo> = vec![];
+    //     match statement.execute().await {
+    //         Ok(result) => {
+    //             let mut users: Vec<ChatInfo> = vec![];
 
-                while let Some(chat) = result.iter().next() {
-                    let o = ChatInfo {
-                        chat_id: chat.get_by_name("user_id")?,
-                        created_at: chat.get_by_name("created_at")?,
-                        from_id: chat.get_by_name("from_id")?,
-                        peer_id: chat.get_by_name("peer_id")?
-                    };
+    //             while let Some(chat) = result.iter().next() {
+    //                 let mut p: Vec<i32> = vec![];
+                    
+    //                 let participants: cassandra_cpp::Result<SetIterator> = chat.get_by_name("participants");
+    //                 if let Ok(mut participants) = participants {
+    //                     while let Some(participant) = participants.next() {
+    //                         p.push(participant.get_i32()?);
+    //                     }
+    //                 }
 
-                    users.push(o)
-                }
+    //                 let o = ChatInfo {
+    //                     id: chat.get_by_name("user_id")?,
+    //                     participants: p
+    //                 };
 
-                Ok(users)
-            },
-            Err(err) => Err(DatabaseError::from(err)),
-        }
-    }
+    //                 users.push(o)
+    //             }
+
+    //             Ok(users)
+    //         },
+    //         Err(err) => Err(DatabaseError::from(err)),
+    //     }
+    // }
 }

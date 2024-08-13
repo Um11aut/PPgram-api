@@ -15,8 +15,8 @@ async fn main() {
     let server = Server::new("0.0.0.0:8080").await;
 
     if let Some(mut server) = server {
-        server.listen().await;
+        server.poll_events().await;
     } else {
-        error!("Connection not created!");
+        error!("Server not created!");
     }
 }

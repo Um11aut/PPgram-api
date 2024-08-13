@@ -4,7 +4,7 @@ Using docker:
 ```bash
 docker-compose up --build
 docker exec -ti rust-app /bin/bash
-$ cargo run --build
+$ cargo run --release
 ```
 Wait until the database is fully started.
 
@@ -70,6 +70,4 @@ def send_message():
 
 if __name__ == "__main__":
     send_message()
-
-
 ```

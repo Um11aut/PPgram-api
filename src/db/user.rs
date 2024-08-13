@@ -2,14 +2,18 @@ use cassandra_cpp;
 use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
+use cassandra_cpp::SetIterator;
 use log::error;
 use rand::{distributions::Alphanumeric, Rng};
 use std::borrow::Cow;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
+use crate::server::session;
+
 use super::db::Database;
 use super::internal::error::DatabaseError;
+use super::internal::validate;
 
 pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
 
@@ -22,7 +26,7 @@ impl Database for UsersDB {
         UsersDB { session }
     }
 
-    async fn create_table(&self) {
+    async fn create_table(&self) -> Result<(), DatabaseError> {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS users (
                 id int PRIMARY KEY, 
@@ -30,7 +34,8 @@ impl Database for UsersDB {
                 username TEXT,
                 photo BLOB,
                 password_hash TEXT, 
-                sessions LIST<TEXT>
+                sessions LIST<TEXT>,
+                chats LIST<int>
             )
         "#;
 
@@ -38,23 +43,44 @@ impl Database for UsersDB {
             CREATE INDEX IF NOT EXISTS username_idx ON users (username)
         "#;
 
-        match self.session.execute(create_table_query).await {
-            Ok(_) => {}
-            Err(err) => {
-                error!("{}", err);
-            }
-        }
+        self.session.execute(create_table_query).await?;
+        self.session.execute(create_index_query).await?;
 
-        match self.session.execute(create_index_query).await {
-            Ok(_) => {}
-            Err(err) => {
-                error!("{}", err);
-            }
-        }
+        Ok(())
     }
 }
 
 impl UsersDB {
+    pub async fn username_exists(&self, username: &str) -> Result<bool, DatabaseError> {
+        let query = "SELECT id FROM users WHERE username = ?";
+        let mut statement = self.session.statement(query);
+        statement.bind_string(0, username)?;
+        
+        let user_exists: bool = match statement.execute().await {
+            Ok(result) => result.first_row().is_some(),
+            Err(err) => {
+                return Err(DatabaseError::from(err));
+            }
+        };
+        
+        Ok(user_exists)
+    }
+
+    pub async fn user_id_exists(&self, user_id: i32) -> Result<bool, DatabaseError> {
+        let query = "SELECT id FROM users WHERE id = ?";
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, user_id)?;
+        
+        let user_exists: bool = match statement.execute().await {
+            Ok(result) => result.first_row().is_some(),
+            Err(err) => {
+                return Err(DatabaseError::from(err));
+            }
+        };
+        
+        Ok(user_exists)
+    }
+
     // Register the user in database. Returns `user_id` and `session_id` if successfull
     pub async fn register(
         &self,
@@ -62,18 +88,10 @@ impl UsersDB {
         username: &str,
         password_hash: &str,
     ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError> {
-        let query = "SELECT id FROM users WHERE username = ?";
-        let mut statement = self.session.statement(query);
-        statement.bind_string(0, username)?;
+        validate::validate_name(name)?;
+        validate::validate_username(username)?;
 
-        let user_exists: bool = match statement.execute().await {
-            Ok(result) => result.first_row().is_some(),
-            Err(err) => {
-                return Err(DatabaseError::from(err));
-            }
-        };
-
-        if user_exists {
+        if self.username_exists(username).await? {
             return Err(DatabaseError::from("Username already taken"));
         }
 
@@ -92,8 +110,8 @@ impl UsersDB {
         statement.execute().await?;
 
         match self.create_session(user_id).await {
-            Ok(session_id) => return Ok((user_id, session_id)),
-            Err(err) => return Err(DatabaseError::from(err)),
+            Ok(session_id) => Ok((user_id, session_id)),
+            Err(err) => Err(err),
         }
     }
 
@@ -110,8 +128,8 @@ impl UsersDB {
             match statement.execute().await {
                 Ok(result) => match result.first_row() {
                     Some(row) => {
-                        let user_id: i32 = row.get(0).unwrap_or_default();
-                        let stored_password_hash: String = row.get(1).unwrap_or_default();
+                        let user_id: i32 = row.get(0)?;
+                        let stored_password_hash: String = row.get(1)?;
                         (Some(user_id), Some(stored_password_hash))
                     }
                     None => (None, None),
@@ -127,13 +145,13 @@ impl UsersDB {
             }
 
             match self.create_session(user_id).await {
-                Ok(session_id) => return Ok((user_id, session_id)),
-                Err(err) => return Err(DatabaseError::from(err)),
+                Ok(session_id) => Ok((user_id, session_id)),
+                Err(err) => Err(err),
             }
         } else {
-            return Err(DatabaseError::from(
+            Err(DatabaseError::from(
                 "User with the given credentials not found!",
-            ));
+            ))
         }
     }
 
@@ -141,21 +159,15 @@ impl UsersDB {
         &self,
         user_id: i32,
         session_id: &str,
-        password_hash: &str,
     ) -> std::result::Result<(), DatabaseError> {
-        let query = "SELECT password_hash, sessions FROM users WHERE id = ?";
+        let query = "SELECT sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
 
-        let (id, stored_password_hash, sessions): (
-            Option<i32>,
-            Option<String>,
-            Option<Vec<String>>,
-        ) = match statement.execute().await {
+        let sessions = match statement.execute().await {
             Ok(result) => {
                 if let Some(row) = result.first_row() {
-                    let stored_password_hash: String = row.get(0).unwrap_or_default();
-                    let result: cassandra_cpp::Result<cassandra_cpp::SetIterator> = row.get(1);
+                    let result: cassandra_cpp::Result<cassandra_cpp::SetIterator> = row.get(0);
 
                     let mut o: Vec<String> = Vec::with_capacity(3);
                     if let Ok(mut sessions) = result {
@@ -164,9 +176,9 @@ impl UsersDB {
                         }
                     }
 
-                    (Some(user_id), Some(stored_password_hash), Some(o))
+                    o
                 } else {
-                    (None, None, None)
+                    return Err(DatabaseError::from("User not found"))
                 }
             }
             Err(err) => {
@@ -175,29 +187,14 @@ impl UsersDB {
             }
         };
 
-        if let (Some(id), Some(stored_password_hash), Some(sessions)) =
-            (id, stored_password_hash, sessions)
+        if !sessions.is_empty()
         {
-            if stored_password_hash != password_hash {
-                return Err(DatabaseError::from("Invalid password"));
+            if !sessions.iter().any(|s| s == session_id) {
+                return Err(DatabaseError::from("Invalid session"));
             }
-
-            if id != user_id {
-                return Err(DatabaseError::from("User Id wasn't found!"));
-            }
-
-            if sessions.iter().find(|&s| s == session_id).is_none() {
-                return Err(DatabaseError::from(
-                    "Your Session isn't valid. Please log in again",
-                ));
-            }
-
-            Ok(())
-        } else {
-            return Err(DatabaseError::from(
-                "User with the given credentials not found!",
-            ));
         }
+
+        Ok(())
     }
 
     async fn create_session(&self, user_id: i32) -> std::result::Result<String, DatabaseError> {
@@ -217,9 +214,9 @@ impl UsersDB {
 
                 let mut iter = result.iter();
                 while let Some(row) = iter.next() {
-                    let res: cassandra_cpp::Result<cassandra_cpp::SetIterator> = row.get(0);
+                    let sessions: cassandra_cpp::Result<SetIterator> = row.get(0);
 
-                    if let Ok(mut sessions) = res {
+                    if let Ok(mut sessions) = sessions {
                         while let Some(session) = sessions.next() {
                             o.push_within_capacity(session.to_string()).unwrap();
                         }
@@ -233,7 +230,7 @@ impl UsersDB {
             }
         };
 
-        // If session exceed the maximum size, delete the first one
+        // If sessions array exceeds the maximum size, delete the first one
         if existing_sessions.len() == 3 {
             existing_sessions.drain(..1);
         }
@@ -253,9 +250,7 @@ impl UsersDB {
 
         match statement.execute().await {
             Ok(_) => Ok(new_session),
-            Err(err) => {
-                return Err(DatabaseError::from(err));
-            }
+            Err(err) => Err(DatabaseError::from(err)),
         }
     }
 
@@ -277,4 +272,75 @@ impl UsersDB {
         }
     }
 
+    pub async fn fetch_chats(&self, user_id: i32) -> Result<Vec<i32 /* chat_id */>, DatabaseError> {
+        let query = "SELECT chats FROM users WHERE id = ?";
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, user_id)?;
+
+        match statement.execute().await {
+            Ok(result) => {
+                let mut o: Vec<i32> = vec![];
+
+                let mut iter = result.iter();
+                while let Some(row) = iter.next() {
+                    let chats: cassandra_cpp::Result<SetIterator> = row.get(0);
+
+                    if let Ok(mut chats) = chats {
+                        while let Some(chat) = chats.next() {
+                            o.push(chat.get_i32()?);
+                        }
+                    }
+                }
+
+                Ok(o)
+            }
+            Err(err) => Err(DatabaseError::from(err)),
+        }
+    }
+
+    pub async fn add_chat(&self, user_id: i32, chat_id: i32) -> Result<(), DatabaseError> {
+        let query = "SELECT chats FROM users WHERE id = ?";
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, user_id)?;
+    
+        let mut chats: Vec<i32> = match statement.execute().await {
+            Ok(result) => {
+                let mut o: Vec<i32> = vec![];
+                if let Some(row) = result.first_row() {
+                    let chat_set: cassandra_cpp::Result<SetIterator> = row.get(0);
+                    if let Ok(mut chat_set) = chat_set {
+                        while let Some(chat) = chat_set.next() {
+                            o.push(chat.get_i32()?);
+                        }
+                    }
+                }
+                o
+            }
+            Err(err) => return Err(DatabaseError::from(err)),
+        };
+    
+        if !chats.contains(&chat_id) {
+            chats.push(chat_id);
+        }
+    
+        let query = "UPDATE users SET chats = ? WHERE id = ?";
+        let mut statement = self.session.statement(query);
+    
+        let mut updated_chats = cassandra_cpp::List::new();
+        for chat in chats {
+            updated_chats.append_int32(chat)?;
+        }
+    
+        statement.bind_list(0, updated_chats)?;
+        statement.bind_int32(1, user_id)?;
+    
+        statement.execute().await?;
+
+        Ok(())
+    }
+    
+
+    // pub async fn fetch_user() -> Result<UserInfo, DatabaseError> {
+
+    // }
 }

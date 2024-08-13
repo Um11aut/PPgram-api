@@ -12,7 +12,7 @@ pub struct Session {
     session_id: Option<String>,
     user_id: Option<i32>,
     ip_addr: SocketAddr,
-    msg_sender: mpsc::Sender<String>
+    sender: mpsc::Sender<String>
 }
 
 impl Hash for Session {
@@ -30,19 +30,19 @@ impl PartialEq for Session {
 impl Eq for Session {}
 
 impl Session {
-    pub fn new(ip_addr: SocketAddr, msg_sender: mpsc::Sender<String>) -> Session {
+    pub fn new(ip_addr: SocketAddr, sender: mpsc::Sender<String>) -> Session {
         Session {
             session_id: None,
             user_id: None,
             ip_addr,
-            msg_sender
+            sender
         }
     }
 
     pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), DatabaseError>
     {
         let db = USERS_DB.get().unwrap();
-        match db.authenticate(msg.user_id, &msg.session_id, &msg.password_hash).await {
+        match db.authenticate(msg.user_id, &msg.session_id).await {
             Ok(_) => {
                 self.session_id = Some(msg.session_id);
                 self.user_id = Some(msg.user_id);
@@ -88,7 +88,7 @@ impl Session {
     }
 
     pub async fn send(&self, message: String) {
-        self.msg_sender.send(message).await.unwrap();
+        self.sender.send(message).await.unwrap();
     } 
 
     // `(i32, String)` -> user_id, session_id 
