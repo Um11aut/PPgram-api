@@ -15,7 +15,7 @@ RUN apt-get -qq update && \
 WORKDIR /usr/src/app
 
 COPY Cargo.toml Cargo.lock ./
-COPY . .
+ADD . .
 
 RUN cargo build --release
 

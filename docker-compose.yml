@@ -33,6 +33,8 @@ services:
     stdin_open: true
     tty: true
     command: ["bash"]
+    volumes:
+      - .:/usr/src/app/
 
 volumes:
   cassandra_data:

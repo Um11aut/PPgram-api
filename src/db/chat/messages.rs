@@ -4,7 +4,6 @@ use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use log::{error, info};
 use rand::{distributions::Alphanumeric, Rng};
-use std::os::linux::raw::stat;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -14,8 +13,6 @@ use crate::db::db::Database;
 use crate::db::internal::error::DatabaseError;
 use crate::server::message::types::message::MessageContent;
 use crate::server::message::types::message::RequestMessage;
-
-use super::chats::CHATS_DB;
 
 pub(crate) static MESSAGES_DB: OnceCell<MessagesDB> = OnceCell::const_new();
 
@@ -61,7 +58,13 @@ impl MessagesDB {
         msg: &RequestMessage,
         sender_id: i32,
     ) -> Result<(), DatabaseError> {
-        let insert_query = "INSERT INTO messages (id, is_unread, from_id, chat_id, date, has_reply, reply_to, has_content, content, has_media, media_data, media_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        let insert_query = r#"
+            INSERT INTO messages 
+                (id, is_unread, from_id, chat_id, date, has_reply,
+                reply_to, has_content, content, 
+                has_media, media_data, media_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#;
 
         let mut statement = self.session.statement(&insert_query);
 
