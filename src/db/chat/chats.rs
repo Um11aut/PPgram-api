@@ -67,9 +67,9 @@ impl ChatsDB {
     }
 
     pub async fn add_participant(&self, chat_id: i32, participant: i32 /* user_id */) -> Result<(), DatabaseError> {
-        let current_participants = self.fetch_participants(chat_id).await?;
+        let current = self.fetch_chat_info(chat_id).await?;
 
-        let is_group = current_participants.len() + 1 > 2;
+        let is_group = current.participants.len() + 1 > 2;
 
         let update_query = "UPDATE chats SET participants = participants + ? WHERE id = ?;";
         
@@ -94,8 +94,8 @@ impl ChatsDB {
         Ok(())
     }
 
-    pub async fn fetch_participants(&self, chat_id: i32) -> Result<Vec<i32>, DatabaseError> {
-        let select_query = "SELECT participants FROM chats WHERE id = ?";
+    pub async fn fetch_chat_info(&self, chat_id: i32) -> Result<ChatInfo, DatabaseError> {
+        let select_query = "SELECT * FROM chats WHERE id = ?";
 
         let mut statement = self.session.statement(&select_query);
         statement.bind_int32(0, chat_id)?;
@@ -103,16 +103,20 @@ impl ChatsDB {
         match statement.execute().await {
             Ok(result) => {
                 if let Some(row) = result.first_row() {
-                    let participants: cassandra_cpp::Result<SetIterator> = row.get(0);
+                    let chat_id: i32 = row.get_by_name("id")?;
+                    let is_group: bool = row.get_by_name("is_group")?;
 
-                    let mut p: Vec<i32> = vec![];
-                    if let Ok(mut participants) = participants {
-                        while let Some(participant) = participants.next() {
-                            p.push(participant.get_i32()?);
-                        }
+                    let mut iter: SetIterator = row.get_by_name("participants")?;
+                    let mut participants: Vec<i32> = vec![];
+                    while let Some(participant) = iter.next() {
+                        participants.push(participant.get_i32()?);
                     } 
 
-                    return Ok(p)
+                    return Ok(ChatInfo {
+                        chat_id,
+                        is_group,
+                        participants
+                    })
                 }
                 return Err(DatabaseError::from("Given chat_id not found"))
             },

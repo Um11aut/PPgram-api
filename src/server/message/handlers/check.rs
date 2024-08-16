@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::json;
 use tokio::io::AsyncWriteExt;
 
 use crate::{db::user::USERS_DB, server::message::{builder::Message, handler::RequestMessageHandler, types::{error::error::PPgramError, fetch::check::CheckUsernameRequestMessage}}};
