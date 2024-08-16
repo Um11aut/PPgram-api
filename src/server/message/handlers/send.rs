@@ -30,8 +30,8 @@ async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i
 
     let chats_db = CHATS_DB.get().unwrap();
     for chat_id in chat_ids {
-        let participants = chats_db.fetch_participants(chat_id).await?;
-        if participants.iter().any(|&participant| participant == target_user_id) {
+        let chat_info = chats_db.fetch_chat_info(chat_id).await?;
+        if chat_info.participants.iter().any(|&participant| participant == target_user_id) {
             return Ok(Some(chat_id));
         }
     }

@@ -16,7 +16,7 @@ async fn init<T: Database>(db: &OnceCell<T>, session: Arc<cassandra_cpp::Session
     db.get().unwrap().create_table().await.unwrap();
 }
 
-pub async fn init_dbs() {
+async fn create_connection() -> Arc<cassandra_cpp::Session> {
     let contact_points = std::env::var("CASSANDRA_HOST").unwrap_or(String::from("127.0.0.1"));
 
     let mut cluster = cassandra_cpp::Cluster::default();
@@ -42,8 +42,11 @@ pub async fn init_dbs() {
         .unwrap();
     session.execute("USE main_keyspace").await.unwrap();
 
-    let session = Arc::new(session);
-    init(&USERS_DB, Arc::clone(&session)).await;
-    init(&CHATS_DB, Arc::clone(&session)).await;
-    init(&MESSAGES_DB, Arc::clone(&session)).await;
+    Arc::new(session)
+}
+
+pub async fn init_dbs() {
+    init(&USERS_DB, create_connection().await).await;
+    init(&CHATS_DB, create_connection().await).await;
+    init(&MESSAGES_DB, create_connection().await).await;
 }
