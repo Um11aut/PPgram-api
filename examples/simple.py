@@ -54,49 +54,46 @@ if __name__ == "__main__":
         # Connect the socket to the server
         sock.connect(server_address)
 
-        check_message = {
-            "method": "fetch",
-            "what": "check_username",
-            "data": "@fksdfdfdsjfs"
-        }
-
-        res = send_message(sock, check_message)
-        print('Login Response:', res)
-
-        check_message = {
-            "method": "fetch",
-            "what": "check_username",
-            "data": "@fsdfs"
-        }
-
-        res = send_message(sock, check_message)
-        print('Login Response:', res)
-
         # Define the messages as dictionaries
         login_message = {
             "method": "login",
-            "username": "@fksdfdfdsjfs",
-            "name": "pepuk Pidar",
-            "session_id": "lgTRrhNI0F2aRZ1NE65JPpq0Gfnzoc",
-            "user_id": 2042059066,
+            "username": "@pavlo",
+            "name": "Pavlo Alpha",
+            "user_id": -100878589,
             "password_hash": "asd"
         }
 
         send_message_dict = {
             "method": "send_message",
-            "to": 778573147,
+            "to": -100878589,
             "has_reply": False,
-            "reply_to": 123,
+            "reply_to": 0,
             "content": {
                 "text": "Pepuk pidar"
             }
         }
 
+        check_message = {
+            "method": "check",
+            "what": "username",
+            "data": "@pepuk"
+        }
         # Send the login message
         login_response = send_message(sock, login_message)
         print('Login Response:', login_response)
 
+        res = send_message(sock, check_message)
+        print('Check Response:', res)
+
         # Send another message
+        send_message_response = send_message(sock, send_message_dict)
+        print('Send Message Response:', send_message_response)
+        send_message_response = send_message(sock, send_message_dict)
+        print('Send Message Response:', send_message_response)
+        send_message_response = send_message(sock, send_message_dict)
+        print('Send Message Response:', send_message_response)
+        send_message_response = send_message(sock, send_message_dict)
+        print('Send Message Response:', send_message_response)
         send_message_response = send_message(sock, send_message_dict)
         print('Send Message Response:', send_message_response)
 

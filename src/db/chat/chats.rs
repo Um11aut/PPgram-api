@@ -114,7 +114,7 @@ impl ChatsDB {
 
                     return Ok(p)
                 }
-                return Err(DatabaseError::from("chat_id not found"))
+                return Err(DatabaseError::from("Given chat_id not found"))
             },
             Err(err) => return Err(DatabaseError::from(err))
         }

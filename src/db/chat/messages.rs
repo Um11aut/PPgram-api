@@ -57,6 +57,7 @@ impl MessagesDB {
         &self,
         msg: &RequestMessage,
         sender_id: i32,
+        target_chat_id: i32
     ) -> Result<(), DatabaseError> {
         let insert_query = r#"
             INSERT INTO messages 
@@ -68,7 +69,7 @@ impl MessagesDB {
 
         let mut statement = self.session.statement(&insert_query);
 
-        match self.get_latest(msg.common.to).await? {
+        match self.get_latest(target_chat_id).await? {
             Some(id) => {
                 statement.bind_int32(0, id + 1)?;
             }
@@ -79,7 +80,7 @@ impl MessagesDB {
 
         statement.bind_bool(1, true)?;
         statement.bind_int32(2, sender_id)?;
-        statement.bind_int32(3, msg.common.to)?;
+        statement.bind_int32(3, target_chat_id)?;
         statement.bind_int64(
             4,
             SystemTime::now()

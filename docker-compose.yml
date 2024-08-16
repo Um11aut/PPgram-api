@@ -35,6 +35,7 @@ services:
     command: ["bash"]
     volumes:
       - .:/usr/src/app/
+      - /usr/src/app/target
 
 volumes:
   cassandra_data:
