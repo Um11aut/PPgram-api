@@ -83,12 +83,20 @@ if __name__ == "__main__":
         login_response = send_message(sock, login_message)
         print('Login Response:', login_response)
 
-        fetch_chats = {
+        fetch = {
             "method": "fetch",
             "what": "chats",
         }
 
-        res = send_message(sock, fetch_chats)
+        res = send_message(sock, fetch)
+        print('Fetching result', res)
+
+        fetch = {
+            "method": "fetch",
+            "what": "self",
+        }
+
+        res = send_message(sock, fetch)
         print('Fetching result', res)
 
         res = send_message(sock, check_message)

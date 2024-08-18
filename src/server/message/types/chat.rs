@@ -10,7 +10,7 @@ pub(crate) struct ChatDetails {
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct ResponseChatsDetails {
     pub(crate) method: String,
-    pub(crate) chats: Vec<ChatDetails>,
+    pub(crate) response: Vec<ChatDetails>,
 }
 
 #[derive(Debug)]

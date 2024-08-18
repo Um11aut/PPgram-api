@@ -19,7 +19,7 @@ use crate::db::db::Database;
 use crate::db::user::USERS_DB;
 use crate::server::message::types::chat::Chat;
 use crate::server::message::types::chat::ChatDetails;
-use crate::server::message::types::user::UserInfo;
+use crate::server::message::types::user::UserDetails;
 
 pub(crate) static CHATS_DB: OnceCell<ChatsDB> = OnceCell::const_new();
 

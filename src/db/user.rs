@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-use crate::server::message::types::user::UserInfo;
+use crate::server::message::types::user::UserDetails;
 use crate::server::session;
 
 use super::db::Database;
@@ -342,7 +342,7 @@ impl UsersDB {
     }
     
 
-    pub async fn fetch_user(&self, user_id: i32) -> Result<Option<UserInfo>, PPError> {
+    pub async fn fetch_user(&self, user_id: i32) -> Result<Option<UserDetails>, PPError> {
         let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
@@ -355,7 +355,7 @@ impl UsersDB {
             let photo: Vec<u8> = row.get(2)?;
             let username: String = row.get(3)?;
 
-            return Ok(Some(UserInfo{
+            return Ok(Some(UserDetails{
                 name,
                 user_id,
                 username,
