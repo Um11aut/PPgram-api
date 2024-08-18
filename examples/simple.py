@@ -57,7 +57,7 @@ if __name__ == "__main__":
         # Define the messages as dictionaries
         login_message = {
             "method": "login",
-            "username": "@pepuk",
+            "username": "@pavlo",
             "name": "Pepuk Alpha",
             "user_id": -100878589,
             "password_hash": "asd"

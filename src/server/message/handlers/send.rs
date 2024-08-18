@@ -4,14 +4,14 @@ use tokio::{io::AsyncWriteExt, sync::Mutex};
 use crate::{
     db::{
         chat::{chats::CHATS_DB, messages::MESSAGES_DB},
-        internal::error::DatabaseError,
+        internal::error::PPError,
         user::USERS_DB,
     },
     server::{
         message::{
             builder::Message,
             handler::RequestMessageHandler,
-            types::{error::error::PPgramError, message::RequestMessage},
+            types::{error::error::PPErrorSender, message::RequestMessage},
         },
         server::Connections,
         session::Session,
@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// It goes through all the registered to user chats and finds the target id 
 /// 
 /// TODO: Fully remake this system, because it may significantly affect performance
-async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i32>, DatabaseError> {
+async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i32>, PPError> {
     let users_db = USERS_DB.get().unwrap();
     let (self_user_id, _) = session.get_credentials().unwrap();
     let chat_ids = users_db.fetch_chats(self_user_id).await?;
@@ -45,8 +45,12 @@ async fn handle_send_message(
     session: &Session,
     msg: RequestMessage,
     connections: Connections,
-) -> Result<(), DatabaseError> {
+) -> Result<(), PPError> {
     let (user_id, _) = session.get_credentials().unwrap();
+
+    if user_id == msg.common.to {
+        return Err(PPError::from("You cannot send messages on yourself!"));
+    }
 
     let target_chat_id = match find_chat_id(session, msg.common.to).await? {
         Some(existing_chat_id) => {
@@ -58,7 +62,7 @@ async fn handle_send_message(
             let users_db = USERS_DB.get().unwrap();
 
             if !users_db.user_id_exists(msg.common.to).await? {
-                return Err(DatabaseError::from("Target user_id doesn't exist!"));
+                return Err(PPError::from("Target user_id doesn't exist!"));
             }
 
             let chat_id = CHATS_DB
@@ -89,7 +93,7 @@ async fn handle_send_message(
 pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
     let session = handler.session.lock().await;
     if !session.is_authenticated() {
-        PPgramError::send(
+        PPErrorSender::send(
             method,
             "You aren't authenticated!",
             Arc::clone(&handler.writer),
@@ -119,10 +123,10 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
                     Err(err) => {err.safe_send(method, Arc::clone(&handler.writer)).await;},
                 }
             }
-            _ => PPgramError::send(method, "Unknown method!", Arc::clone(&handler.writer)).await,
+            _ => PPErrorSender::send(method, "Unknown method!", Arc::clone(&handler.writer)).await,
         },
         Err(err) => {
-            PPgramError::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
+            PPErrorSender::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
         }
     }
 }

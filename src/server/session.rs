@@ -2,7 +2,7 @@ use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
 use log::{error, info};
 
-use crate::db::{internal::error::DatabaseError, user::USERS_DB};
+use crate::db::{internal::error::PPError, user::USERS_DB};
 
 use super::message::types::authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 use tokio::sync::mpsc;
@@ -39,7 +39,7 @@ impl Session {
         }
     }
 
-    pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), DatabaseError>
+    pub async fn auth(&mut self, msg: RequestAuthMessage) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
         match db.authenticate(msg.user_id, &msg.session_id).await {
@@ -55,7 +55,7 @@ impl Session {
         Ok(())
     }
 
-    pub async fn login(&mut self, msg: RequestLoginMessage) -> Result<(), DatabaseError>
+    pub async fn login(&mut self, msg: RequestLoginMessage) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
         match db.login(&msg.username, &msg.password_hash).await {
@@ -71,7 +71,7 @@ impl Session {
         Ok(())
     }
 
-    pub async fn register(&mut self, msg: RequestRegisterMessage) -> Result<(), DatabaseError>
+    pub async fn register(&mut self, msg: RequestRegisterMessage) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
         match db.register(&msg.name, &msg.username, &msg.password_hash).await {

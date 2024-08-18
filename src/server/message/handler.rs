@@ -13,7 +13,7 @@ use crate::server::server::Connections;
 use crate::server::session::Session;
 use crate::server::message::types::{
     authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, message::{MessageContent, RequestMessage},
-    error::error::{PPgramError}
+    error::error::{PPErrorSender}
 };
 
 use super::builder::Message;
@@ -39,7 +39,7 @@ impl RequestMessageHandler {
     }
 
     async fn send_error<T: Into<Cow<'static, str>>>(&self, method: &str, what: T) {
-        PPgramError::send(method, what, Arc::clone(&self.writer)).await;
+        PPErrorSender::send(method, what, Arc::clone(&self.writer)).await;
     }
 
     async fn handle_message(&mut self) {

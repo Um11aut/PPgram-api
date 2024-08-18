@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
 
-use crate::{db::user::USERS_DB, server::message::{builder::Message, handler::RequestMessageHandler, types::{error::error::PPgramError, fetch::check::CheckUsernameRequestMessage}}};
+use crate::{db::user::USERS_DB, server::message::{builder::Message, handler::RequestMessageHandler, types::{error::error::PPErrorSender, fetch::check::CheckUsernameRequestMessage}}};
 
 async fn check_username(username: &str, handler: &mut RequestMessageHandler) {
     match USERS_DB.get().unwrap().username_exists(username).await {
@@ -33,7 +33,7 @@ async fn check_username(username: &str, handler: &mut RequestMessageHandler) {
                 .unwrap();
         }
         Err(err) => {
-            PPgramError::send("check", err.to_string(), Arc::clone(&handler.writer)).await;
+            PPErrorSender::send("check", err.to_string(), Arc::clone(&handler.writer)).await;
         }
     }
 }
@@ -45,7 +45,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str)
             check_username(&msg.data, handler).await;
         },
         Err(err) => {
-            PPgramError::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
+            PPErrorSender::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
         },
     }
 }

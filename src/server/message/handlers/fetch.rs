@@ -3,7 +3,7 @@ use serde::de;
 use serde_json::Value;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 
-use crate::{db::{chat::chats::CHATS_DB, internal::error::DatabaseError, user::USERS_DB}, server::message::{builder::Message, handler::RequestMessageHandler, types::{chat::{Chat, ChatDetails, ResponseChatsDetails}, error::error::PPgramError, user::UserInfo}}};
+use crate::{db::{chat::chats::CHATS_DB, internal::error::PPError, user::USERS_DB}, server::message::{builder::Message, handler::RequestMessageHandler, types::{chat::{Chat, ChatDetails, ResponseChatsDetails}, error::error::PPErrorSender, user::UserInfo}}};
 use crate::server::session::Session;
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str)
 {
     {
         if !handler.session.lock().await.is_authenticated() {
-            PPgramError::send(method, "You aren't authenticated!", Arc::clone(&handler.writer)).await;
+            PPErrorSender::send(method, "You aren't authenticated!", Arc::clone(&handler.writer)).await;
             return;
         }
     }
@@ -55,22 +55,22 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str)
                                 let details = serde_json::to_string(&details).unwrap();
                                 handler.writer.lock().await.write_all(Message::build_from(details).packed().as_bytes()).await.unwrap();
                             } else {
-                                PPgramError::send(method, "Failed to fetch chat details!", Arc::clone(&handler.writer)).await;
+                                PPErrorSender::send(method, "Failed to fetch chat details!", Arc::clone(&handler.writer)).await;
                             }
                         }
                         _ => {
-                            PPgramError::send(method, "Unknown 'what' field!", Arc::clone(&handler.writer)).await;
+                            PPErrorSender::send(method, "Unknown 'what' field!", Arc::clone(&handler.writer)).await;
                         }
                     }
                 } else {
-                    PPgramError::send(method, "'what' field must be string!", Arc::clone(&handler.writer)).await;
+                    PPErrorSender::send(method, "'what' field must be string!", Arc::clone(&handler.writer)).await;
                 }
             } else {
-                PPgramError::send(method, "Failed to get 'what' field!", Arc::clone(&handler.writer)).await;
+                PPErrorSender::send(method, "Failed to get 'what' field!", Arc::clone(&handler.writer)).await;
             }
         },
         Err(err) => {
-            PPgramError::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
+            PPErrorSender::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
         }
     }     
 }

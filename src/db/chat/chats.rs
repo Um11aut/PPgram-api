@@ -12,7 +12,7 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::OnceCell;
 
-use db::internal::error::DatabaseError;
+use db::internal::error::PPError;
 
 use crate::db;
 use crate::db::db::Database;
@@ -34,7 +34,7 @@ impl Database for ChatsDB {
         }
     }
 
-    async fn create_table(&self) -> Result<(), DatabaseError> {
+    async fn create_table(&self) -> Result<(), PPError> {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS chats (
                 id int PRIMARY KEY,
@@ -50,7 +50,7 @@ impl Database for ChatsDB {
 }
 
 impl ChatsDB {
-    pub async fn create_chat(&self, participants: Vec<i32/* user_id */>) -> Result<i32 /* chat_id */, DatabaseError> {
+    pub async fn create_chat(&self, participants: Vec<i32/* user_id */>) -> Result<i32 /* chat_id */, PPError> {
         let chat_id = rand::random::<i32>();
         let insert_query = "INSERT INTO chats (id, is_group, participants) VALUES (?, ?, ?)";
 
@@ -64,12 +64,12 @@ impl ChatsDB {
         }
         statement.bind_list(2, list)?;
 
-        statement.execute().await.map_err(DatabaseError::from)?;
+        statement.execute().await.map_err(PPError::from)?;
 
         Ok(chat_id)
     }
 
-    pub async fn add_participant(&self, chat_id: i32, participant: i32 /* user_id */) -> Result<(), DatabaseError> {
+    pub async fn add_participant(&self, chat_id: i32, participant: i32 /* user_id */) -> Result<(), PPError> {
         let current = self.fetch_chat_info(chat_id).await?;
 
         let is_group = current.participants.len() + 1 > 2;
@@ -82,7 +82,7 @@ impl ChatsDB {
         statement.bind_list(0, list)?;
         statement.bind_int32(1, chat_id)?;
 
-        statement.execute().await.map_err(DatabaseError::from)?;
+        statement.execute().await.map_err(PPError::from)?;
 
         if !is_group {
             let update_is_group_query = "UPDATE chats SET is_group = ? WHERE id = ?;";
@@ -91,13 +91,13 @@ impl ChatsDB {
             statement.bind_bool(0, false)?;
             statement.bind_int32(1, chat_id)?;
             
-            statement.execute().await.map_err(DatabaseError::from)?;
+            statement.execute().await.map_err(PPError::from)?;
         }
 
         Ok(())
     }
 
-    pub async fn fetch_chat_info(&self, chat_id: i32) -> Result<Chat, DatabaseError> {
+    pub async fn fetch_chat_info(&self, chat_id: i32) -> Result<Chat, PPError> {
         let select_query = "SELECT * FROM chats WHERE id = ?";
 
         let mut statement = self.session.statement(&select_query);
@@ -121,14 +121,14 @@ impl ChatsDB {
                         participants
                     })
                 }
-                return Err(DatabaseError::from("Given chat_id not found"))
+                return Err(PPError::from("Given chat_id not found"))
             },
-            Err(err) => return Err(DatabaseError::from(err))
+            Err(err) => return Err(PPError::from(err))
         }
     }
 
     /// Fetches chat details(`ResponseChatInfo`), which is photo, name of the chat, username, etc.
-    pub async fn fetch_chat_details(&self, me: i32, chat: &Chat) -> Result<Option<ChatDetails>, DatabaseError> {
+    pub async fn fetch_chat_details(&self, me: i32, chat: &Chat) -> Result<Option<ChatDetails>, PPError> {
         match chat.is_group {
             false => {
                 if let Some(&peer_id) = chat.participants.iter().find(|&&participant| participant != me) {

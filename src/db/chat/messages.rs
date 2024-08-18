@@ -10,7 +10,7 @@ use std::time::UNIX_EPOCH;
 use tokio::sync::OnceCell;
 
 use crate::db::db::Database;
-use crate::db::internal::error::DatabaseError;
+use crate::db::internal::error::PPError;
 use crate::server::message::types::message::MessageContent;
 use crate::server::message::types::message::RequestMessage;
 
@@ -27,7 +27,7 @@ impl Database for MessagesDB {
         }
     }
 
-    async fn create_table(&self) -> Result<(), DatabaseError> {
+    async fn create_table(&self) -> Result<(), PPError> {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS messages (
                 id int, 
@@ -58,7 +58,7 @@ impl MessagesDB {
         msg: &RequestMessage,
         sender_id: i32,
         target_chat_id: i32
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<(), PPError> {
         let insert_query = r#"
             INSERT INTO messages 
                 (id, is_unread, from_id, chat_id, date, has_reply,
@@ -106,7 +106,7 @@ impl MessagesDB {
         Ok(())
     }
 
-    pub async fn get_latest(&self, chat_id: i32) -> Result<Option<i32>, DatabaseError> {
+    pub async fn get_latest(&self, chat_id: i32) -> Result<Option<i32>, PPError> {
         let query = "SELECT id FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1";
 
         let mut statement = self.session.statement(&query);

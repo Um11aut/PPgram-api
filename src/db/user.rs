@@ -13,7 +13,7 @@ use crate::server::message::types::user::UserInfo;
 use crate::server::session;
 
 use super::db::Database;
-use super::internal::error::DatabaseError;
+use super::internal::error::PPError;
 use super::internal::validate;
 
 pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
@@ -27,7 +27,7 @@ impl Database for UsersDB {
         UsersDB { session }
     }
 
-    async fn create_table(&self) -> Result<(), DatabaseError> {
+    async fn create_table(&self) -> Result<(), PPError> {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS users (
                 id int PRIMARY KEY, 
@@ -52,7 +52,7 @@ impl Database for UsersDB {
 }
 
 impl UsersDB {
-    pub async fn username_exists(&self, username: &str) -> Result<bool, DatabaseError> {
+    pub async fn username_exists(&self, username: &str) -> Result<bool, PPError> {
         let query = "SELECT id FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username)?;
@@ -60,14 +60,14 @@ impl UsersDB {
         let user_exists: bool = match statement.execute().await {
             Ok(result) => result.first_row().is_some(),
             Err(err) => {
-                return Err(DatabaseError::from(err));
+                return Err(PPError::from(err));
             }
         };
         
         Ok(user_exists)
     }
 
-    pub async fn user_id_exists(&self, user_id: i32) -> Result<bool, DatabaseError> {
+    pub async fn user_id_exists(&self, user_id: i32) -> Result<bool, PPError> {
         let query = "SELECT id FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
@@ -75,7 +75,7 @@ impl UsersDB {
         let user_exists: bool = match statement.execute().await {
             Ok(result) => result.first_row().is_some(),
             Err(err) => {
-                return Err(DatabaseError::from(err));
+                return Err(PPError::from(err));
             }
         };
         
@@ -88,12 +88,12 @@ impl UsersDB {
         name: &str,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError> {
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), PPError> {
         validate::validate_name(name)?;
         validate::validate_username(username)?;
 
         if self.username_exists(username).await? {
-            return Err(DatabaseError::from("Username already taken"));
+            return Err(PPError::from("Username already taken"));
         }
 
         let user_id = rand::random::<i32>();
@@ -121,7 +121,7 @@ impl UsersDB {
         &self,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), DatabaseError> {
+    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), PPError> {
         let query = "SELECT id, password_hash FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username)?;
@@ -137,13 +137,13 @@ impl UsersDB {
                     None => (None, None),
                 },
                 Err(err) => {
-                    return Err(DatabaseError::from(err));
+                    return Err(PPError::from(err));
                 }
             };
 
         if let (Some(user_id), Some(stored_password_hash)) = (user_id, stored_password_hash) {
             if stored_password_hash != password_hash {
-                return Err(DatabaseError::from("Invalid password"));
+                return Err(PPError::from("Invalid password"));
             }
 
             match self.create_session(user_id).await {
@@ -151,7 +151,7 @@ impl UsersDB {
                 Err(err) => Err(err),
             }
         } else {
-            Err(DatabaseError::from(
+            Err(PPError::from(
                 "User with the given credentials not found!",
             ))
         }
@@ -161,7 +161,7 @@ impl UsersDB {
         &self,
         user_id: i32,
         session_id: &str,
-    ) -> std::result::Result<(), DatabaseError> {
+    ) -> std::result::Result<(), PPError> {
         let query = "SELECT sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
@@ -180,26 +180,26 @@ impl UsersDB {
 
                     o
                 } else {
-                    return Err(DatabaseError::from("User not found"))
+                    return Err(PPError::from("User not found"))
                 }
             }
             Err(err) => {
                 error!("{}", err);
-                return Err(DatabaseError::from(err));
+                return Err(PPError::from(err));
             }
         };
 
         if !sessions.is_empty()
         {
             if !sessions.iter().any(|s| s == session_id) {
-                return Err(DatabaseError::from("Invalid session"));
+                return Err(PPError::from("Invalid session"));
             }
         }
 
         Ok(())
     }
 
-    async fn create_session(&self, user_id: i32) -> Result<String, DatabaseError> {
+    async fn create_session(&self, user_id: i32) -> Result<String, PPError> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -228,7 +228,7 @@ impl UsersDB {
                 o
             }
             Err(err) => {
-                return Err(DatabaseError::from(err));
+                return Err(PPError::from(err));
             }
         };
 
@@ -252,7 +252,7 @@ impl UsersDB {
 
         match statement.execute().await {
             Ok(_) => Ok(new_session),
-            Err(err) => Err(DatabaseError::from(err)),
+            Err(err) => Err(PPError::from(err)),
         }
     }
 
@@ -260,7 +260,7 @@ impl UsersDB {
         &self,
         user_id: i32,
         photo: T,
-    ) -> std::result::Result<(), DatabaseError> {
+    ) -> std::result::Result<(), PPError> {
         let query = "UPDATE users SET photo = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
         let photo = photo.into().to_vec();
@@ -270,11 +270,11 @@ impl UsersDB {
 
         match statement.execute().await {
             Ok(_) => Ok(()),
-            Err(err) => Err(DatabaseError::from(err)),
+            Err(err) => Err(PPError::from(err)),
         }
     }
 
-    pub async fn fetch_chats(&self, user_id: i32) -> Result<Vec<i32 /* chat_id */>, DatabaseError> {
+    pub async fn fetch_chats(&self, user_id: i32) -> Result<Vec<i32 /* chat_id */>, PPError> {
         let query = "SELECT chats FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
@@ -296,11 +296,11 @@ impl UsersDB {
 
                 Ok(o)
             }
-            Err(err) => Err(DatabaseError::from(err)),
+            Err(err) => Err(PPError::from(err)),
         }
     }
 
-    pub async fn add_chat(&self, user_id: i32, chat_id: i32) -> Result<(), DatabaseError> {
+    pub async fn add_chat(&self, user_id: i32, chat_id: i32) -> Result<(), PPError> {
         let query = "SELECT chats FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
@@ -318,7 +318,7 @@ impl UsersDB {
                 }
                 o
             }
-            Err(err) => return Err(DatabaseError::from(err)),
+            Err(err) => return Err(PPError::from(err)),
         };
     
         if !chats.contains(&chat_id) {
@@ -342,7 +342,7 @@ impl UsersDB {
     }
     
 
-    pub async fn fetch_user(&self, user_id: i32) -> Result<Option<UserInfo>, DatabaseError> {
+    pub async fn fetch_user(&self, user_id: i32) -> Result<Option<UserInfo>, PPError> {
         let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;

@@ -4,11 +4,11 @@ use tokio::sync::OnceCell;
 
 use log::error;
 
-use super::{chat::{chats::CHATS_DB, messages::MESSAGES_DB}, internal::error::DatabaseError, user::USERS_DB};
+use super::{chat::{chats::CHATS_DB, messages::MESSAGES_DB}, internal::error::PPError, user::USERS_DB};
 
 pub(crate) trait Database {
     async fn new(session: Arc<cassandra_cpp::Session>) -> Self;
-    async fn create_table(&self) -> Result<(), DatabaseError>;
+    async fn create_table(&self) -> Result<(), PPError>;
 }
 
 async fn init<T: Database>(db: &OnceCell<T>, session: Arc<cassandra_cpp::Session>) {
