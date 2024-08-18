@@ -17,8 +17,6 @@ WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
 ADD . .
 
-RUN cargo build --release
-
 ENV RUST_LOG=trace
 
 EXPOSE 8080

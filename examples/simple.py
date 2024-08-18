@@ -58,14 +58,14 @@ if __name__ == "__main__":
         login_message = {
             "method": "login",
             "username": "@pavlo",
-            "name": "Pavlo Alpha",
+            "name": "Pepuk Alpha",
             "user_id": -100878589,
             "password_hash": "asd"
         }
 
         send_message_dict = {
             "method": "send_message",
-            "to": -100878589,
+            "to": -1609472930,
             "has_reply": False,
             "reply_to": 0,
             "content": {
@@ -78,9 +78,35 @@ if __name__ == "__main__":
             "what": "username",
             "data": "@pepuk"
         }
+
         # Send the login message
         login_response = send_message(sock, login_message)
         print('Login Response:', login_response)
+
+        fetch = {
+            "method": "fetch",
+            "what": "chats",
+        }
+
+        res = send_message(sock, fetch)
+        print('Fetching result', res)
+
+        fetch = {
+            "method": "fetch",
+            "what": "user",
+            "username": "@pavlo"
+        }
+
+        res = send_message(sock, fetch)
+        print('Fetching result', res)
+
+        fetch = {
+            "method": "fetch",
+            "what": "self",
+        }
+
+        res = send_message(sock, fetch)
+        print('Fetching result', res)
 
         res = send_message(sock, check_message)
         print('Check Response:', res)

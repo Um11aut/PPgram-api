@@ -5,12 +5,12 @@ use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf, sync::Mutex};
 
 use crate::server::message::builder::Message;
 
-pub struct PPgramError {
+pub struct PPErrorSender {
     builder: Option<Message>,
     error: String,
 }
 
-impl PPgramError 
+impl PPErrorSender 
 {
     pub async fn send<T: Into<Cow<'static, str>>>(method: &str, what: T, writer: Arc<Mutex<OwnedWriteHalf>>) {
         let what: String = what.into().to_string();

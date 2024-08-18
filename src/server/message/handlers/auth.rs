@@ -1,7 +1,7 @@
 use std::{future::Future, sync::Arc};
 
 use crate::{
-    db::internal::error::DatabaseError,
+    db::internal::error::PPError,
     server::{
         message::{
             builder::Message,
@@ -10,7 +10,7 @@ use crate::{
                 authentication::message::{
                     RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage,
                 },
-                error::error::PPgramError,
+                error::error::PPErrorSender,
             },
         },
         session::Session,
@@ -28,10 +28,10 @@ async fn handle_auth_message<'a, T, Fut>(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     T: serde::de::DeserializeOwned,
-    Fut: Future<Output = Result<(), DatabaseError>>
+    Fut: Future<Output = Result<(), PPError>>
 {
     if session.is_authenticated() {
-        return Err(Box::new(DatabaseError::from(
+        return Err(Box::new(PPError::from(
             "You are already authenticated!",
         )));
     }
@@ -40,11 +40,11 @@ where
         Ok(auth_message) => match handler(session, auth_message).await {
             Ok(()) => {}
             Err(err) => match err {
-                DatabaseError::Cassandra(internal_err) => {
+                PPError::Cassandra(internal_err) => {
                     error!("{}", internal_err);
-                    return Err(Box::new(DatabaseError::from("Internal error.")));
+                    return Err(Box::new(PPError::from("Internal error.")));
                 }
-                DatabaseError::Client(_) => {
+                PPError::Client(_) => {
                     return Err(Box::new(err));
                 }
             },
@@ -56,7 +56,7 @@ where
 }
 
 pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
-    let builder = handler.builder.clone().unwrap();
+    let builder = handler.builder.as_ref().unwrap();
     let buffer = builder.content();
 
     let mut session = handler.session.lock().await;
@@ -90,7 +90,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
     };
 
     if let Err(err) = res {
-        PPgramError::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
+        PPErrorSender::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
         return;
     }
 

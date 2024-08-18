@@ -1,46 +1,69 @@
-use std::fmt::{self};
+use std::{fmt::{self}, sync::Arc};
+
+use log::error;
+use tokio::{net::tcp::OwnedWriteHalf, sync::Mutex};
+
+use crate::server::message::types::error::error::PPErrorSender;
 
 #[derive(Debug)]
-pub enum DatabaseError {
+pub enum PPError {
     Cassandra(cassandra_cpp::Error),
     Client(String)
 }
 
-unsafe impl Send for DatabaseError {}
-unsafe impl Sync for DatabaseError {}
+unsafe impl Send for PPError {}
+unsafe impl Sync for PPError {}
 
-impl fmt::Display for DatabaseError {
+impl fmt::Display for PPError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            DatabaseError::Cassandra(ref err) => write!(f, "{}", err),
-            DatabaseError::Client(ref msg) => write!(f, "{}", msg)
+            PPError::Cassandra(ref err) => write!(f, "{}", err),
+            PPError::Client(ref msg) => write!(f, "{}", msg)
         }
     }
 }
 
-impl std::error::Error for DatabaseError {
+impl std::error::Error for PPError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
-            DatabaseError::Cassandra(ref err) => Some(err),
-            DatabaseError::Client(_) => None,
+            PPError::Cassandra(ref err) => Some(err),
+            PPError::Client(_) => None,
         }
     }
 }
 
-impl From<cassandra_cpp::Error> for DatabaseError {
+impl From<cassandra_cpp::Error> for PPError {
     fn from(err: cassandra_cpp::Error) -> Self {
-        DatabaseError::Cassandra(err)
+        PPError::Cassandra(err)
     }
 }
 
-impl From<String> for DatabaseError {
+impl From<String> for PPError {
     fn from(err: String) -> Self {
-        DatabaseError::Client(err)
+        PPError::Client(err)
     }
 }
 
-impl From<&str> for DatabaseError {
+impl From<&str> for PPError {
     fn from(value: &str) -> Self {
-        DatabaseError::from(String::from(value))
+        PPError::from(String::from(value))
+    }
+}
+
+impl PPError {
+    /// if Cassandra error, writes error to console and sends 'Internal error.' to user.
+    /// 
+    /// if Client error, sends error to the client
+    pub async fn safe_send(&self, method: &str, writer: Arc<Mutex<OwnedWriteHalf>>) {
+        let err: String = match self {
+            PPError::Cassandra(internal) => {
+                error!("{}", internal);
+                "Internal error.".into()
+            }
+            PPError::Client(_) => {
+                self.to_string()
+            }
+        };
+        PPErrorSender::send(method, err, Arc::clone(&writer)).await;
     }
 }
