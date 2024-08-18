@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use serde::Serialize;
+
+#[derive(Serialize, Debug)]
 pub(crate) struct UserInfo {
     pub(crate) name: String,
     pub(crate) user_id: i32,

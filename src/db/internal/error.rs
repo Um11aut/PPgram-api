@@ -1,4 +1,9 @@
-use std::fmt::{self};
+use std::{fmt::{self}, sync::Arc};
+
+use log::error;
+use tokio::{net::tcp::OwnedWriteHalf, sync::Mutex};
+
+use crate::server::message::types::error::error::PPgramError;
 
 #[derive(Debug)]
 pub enum DatabaseError {
@@ -42,5 +47,23 @@ impl From<String> for DatabaseError {
 impl From<&str> for DatabaseError {
     fn from(value: &str) -> Self {
         DatabaseError::from(String::from(value))
+    }
+}
+
+impl DatabaseError {
+    /// if Cassandra error, writes error to console and sends 'Internal error.' to user.
+    /// 
+    /// if Client error, sends error to the client
+    pub async fn safe_send(&self, method: &str, writer: Arc<Mutex<OwnedWriteHalf>>) {
+        let err: String = match self {
+            DatabaseError::Cassandra(internal) => {
+                error!("{}", internal);
+                "Internal error.".into()
+            }
+            DatabaseError::Client(_) => {
+                self.to_string()
+            }
+        };
+        PPgramError::send(method, err, Arc::clone(&writer)).await;
     }
 }

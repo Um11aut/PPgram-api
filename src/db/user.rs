@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
+use crate::server::message::types::user::UserInfo;
 use crate::server::session;
 
 use super::db::Database;
@@ -81,7 +82,7 @@ impl UsersDB {
         Ok(user_exists)
     }
 
-    // Register the user in database. Returns `user_id` and `session_id` if successfull
+    /// Register the user in database. Returns `user_id` and `session_id` if successfull
     pub async fn register(
         &self,
         name: &str,
@@ -97,7 +98,7 @@ impl UsersDB {
 
         let user_id = rand::random::<i32>();
         let query = r#"
-            INSERT INTO users (id, name, username, password_hash, sessions) VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users (id, name, username, password_hash, sessions, photo) VALUES (?, ?, ?, ?, ?, ?)
         "#;
         let mut statement = self.session.statement(query);
 
@@ -106,6 +107,7 @@ impl UsersDB {
         statement.bind_string(2, username)?;
         statement.bind_string(3, password_hash)?;
         statement.bind_list(4, cassandra_cpp::List::new())?;
+        statement.bind_bytes(5, Vec::new())?;
 
         statement.execute().await?;
 
@@ -197,7 +199,7 @@ impl UsersDB {
         Ok(())
     }
 
-    async fn create_session(&self, user_id: i32) -> std::result::Result<String, DatabaseError> {
+    async fn create_session(&self, user_id: i32) -> Result<String, DatabaseError> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -340,7 +342,27 @@ impl UsersDB {
     }
     
 
-    // pub async fn fetch_user() -> Result<UserInfo, DatabaseError> {
+    pub async fn fetch_user(&self, user_id: i32) -> Result<Option<UserInfo>, DatabaseError> {
+        let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, user_id)?;
 
-    // }
+        let result = statement.execute().await?;
+        let row = result.first_row();
+        if let Some(row) = row {
+            let user_id: i32 = row.get(0)?;
+            let name: String = row.get(1)?;
+            let photo: Vec<u8> = row.get(2)?;
+            let username: String = row.get(3)?;
+
+            return Ok(Some(UserInfo{
+                name,
+                user_id,
+                username,
+                photo
+            }))
+        }
+
+        Ok(None)
+    }
 }

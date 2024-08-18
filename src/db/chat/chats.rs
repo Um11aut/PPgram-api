@@ -4,6 +4,7 @@ use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::SetIterator;
 use cassandra_cpp::TimestampGen;
+use log::debug;
 use log::{error, info};
 use rand::{distributions::Alphanumeric, Rng};
 use std::sync::Arc;
@@ -15,7 +16,9 @@ use db::internal::error::DatabaseError;
 
 use crate::db;
 use crate::db::db::Database;
-use crate::server::message::types::chat::ChatInfo;
+use crate::db::user::USERS_DB;
+use crate::server::message::types::chat::Chat;
+use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::user::UserInfo;
 
 pub(crate) static CHATS_DB: OnceCell<ChatsDB> = OnceCell::const_new();
@@ -53,7 +56,7 @@ impl ChatsDB {
 
         let mut statement = self.session.statement(insert_query);
         statement.bind_int32(0, chat_id)?;
-        statement.bind_bool(1, participants.len() == 2)?;
+        statement.bind_bool(1, participants.len() != 2)?;
         
         let mut list = cassandra_cpp::List::new();
         for participant in participants {
@@ -94,7 +97,7 @@ impl ChatsDB {
         Ok(())
     }
 
-    pub async fn fetch_chat_info(&self, chat_id: i32) -> Result<ChatInfo, DatabaseError> {
+    pub async fn fetch_chat_info(&self, chat_id: i32) -> Result<Chat, DatabaseError> {
         let select_query = "SELECT * FROM chats WHERE id = ?";
 
         let mut statement = self.session.statement(&select_query);
@@ -112,7 +115,7 @@ impl ChatsDB {
                         participants.push(participant.get_i32()?);
                     } 
 
-                    return Ok(ChatInfo {
+                    return Ok(Chat {
                         chat_id,
                         is_group,
                         participants
@@ -124,38 +127,28 @@ impl ChatsDB {
         }
     }
 
-    // Fetches all chats that have a chat with the given user_id
-    // pub async fn fetch_chats(&self, user_id: i32) -> Result<Vec<ChatInfo>, DatabaseError> {
-    //     let select_query = "SELECT * FROM chats WHERE participants CONTAINS ?";
+    /// Fetches chat details(`ResponseChatInfo`), which is photo, name of the chat, username, etc.
+    pub async fn fetch_chat_details(&self, me: i32, chat: &Chat) -> Result<Option<ChatDetails>, DatabaseError> {
+        match chat.is_group {
+            false => {
+                if let Some(&peer_id) = chat.participants.iter().find(|&&participant| participant != me) {
+                    let user_info = USERS_DB.get().unwrap().fetch_user(peer_id).await?;
 
-    //     let mut statement = self.session.statement(select_query);
-    //     statement.bind_int32(0, user_id)?;
-
-    //     match statement.execute().await {
-    //         Ok(result) => {
-    //             let mut users: Vec<ChatInfo> = vec![];
-
-    //             while let Some(chat) = result.iter().next() {
-    //                 let mut p: Vec<i32> = vec![];
-                    
-    //                 let participants: cassandra_cpp::Result<SetIterator> = chat.get_by_name("participants");
-    //                 if let Ok(mut participants) = participants {
-    //                     while let Some(participant) = participants.next() {
-    //                         p.push(participant.get_i32()?);
-    //                     }
-    //                 }
-
-    //                 let o = ChatInfo {
-    //                     id: chat.get_by_name("user_id")?,
-    //                     participants: p
-    //                 };
-
-    //                 users.push(o)
-    //             }
-
-    //             Ok(users)
-    //         },
-    //         Err(err) => Err(DatabaseError::from(err)),
-    //     }
-    // }
+                    if let Some(user_info) = user_info {
+                        return Ok(Some(ChatDetails{
+                            name: user_info.name,
+                            photo: user_info.photo,
+                            username: user_info.username
+                        }))
+                    } else {
+                        return Ok(None)
+                    }
+                }
+                return Ok(None)
+            }
+            true => {
+                todo!()
+            }
+        }
+    }
 }

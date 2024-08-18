@@ -1,5 +1,4 @@
 use log::{debug, error, info};
-use serde::Serialize;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 
 use crate::{
@@ -20,9 +19,11 @@ use crate::{
 };
 use std::sync::Arc;
 
-// This function fetches chat_id by the given target user_id
-// It goes through all the registered to user chats and find the target id 
-// TODO: Fully remake this system, because it may significantly affect performance
+/// This function fetches chat_id by the given target user_id
+/// 
+/// It goes through all the registered to user chats and finds the target id 
+/// 
+/// TODO: Fully remake this system, because it may significantly affect performance
 async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i32>, DatabaseError> {
     let users_db = USERS_DB.get().unwrap();
     let (self_user_id, _) = session.get_credentials().unwrap();
@@ -31,6 +32,7 @@ async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i
     let chats_db = CHATS_DB.get().unwrap();
     for chat_id in chat_ids {
         let chat_info = chats_db.fetch_chat_info(chat_id).await?;
+
         if chat_info.participants.iter().any(|&participant| participant == target_user_id) {
             return Ok(Some(chat_id));
         }
@@ -66,6 +68,7 @@ async fn handle_send_message(
                 .await
                 .unwrap();
             users_db.add_chat(user_id, chat_id).await.unwrap();
+            users_db.add_chat(msg.common.to, chat_id).await.unwrap();
             chat_id
         }
     };
@@ -75,9 +78,8 @@ async fn handle_send_message(
 
     {
         if let Some(reciever_session) = connections.write().await.get(&msg.common.to) {
-            let reciever_session = reciever_session.lock().await;
-
-            // reciever_session.send(serde_json::from_value(msg.).unwrap()).await;
+            let target_connection = reciever_session.lock().await;
+            target_connection.send(serde_json::to_string(&msg).unwrap()).await;
         }
     }
 
@@ -114,21 +116,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
                             .await
                             .unwrap();
                     }
-                    Err(err) => match err {
-                        DatabaseError::Cassandra(internal) => {
-                            error!("{}", internal);
-                            PPgramError::send(
-                                method,
-                                "Internal error!",
-                                Arc::clone(&handler.writer),
-                            )
-                            .await;
-                        }
-                        DatabaseError::Client(_) => {
-                            PPgramError::send(method, err.to_string(), Arc::clone(&handler.writer))
-                                .await;
-                        }
-                    },
+                    Err(err) => {err.safe_send(method, Arc::clone(&handler.writer)).await;},
                 }
             }
             _ => PPgramError::send(method, "Unknown method!", Arc::clone(&handler.writer)).await,
