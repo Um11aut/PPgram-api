@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
         send_message_dict = {
             "method": "send_message",
-            "to": -577488756,
+            "to": -1609472930,
             "has_reply": False,
             "reply_to": 0,
             "content": {
@@ -86,6 +86,15 @@ if __name__ == "__main__":
         fetch = {
             "method": "fetch",
             "what": "chats",
+        }
+
+        res = send_message(sock, fetch)
+        print('Fetching result', res)
+
+        fetch = {
+            "method": "fetch",
+            "what": "user",
+            "username": "@pavlo"
         }
 
         res = send_message(sock, fetch)

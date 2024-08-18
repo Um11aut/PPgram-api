@@ -42,10 +42,7 @@ impl RequestMessageHandler {
         PPErrorSender::send(method, what, Arc::clone(&self.writer)).await;
     }
 
-    async fn handle_message(&mut self) {
-        let builder = self.builder.clone().unwrap();
-        let message = builder.content();
-
+    async fn handle_message(&mut self, message: &str) {
         match serde_json::from_str::<Value>(&message) {
             Ok(value) => {
                 match value.get("method").and_then(Value::as_str) {
@@ -71,7 +68,7 @@ impl RequestMessageHandler {
     pub async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
         if self.is_first {
             self.builder = Message::parse(buffer);
-            if let Some(builder) = self.builder.clone() {
+            if let Some(builder) = &self.builder {
                 debug!("Got the message! \n Message size: {} \n Content: {}", builder.size(), builder.content());
             }
             self.is_first = false;
@@ -83,7 +80,7 @@ impl RequestMessageHandler {
             }
     
             if message.ready() {
-                self.handle_message().await;
+                self.handle_message(&message.content()).await;
 
                 message.clear();
                 self.builder = None;

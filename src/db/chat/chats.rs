@@ -132,7 +132,7 @@ impl ChatsDB {
         match chat.is_group {
             false => {
                 if let Some(&peer_id) = chat.participants.iter().find(|&&participant| participant != me) {
-                    let user_info = USERS_DB.get().unwrap().fetch_user(peer_id).await?;
+                    let user_info = USERS_DB.get().unwrap().fetch_user(peer_id.into()).await?;
 
                     if let Some(user_info) = user_info {
                         return Ok(Some(ChatDetails{

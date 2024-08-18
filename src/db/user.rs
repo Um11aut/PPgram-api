@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 
 use crate::server::message::types::user::UserDetails;
+use crate::server::message::types::user::UserIdentifier;
 use crate::server::session;
 
 use super::db::Database;
@@ -52,34 +53,23 @@ impl Database for UsersDB {
 }
 
 impl UsersDB {
-    pub async fn username_exists(&self, username: &str) -> Result<bool, PPError> {
-        let query = "SELECT id FROM users WHERE username = ?";
-        let mut statement = self.session.statement(query);
-        statement.bind_string(0, username)?;
-        
-        let user_exists: bool = match statement.execute().await {
-            Ok(result) => result.first_row().is_some(),
-            Err(err) => {
-                return Err(PPError::from(err));
+    pub async fn exists(&self, identifier: UserIdentifier) -> Result<bool, PPError> {
+        let result = match identifier {
+            UserIdentifier::UserId(user_id) => {
+                let query = "SELECT id FROM users WHERE id = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_int32(0, user_id)?;
+                statement.execute().await?
+            }
+            UserIdentifier::Username(username) => {
+                let query = "SELECT id FROM users WHERE username = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_string(0, username.as_str())?;
+                statement.execute().await?
             }
         };
         
-        Ok(user_exists)
-    }
-
-    pub async fn user_id_exists(&self, user_id: i32) -> Result<bool, PPError> {
-        let query = "SELECT id FROM users WHERE id = ?";
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, user_id)?;
-        
-        let user_exists: bool = match statement.execute().await {
-            Ok(result) => result.first_row().is_some(),
-            Err(err) => {
-                return Err(PPError::from(err));
-            }
-        };
-        
-        Ok(user_exists)
+        Ok(result.first_row().is_some())
     }
 
     /// Register the user in database. Returns `user_id` and `session_id` if successfull
@@ -92,7 +82,7 @@ impl UsersDB {
         validate::validate_name(name)?;
         validate::validate_username(username)?;
 
-        if self.username_exists(username).await? {
+        if self.exists(username.into()).await? {
             return Err(PPError::from("Username already taken"));
         }
 
@@ -341,13 +331,22 @@ impl UsersDB {
         Ok(())
     }
     
+    pub async fn fetch_user(&self, identifier: UserIdentifier) -> Result<Option<UserDetails>, PPError> {
+        let result = match identifier {
+            UserIdentifier::UserId(user_id) => {
+                let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_int32(0, user_id)?;
+                statement.execute().await?
+            } 
+            UserIdentifier::Username(username) => {
+                let query = "SELECT id, name, photo, username FROM users WHERE username = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_string(0, &username)?;
+                statement.execute().await?
+            }
+        };
 
-    pub async fn fetch_user(&self, user_id: i32) -> Result<Option<UserDetails>, PPError> {
-        let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, user_id)?;
-
-        let result = statement.execute().await?;
         let row = result.first_row();
         if let Some(row) = row {
             let user_id: i32 = row.get(0)?;

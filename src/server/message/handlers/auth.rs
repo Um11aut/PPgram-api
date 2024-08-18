@@ -56,7 +56,7 @@ where
 }
 
 pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
-    let builder = handler.builder.clone().unwrap();
+    let builder = handler.builder.as_ref().unwrap();
     let buffer = builder.content();
 
     let mut session = handler.session.lock().await;

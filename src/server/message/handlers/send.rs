@@ -61,7 +61,7 @@ async fn handle_send_message(
             debug!("Message was sent to: {}. Chat with this user wasn't found. Creating chat.", msg.common.to);
             let users_db = USERS_DB.get().unwrap();
 
-            if !users_db.user_id_exists(msg.common.to).await? {
+            if !users_db.exists(msg.common.to.into()).await? {
                 return Err(PPError::from("Target user_id doesn't exist!"));
             }
 
@@ -102,7 +102,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         return;
     }
 
-    match serde_json::from_str::<RequestMessage>(handler.builder.clone().unwrap().content()) {
+    match serde_json::from_str::<RequestMessage>(handler.builder.as_ref().unwrap().content()) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
                 match handle_send_message(&session, msg, Arc::clone(&handler.connections)).await {
