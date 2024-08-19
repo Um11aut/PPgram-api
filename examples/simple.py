@@ -94,7 +94,7 @@ if __name__ == "__main__":
         fetch = {
             "method": "fetch",
             "what": "user",
-            "username": "@pavlo"
+            "username": "@huy"
         }
 
         res = send_message(sock, fetch)
