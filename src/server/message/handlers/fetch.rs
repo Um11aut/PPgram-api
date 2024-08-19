@@ -141,7 +141,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
                 } else {
                     PPErrorSender::send(
                         method,
-                        "Failed to retrieve information!",
+                        "Failed to find information by the given information!",
                         Arc::clone(&handler.writer),
                     )
                     .await;

@@ -9,9 +9,7 @@ use crate::{
     },
     server::{
         message::{
-            builder::Message,
-            handler::RequestMessageHandler,
-            types::{error::error::PPErrorSender, message::RequestMessage},
+            self, builder::Message, handler::RequestMessageHandler, types::{error::error::PPErrorSender, message::RequestMessage}
         },
         server::Connections,
         session::Session,
@@ -41,11 +39,12 @@ async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i
     Ok(None)
 }
 
+/// Returns latest chat message id if sucessful
 async fn handle_send_message(
     session: &Session,
     msg: RequestMessage,
     connections: Connections,
-) -> Result<(), PPError> {
+) -> Result<i32 /* message_id */, PPError> {
     let (user_id, _) = session.get_credentials().unwrap();
 
     if user_id == msg.common.to {
@@ -87,7 +86,8 @@ async fn handle_send_message(
         }
     }
 
-    Ok(())
+    let latest = messages_db.get_latest(target_chat_id).await?.unwrap_or(0);
+    Ok(latest)
 }
 
 pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
@@ -106,8 +106,8 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
                 match handle_send_message(&session, msg, Arc::clone(&handler.connections)).await {
-                    Ok(_) => {
-                        let data = serde_json::json!({ "method": "send_message", "ok": true });
+                    Ok(latest_msg_id) => {
+                        let data = serde_json::json!({ "method": "send_message", "message_id": latest_msg_id, "ok": true });
                         handler
                             .writer
                             .lock()
