@@ -1,29 +1,24 @@
 use std::borrow::Cow;
-use std::slice;
 use std::sync::Arc;
-use std::{fmt::Write, future::Future, process::Output};
 
-use log::{debug, error, info};
-use serde::de::Error as SerdeError;
-use serde_json::{json, Value};
+use log::debug;
+use serde::Serialize;
+use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf};
 
 use crate::server::server::Connections;
 use crate::server::session::Session;
-use crate::server::message::types::{
-    authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, message::{MessageContent, RequestMessage},
-    error::error::{PPErrorSender}
-};
 
-use super::builder::Message;
-use super::handlers::{auth, check, edit, fetch, send};
+use super::builder::MessageBuilder;
+use super::methods::{auth, check, edit, fetch, send};
+use super::types::error::error::PPErrorSender;
 
 pub struct RequestMessageHandler {
-    pub(crate) builder: Option<Message>,
+    pub(crate) builder: Option<MessageBuilder>,
     pub(crate) writer: Arc<Mutex<OwnedWriteHalf>>,
     pub(crate) session: Arc<Mutex<Session>>,
-    pub(crate) is_first: bool,
+    is_first: bool,
     pub(crate) connections: Connections
 }
 
@@ -38,8 +33,18 @@ impl RequestMessageHandler {
         }
     }
 
-    async fn send_error<T: Into<Cow<'static, str>>>(&self, method: &str, what: T) {
+    pub async fn send_error<T: Into<Cow<'static, str>>>(&self, method: &str, what: T) {
         PPErrorSender::send(method, what, Arc::clone(&self.writer)).await;
+    }
+
+    pub async fn send_message<T: ?Sized + Serialize>(&self, message: &T) {
+        self
+            .writer
+            .lock()
+            .await
+            .write_all(MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed().as_bytes())
+            .await
+            .unwrap();
     }
 
     async fn handle_message(&mut self, message: &str) {
@@ -67,7 +72,7 @@ impl RequestMessageHandler {
 
     pub async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
         if self.is_first {
-            self.builder = Message::parse(buffer);
+            self.builder = MessageBuilder::parse(buffer);
             if let Some(builder) = &self.builder {
                 debug!("Got the message! \n Message size: {} \n Content: {}", builder.size(), builder.content());
             }
@@ -100,7 +105,7 @@ impl Drop for RequestMessageHandler {
                 let mut connections = connections.write().await;
                 let session = session.lock().await;
                 if let Some((user_id, _)) = session.get_credentials() {
-                    connections.remove(&user_id);
+                    connections.remove(&user_id.get_i32().unwrap());
                 }
             }
         });

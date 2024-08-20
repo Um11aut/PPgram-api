@@ -4,20 +4,16 @@ use crate::{
     db::internal::error::PPError,
     server::{
         message::{
-            builder::Message,
+            builder::MessageBuilder,
             handler::RequestMessageHandler,
             types::{
-                authentication::message::{
-                    RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage,
-                },
-                error::error::PPErrorSender,
+                error::error::PPErrorSender, request::auth::*,
             },
         },
         session::Session,
     },
 };
 use log::error;
-use serde::de::Error;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
 
@@ -96,6 +92,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
 
 
     if let Some((user_id, session_id)) = session.get_credentials() {
+        let user_id = user_id.get_i32().unwrap();
         {
             let mut connections = handler.connections.write().await;
             connections.insert(user_id, Arc::clone(&handler.session));
@@ -110,7 +107,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
             .lock()
             .await
             .write_all(
-                Message::build_from(serde_json::to_string(&data).unwrap())
+                MessageBuilder::build_from(serde_json::to_string(&data).unwrap())
                     .packed()
                     .as_bytes(),
             )

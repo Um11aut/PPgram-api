@@ -9,7 +9,7 @@ use crate::{
     },
     server::{
         message::{
-            self, builder::Message, handler::RequestMessageHandler, types::{error::error::PPErrorSender, message::RequestMessage}
+            self, builder::MessageBuilder, handler::RequestMessageHandler, types::{chat::ChatId, error::error::PPErrorSender, request::message::RequestMessage, user::UserId}
         },
         server::Connections,
         session::Session,
@@ -25,14 +25,16 @@ use std::sync::Arc;
 async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i32>, PPError> {
     let users_db = USERS_DB.get().unwrap();
     let (self_user_id, _) = session.get_credentials().unwrap();
-    let chat_ids = users_db.fetch_chats(self_user_id).await?;
+    let chat_ids = users_db.fetch_chats(&self_user_id).await?;
 
     let chats_db = CHATS_DB.get().unwrap();
     for chat_id in chat_ids {
-        let chat_info = chats_db.fetch_chat_info(chat_id).await?;
+        let chat = chats_db.fetch_chat(chat_id).await?;
 
-        if chat_info.participants.iter().any(|&participant| participant == target_user_id) {
-            return Ok(Some(chat_id));
+        if let Some(chat) = chat {
+            if chat.participants().iter().any(|ref participant| participant.user_id() == target_user_id) {
+                return Ok(Some(chat_id));
+            }
         }
     }
 
@@ -47,11 +49,11 @@ async fn handle_send_message(
 ) -> Result<i32 /* message_id */, PPError> {
     let (user_id, _) = session.get_credentials().unwrap();
 
-    if user_id == msg.common.to {
+    if user_id.get_i32().unwrap() == msg.common.to {
         return Err(PPError::from("You cannot send messages on yourself!"));
     }
 
-    let target_chat_id = match find_chat_id(session, msg.common.to).await? {
+    let target_chat_id: ChatId = match find_chat_id(session, msg.common.to).await? {
         Some(existing_chat_id) => {
             existing_chat_id
         }, 
@@ -67,17 +69,17 @@ async fn handle_send_message(
             let chat_id = CHATS_DB
                 .get()
                 .unwrap()
-                .create_chat(vec![user_id, msg.common.to])
+                .create_chat(vec![user_id.clone(), msg.common.to.into()])
                 .await
                 .unwrap();
-            users_db.add_chat(user_id, chat_id).await.unwrap();
-            users_db.add_chat(msg.common.to, chat_id).await.unwrap();
-            chat_id
+            users_db.add_chat(&user_id, chat_id.chat_id()).await.unwrap();
+            users_db.add_chat(&msg.common.to.into(), chat_id.chat_id()).await.unwrap();
+            chat_id.chat_id()
         }
     };
     
     let messages_db = MESSAGES_DB.get().unwrap();
-    messages_db.add_message(&msg, user_id, target_chat_id).await?;
+    messages_db.add_message(&msg, &user_id, target_chat_id).await?;
 
     {
         if let Some(reciever_session) = connections.write().await.get(&msg.common.to) {
@@ -113,7 +115,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
                             .lock()
                             .await
                             .write_all(
-                                Message::build_from(serde_json::to_string(&data).unwrap())
+                                MessageBuilder::build_from(serde_json::to_string(&data).unwrap())
                                     .packed()
                                     .as_bytes(),
                             )

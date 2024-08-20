@@ -18,8 +18,9 @@ use crate::db;
 use crate::db::db::Database;
 use crate::db::user::USERS_DB;
 use crate::server::message::types::chat::Chat;
-use crate::server::message::types::chat::ChatDetails;
-use crate::server::message::types::user::UserDetails;
+use crate::server::message::types::chat::ChatId;
+use crate::server::message::types::user::User;
+use crate::server::message::types::user::UserId;
 
 pub(crate) static CHATS_DB: OnceCell<ChatsDB> = OnceCell::const_new();
 
@@ -50,7 +51,7 @@ impl Database for ChatsDB {
 }
 
 impl ChatsDB {
-    pub async fn create_chat(&self, participants: Vec<i32/* user_id */>) -> Result<i32 /* chat_id */, PPError> {
+    pub async fn create_chat(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
         let chat_id = rand::random::<i32>();
         let insert_query = "INSERT INTO chats (id, is_group, participants) VALUES (?, ?, ?)";
 
@@ -60,25 +61,42 @@ impl ChatsDB {
         
         let mut list = cassandra_cpp::List::new();
         for participant in participants {
-            list.append_int32(participant)?;
+            match participant {
+                UserId::UserId(user_id) => {
+                    list.append_int32(user_id)?;
+                }
+                UserId::Username(_) => {
+                    return Err(PPError::from("Cannot add chat with username!"))
+                }
+            }
         }
         statement.bind_list(2, list)?;
 
         statement.execute().await.map_err(PPError::from)?;
 
-        Ok(chat_id)
+        Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
     }
 
-    pub async fn add_participant(&self, chat_id: i32, participant: i32 /* user_id */) -> Result<(), PPError> {
-        let current = self.fetch_chat_info(chat_id).await?;
+    pub async fn add_participant(&self, chat_id: ChatId, participant: UserId) -> Result<(), PPError> {
+        let current = match self.fetch_chat(chat_id).await? {
+            Some(current) => current,
+            None => return Err(PPError::from("Given Chat Id wasn't found!"))
+        };
 
-        let is_group = current.participants.len() + 1 > 2;
+        let is_group = current.participants().len() + 1 > 2;
 
         let update_query = "UPDATE chats SET participants = participants + ? WHERE id = ?;";
         
         let mut statement = self.session.statement(update_query);
         let mut list = cassandra_cpp::List::new();
-        list.append_int32(participant)?;
+        match participant {
+            UserId::UserId(user_id) => {
+                list.append_int32(user_id)?;
+            }
+            UserId::Username(_) => {
+                return Err(PPError::from("UserId must be integer!"))
+            }
+        }
         statement.bind_list(0, list)?;
         statement.bind_int32(1, chat_id)?;
 
@@ -97,7 +115,7 @@ impl ChatsDB {
         Ok(())
     }
 
-    pub async fn fetch_chat_info(&self, chat_id: i32) -> Result<Chat, PPError> {
+    pub async fn fetch_chat(&self, chat_id: ChatId) -> Result<Option<Chat>, PPError> {
         let select_query = "SELECT * FROM chats WHERE id = ?";
 
         let mut statement = self.session.statement(&select_query);
@@ -110,45 +128,25 @@ impl ChatsDB {
                     let is_group: bool = row.get_by_name("is_group")?;
 
                     let mut iter: SetIterator = row.get_by_name("participants")?;
-                    let mut participants: Vec<i32> = vec![];
+                    let users_db = USERS_DB.get().unwrap();
+                    
+                    let mut participants: Vec<User> = vec![];
                     while let Some(participant) = iter.next() {
-                        participants.push(participant.get_i32()?);
-                    } 
+                        let user = users_db.fetch_user(participant.get_i32()?.into()).await?;
+                        if let Some(user) = user {
+                            participants.push(user)
+                        }
+                    }
 
-                    return Ok(Chat {
+                    return Ok(Some(Chat::construct(
                         chat_id,
                         is_group,
                         participants
-                    })
-                }
-                return Err(PPError::from("Given chat_id not found"))
-            },
-            Err(err) => return Err(PPError::from(err))
-        }
-    }
-
-    /// Fetches chat details(`ResponseChatInfo`), which is photo, name of the chat, username, etc.
-    pub async fn fetch_chat_details(&self, me: i32, chat: &Chat) -> Result<Option<ChatDetails>, PPError> {
-        match chat.is_group {
-            false => {
-                if let Some(&peer_id) = chat.participants.iter().find(|&&participant| participant != me) {
-                    let user_info = USERS_DB.get().unwrap().fetch_user(peer_id.into()).await?;
-
-                    if let Some(user_info) = user_info {
-                        return Ok(Some(ChatDetails{
-                            name: user_info.name,
-                            photo: user_info.photo,
-                            username: user_info.username
-                        }))
-                    } else {
-                        return Ok(None)
-                    }
+                    )))
                 }
                 return Ok(None)
-            }
-            true => {
-                todo!()
-            }
+            },
+            Err(err) => return Err(PPError::from(err))
         }
     }
 }

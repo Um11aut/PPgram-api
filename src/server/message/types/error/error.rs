@@ -3,10 +3,10 @@ use std::{borrow::Cow, sync::Arc};
 use serde_json::json;
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf, sync::Mutex};
 
-use crate::server::message::builder::Message;
+use crate::server::message::builder::MessageBuilder;
 
 pub struct PPErrorSender {
-    builder: Option<Message>,
+    builder: Option<MessageBuilder>,
     error: String,
 }
 
@@ -21,7 +21,7 @@ impl PPErrorSender
             "error": what
         });
 
-        let builder = Message::build_from(serde_json::to_string(&error).unwrap());
+        let builder = MessageBuilder::build_from(serde_json::to_string(&error).unwrap());
 
         let mut writer = writer.lock().await;
         writer.write_all(builder.packed().as_bytes()).await.unwrap();

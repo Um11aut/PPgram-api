@@ -4,8 +4,9 @@ use log::{error, info};
 
 use crate::db::{internal::error::PPError, user::USERS_DB};
 
-use super::message::types::authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
 use tokio::sync::mpsc;
+
+use super::message::types::{request::auth::*, user::UserId};
 
 #[derive(Debug)]
 pub struct Session {
@@ -92,9 +93,9 @@ impl Session {
     } 
 
     // `(i32, String)` -> user_id, session_id 
-    pub fn get_credentials(&self) -> Option<(i32, String)> {
+    pub fn get_credentials(&self) -> Option<(UserId, String)> {
         if self.is_authenticated() {
-            return Some((self.user_id.unwrap(), self.session_id.clone().unwrap()))
+            return Some((self.user_id.unwrap().into(), self.session_id.clone().unwrap()))
         }
 
         None

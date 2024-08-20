@@ -9,8 +9,10 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-use crate::server::message::types::user::UserDetails;
-use crate::server::message::types::user::UserIdentifier;
+use crate::server::message::types::chat::Chat;
+use crate::server::message::types::chat::ChatId;
+use crate::server::message::types::user::User;
+use crate::server::message::types::user::UserId;
 use crate::server::session;
 
 use super::db::Database;
@@ -53,15 +55,15 @@ impl Database for UsersDB {
 }
 
 impl UsersDB {
-    pub async fn exists(&self, identifier: UserIdentifier) -> Result<bool, PPError> {
+    pub async fn exists(&self, identifier: UserId) -> Result<bool, PPError> {
         let result = match identifier {
-            UserIdentifier::UserId(user_id) => {
+            UserId::UserId(user_id) => {
                 let query = "SELECT id FROM users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(0, user_id)?;
                 statement.execute().await?
             }
-            UserIdentifier::Username(username) => {
+            UserId::Username(username) => {
                 let query = "SELECT id FROM users WHERE username = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_string(0, username.as_str())?;
@@ -264,89 +266,88 @@ impl UsersDB {
         }
     }
 
-    pub async fn fetch_chats(&self, user_id: i32) -> Result<Vec<i32 /* chat_id */>, PPError> {
-        let query = "SELECT chats FROM users WHERE id = ?";
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, user_id)?;
-
-        match statement.execute().await {
-            Ok(result) => {
-                let mut o: Vec<i32> = vec![];
-
-                let mut iter = result.iter();
-                while let Some(row) = iter.next() {
-                    let chats: cassandra_cpp::Result<SetIterator> = row.get(0);
-
-                    if let Ok(mut chats) = chats {
-                        while let Some(chat) = chats.next() {
-                            o.push(chat.get_i32()?);
-                        }
-                    }
-                }
-
-                Ok(o)
+    pub async fn fetch_chats(&self, user_id: &UserId) -> Result<Vec<i32 /* chat_id */>, PPError> {
+        let statement = match user_id {
+            UserId::UserId(user_id) => {
+                let query = "SELECT chats FROM users WHERE id = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_int32(0, *user_id)?;
+                statement
             }
-            Err(err) => Err(PPError::from(err)),
+            UserId::Username(username) => {
+                let query = "SELECT chats FROM users WHERE username = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_string(0, &username)?;
+                statement
+            }
+        };
+        let result = statement.execute().await?;
+
+        let mut output: Vec<ChatId> = vec![];
+
+        let mut iter = result.iter();
+        while let Some(row) = iter.next() {
+            let chats: cassandra_cpp::Result<SetIterator> = row.get(0);
+
+            if let Ok(mut chats) = chats {
+                while let Some(chat) = chats.next() {
+                    output.push(chat.get_i32()?);
+                }
+            }
         }
+
+        Ok(output)
     }
 
-    pub async fn add_chat(&self, user_id: i32, chat_id: i32) -> Result<(), PPError> {
-        let query = "SELECT chats FROM users WHERE id = ?";
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, user_id)?;
-    
-        let mut chats: Vec<i32> = match statement.execute().await {
-            Ok(result) => {
-                let mut o: Vec<i32> = vec![];
-                if let Some(row) = result.first_row() {
-                    let chat_set: cassandra_cpp::Result<SetIterator> = row.get(0);
-                    if let Ok(mut chat_set) = chat_set {
-                        while let Some(chat) = chat_set.next() {
-                            o.push(chat.get_i32()?);
-                        }
-                    }
-                }
-                o
+    pub async fn add_chat(&self, user_id: &UserId, chat_id: ChatId) -> Result<(), PPError> {
+        let query = match user_id {
+            UserId::UserId(_) => {
+                "UPDATE users SET chats = chats + ? WHERE id = ?"
             }
-            Err(err) => return Err(PPError::from(err)),
+            UserId::Username(_) => {
+                "UPDATE users SET chats = chats + ? WHERE username = ?"
+            }
         };
     
-        if !chats.contains(&chat_id) {
-            chats.push(chat_id);
-        }
-    
-        let query = "UPDATE users SET chats = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
     
-        let mut updated_chats = cassandra_cpp::List::new();
-        for chat in chats {
-            updated_chats.append_int32(chat)?;
+        // Create a list with a single chat_id to append to the chats list
+        let mut chat_list = cassandra_cpp::List::new();
+        chat_list.append_int32(chat_id)?;
+    
+        statement.bind_list(0, chat_list)?;
+    
+        match user_id {
+            UserId::UserId(user_id) => {
+                statement.bind_int32(1, *user_id)?;
+            }
+            UserId::Username(username) => {
+                statement.bind_string(1, &username)?;
+            }
         }
     
-        statement.bind_list(0, updated_chats)?;
-        statement.bind_int32(1, user_id)?;
-    
         statement.execute().await?;
-
+    
         Ok(())
     }
     
-    pub async fn fetch_user(&self, identifier: UserIdentifier) -> Result<Option<UserDetails>, PPError> {
-        let result = match identifier {
-            UserIdentifier::UserId(user_id) => {
+    pub async fn fetch_user(&self, identifier: UserId) -> Result<Option<User>, PPError> {
+        let statement = match identifier {
+            UserId::UserId(user_id) => {
                 let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(0, user_id)?;
-                statement.execute().await?
+                statement
             } 
-            UserIdentifier::Username(username) => {
+            UserId::Username(username) => {
                 let query = "SELECT id, name, photo, username FROM users WHERE username = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_string(0, &username)?;
-                statement.execute().await?
+                statement
             }
         };
-
+        let result = statement.execute().await?;
+        
         let row = result.first_row();
         if let Some(row) = row {
             let user_id: i32 = row.get(0)?;
@@ -354,12 +355,12 @@ impl UsersDB {
             let photo: Vec<u8> = row.get(2)?;
             let username: String = row.get(3)?;
 
-            return Ok(Some(UserDetails{
+            return Ok(Some(User::construct(
                 name,
                 user_id,
                 username,
-                photo
-            }))
+                if photo.is_empty() {None} else {Some(photo)}
+            )))
         }
 
         Ok(None)

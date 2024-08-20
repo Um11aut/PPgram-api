@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use super::events::media::MediaMessage;
-use super::events::text::TextMessage;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommonFields {
     pub method: String,
@@ -11,6 +8,28 @@ pub struct CommonFields {
     // pub date: u64,
     pub has_reply: bool,
     pub reply_to: i32,
+}
+
+// Define a struct to represent a single media item
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MediaItem {
+    pub file_name: String,
+    pub format: String,
+    pub data: String,
+}
+
+// Define a struct to represent media messages with multiple media items
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MediaMessage {
+    pub media: Vec<MediaItem>,
+    pub has_caption: bool,
+    pub caption: String,
+}
+
+// Define a struct to represent text messages
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TextMessage {
+    pub text: String,
 }
 
 // Define an enum to represent different types of messages

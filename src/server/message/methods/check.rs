@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
 
-use crate::{db::user::USERS_DB, server::message::{builder::Message, handler::RequestMessageHandler, types::{error::error::PPErrorSender, fetch::check::CheckUsernameRequestMessage}}};
+use crate::{db::user::USERS_DB, server::message::{builder::MessageBuilder, handler::RequestMessageHandler, types::{error::error::PPErrorSender, fetch::check::CheckUsernameRequestMessage}}};
 
 async fn check_username(username: &str, handler: &mut RequestMessageHandler) {
     match USERS_DB.get().unwrap().exists(username.into()).await {
@@ -25,7 +25,7 @@ async fn check_username(username: &str, handler: &mut RequestMessageHandler) {
                 .lock()
                 .await
                 .write_all(
-                    Message::build_from(serde_json::to_string(&data).unwrap())
+                    MessageBuilder::build_from(serde_json::to_string(&data).unwrap())
                         .packed()
                         .as_bytes(),
                 )

@@ -5,12 +5,12 @@ use log::info;
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)
 #[derive(Clone)]
-pub(crate) struct Message {
+pub(crate) struct MessageBuilder {
     size: u32,
     content: String
 }
 
-impl Message {
+impl MessageBuilder {
     pub fn build_from<T: Into<Cow<'static, str>>>(message: T) -> Self {
         let message: Cow<'static, str> = message.into();
         let message = message.into_owned();

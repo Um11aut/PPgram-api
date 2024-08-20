@@ -11,8 +11,10 @@ use tokio::sync::OnceCell;
 
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
-use crate::server::message::types::message::MessageContent;
-use crate::server::message::types::message::RequestMessage;
+use crate::server::message::types::chat::ChatId;
+use crate::server::message::types::request::message::MessageContent;
+use crate::server::message::types::request::message::RequestMessage;
+use crate::server::message::types::user::UserId;
 
 pub(crate) static MESSAGES_DB: OnceCell<MessagesDB> = OnceCell::const_new();
 
@@ -56,8 +58,8 @@ impl MessagesDB {
     pub async fn add_message(
         &self,
         msg: &RequestMessage,
-        sender_id: i32,
-        target_chat_id: i32
+        sender_id: &UserId,
+        target_chat_id: ChatId
     ) -> Result<(), PPError> {
         let insert_query = r#"
             INSERT INTO messages 
@@ -79,7 +81,14 @@ impl MessagesDB {
         }
 
         statement.bind_bool(1, true)?;
-        statement.bind_int32(2, sender_id)?;
+        match sender_id {
+            UserId::UserId(user_id) => {
+                statement.bind_int32(2, *user_id)?;
+            }
+            UserId::Username(_) => {
+                return Err(PPError::from("UserId must be user_id, not username!"))
+            }
+        }
         statement.bind_int32(3, target_chat_id)?;
         statement.bind_int64(
             4,

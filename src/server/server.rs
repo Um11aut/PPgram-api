@@ -14,7 +14,7 @@ use tokio::{
 
 use crate::server::{message::handler::RequestMessageHandler, session::Session};
 
-use super::message::builder::Message;
+use super::message::builder::MessageBuilder;
 
 const PACKET_SIZE: u32 = 65535;
 
@@ -75,7 +75,7 @@ impl Server {
 
         while let Some(message) = rx.recv().await {
             let mut writer = writer.lock().await;
-            if let Err(e) = writer.write_all(Message::build_from(message).packed().as_bytes()).await {
+            if let Err(e) = writer.write_all(MessageBuilder::build_from(message).packed().as_bytes()).await {
                 error!("Failed to send message: {}", e);
             }
         }
