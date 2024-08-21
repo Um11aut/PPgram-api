@@ -2,7 +2,7 @@ import socket
 import json
 import struct
 
-def send_message(sock, message):
+def send_message(sock: socket, message: json) -> str:
     """
     Send a message over an open socket and receive a response.
 
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
         send_message_dict = {
             "method": "send_message",
-            "to": -1609472930,
+            "to": 1349977249,
             "has_reply": False,
             "reply_to": 0,
             "content": {
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         fetch = {
             "method": "fetch",
             "what": "user",
-            "username": "@huy"
+            "username": "@pavlo"
         }
 
         res = send_message(sock, fetch)
@@ -103,6 +103,13 @@ if __name__ == "__main__":
         fetch = {
             "method": "fetch",
             "what": "self",
+        }
+
+        fetch = {
+            "method": "fetch",
+            "what": "messages",
+            "chat_id": 1349977249,
+            "range": [-1, -20]
         }
 
         res = send_message(sock, fetch)
