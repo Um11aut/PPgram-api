@@ -64,7 +64,7 @@ impl MessagesDB {
         msg: &Message,
         sender_id: &UserId,
         target_chat_id: ChatId
-    ) -> Result<(), PPError> {
+    ) -> Result<DbMesssage, PPError> {
         let insert_query = r#"
             INSERT INTO messages 
                 (id, is_unread, from_id, chat_id, date, has_reply,
@@ -137,7 +137,8 @@ impl MessagesDB {
 
         statement.execute().await?;
 
-        Ok(())
+        let msg = self.fetch_messages(target_chat_id, -1..0).await?.unwrap();
+        Ok(msg.into_iter().next().unwrap())
     }
 
     pub async fn get_latest(&self, chat_id: ChatId) -> Result<Option<MessageId>, PPError> {
@@ -185,16 +186,29 @@ impl MessagesDB {
         }
         let (start, end) = validate_range(RangeInclusive::from(range.start..=range.end))?;
 
-        let query = r#"
-            SELECT * 
-                FROM messages 
-                WHERE chat_id = ? AND id >= ? AND id <= ? 
-                ORDER BY id ASC;
-        "#;
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, chat_id)?;
-        statement.bind_int32(1, start)?;
-        statement.bind_int32(2, end)?;
+        let statement = if end != 0 {
+            let query = r#"
+                SELECT * 
+                    FROM messages 
+                    WHERE chat_id = ? AND id >= ? AND id <= ? 
+                    ORDER BY id ASC;
+            "#;
+            let mut statement = self.session.statement(query);
+            statement.bind_int32(0, chat_id)?;
+            statement.bind_int32(1, start)?;
+            statement.bind_int32(2, end)?;
+            statement
+        } else {
+            let query = r#"
+                SELECT * 
+                    FROM messages 
+                    WHERE chat_id = ? AND id = ?;
+            "#;
+            let mut statement = self.session.statement(query);
+            statement.bind_int32(0, chat_id)?;
+            statement.bind_int32(1, start)?;
+            statement
+        };
 
         let result = statement.execute().await?;
 

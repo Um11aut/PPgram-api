@@ -49,7 +49,7 @@ pub(crate) struct Message {
 
 pub(crate) type MessageId = i32;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DbMesssage {
     pub message_id: i32,
     pub is_unread: bool,

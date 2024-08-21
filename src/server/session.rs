@@ -1,6 +1,8 @@
 use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
 use log::{error, info};
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::db::{internal::error::PPError, user::USERS_DB};
 
@@ -13,7 +15,7 @@ pub struct Session {
     session_id: Option<String>,
     user_id: Option<i32>,
     ip_addr: SocketAddr,
-    sender: mpsc::Sender<String>
+    sender: mpsc::Sender<Value>
 }
 
 impl Hash for Session {
@@ -31,7 +33,7 @@ impl PartialEq for Session {
 impl Eq for Session {}
 
 impl Session {
-    pub fn new(ip_addr: SocketAddr, sender: mpsc::Sender<String>) -> Session {
+    pub fn new(ip_addr: SocketAddr, sender: mpsc::Sender<Value>) -> Session {
         Session {
             session_id: None,
             user_id: None,
@@ -88,8 +90,8 @@ impl Session {
         Ok(())
     }
 
-    pub async fn send(&self, message: String) {
-        self.sender.send(message).await.unwrap();
+    pub async fn send(&self, message: impl Serialize) {
+        self.sender.send(serde_json::to_value(message).unwrap()).await.unwrap();
     } 
 
     // `(i32, String)` -> user_id, session_id 

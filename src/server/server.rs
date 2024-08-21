@@ -1,5 +1,6 @@
 use log::debug;
 use log::error;
+use serde_json::Value;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::{net::SocketAddr, sync::Arc};
@@ -70,12 +71,12 @@ impl Server {
         debug!("Connection closed: {}", addr);
     }
 
-    async fn receiver_handler(mut rx: mpsc::Receiver<String>, writer: Arc<Mutex<OwnedWriteHalf>>) {
+    async fn receiver_handler(mut rx: mpsc::Receiver<Value>, writer: Arc<Mutex<OwnedWriteHalf>>) {
         let writer = Arc::clone(&writer);
 
         while let Some(message) = rx.recv().await {
             let mut writer = writer.lock().await;
-            if let Err(e) = writer.write_all(MessageBuilder::build_from(message).packed().as_bytes()).await {
+            if let Err(e) = writer.write_all(MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed().as_bytes()).await {
                 error!("Failed to send message: {}", e);
             }
         }
@@ -85,7 +86,7 @@ impl Server {
         loop {
             match self.listener.accept().await {
                 Ok((socket, addr)) => {
-                    let (sender, receiver) = mpsc::channel::<String>(PACKET_SIZE as usize);
+                    let (sender, receiver) = mpsc::channel::<Value>(PACKET_SIZE as usize);
 
                     let session = Arc::new(Mutex::new(Session::new(addr, sender)));
 

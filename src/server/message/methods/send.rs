@@ -1,4 +1,5 @@
 use log::{debug, error, info};
+use serde_json::json;
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
     },
     server::{
         message::{
-            self, builder::MessageBuilder, handler::MessageHandler, types::{chat::ChatId, error::error::PPErrorSender, request::message::Message, user::UserId}
+            self, builder::MessageBuilder, handler::MessageHandler, types::{chat::ChatId, error::error::PPErrorSender, request::message::{DbMesssage, Message}, user::UserId}
         },
         server::Connections,
         session::Session,
@@ -79,17 +80,19 @@ async fn handle_send_message(
     };
     
     let messages_db = MESSAGES_DB.get().unwrap();
-    messages_db.add_message(&msg, &user_id, target_chat_id).await?;
+    let db_message = messages_db.add_message(&msg, &user_id, target_chat_id).await?;
+    let message_id = db_message.message_id;
 
-    {
-        if let Some(reciever_session) = connections.write().await.get(&msg.common.to) {
+    tokio::spawn(async move {
+        if let Some(reciever_session) = connections.read().await.get(&msg.common.to) {
             let target_connection = reciever_session.lock().await;
-            target_connection.send(serde_json::to_string(&msg).unwrap()).await;
+            
+            info!("{}", serde_json::to_string(&db_message).unwrap());
+            target_connection.send(db_message).await;
         }
-    }
+    });
 
-    let latest = messages_db.get_latest(target_chat_id).await?.unwrap_or(0);
-    Ok(latest)
+    Ok(message_id)
 }
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
