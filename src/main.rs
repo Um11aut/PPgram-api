@@ -1,4 +1,5 @@
 #![feature(vec_push_within_capacity)]
+#![feature(new_range_api)]
 
 pub mod db;
 pub mod server;

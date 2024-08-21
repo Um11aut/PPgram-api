@@ -12,7 +12,7 @@ use tokio::{
     sync::Mutex,
 };
 
-use crate::server::{message::handler::RequestMessageHandler, session::Session};
+use crate::server::{message::handler::MessageHandler, session::Session};
 
 use super::message::builder::MessageBuilder;
 
@@ -49,7 +49,7 @@ impl Server {
     ) {
         debug!("Connection established: {}", addr);
 
-        let mut handler = RequestMessageHandler::new(
+        let mut handler = MessageHandler::new(
             Arc::clone(&writer),
             Arc::clone(&session),
             Arc::clone(&connections),

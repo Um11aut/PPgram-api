@@ -14,7 +14,7 @@ use super::builder::MessageBuilder;
 use super::methods::{auth, check, edit, fetch, send};
 use super::types::error::error::PPErrorSender;
 
-pub struct RequestMessageHandler {
+pub struct MessageHandler {
     pub(crate) builder: Option<MessageBuilder>,
     pub(crate) writer: Arc<Mutex<OwnedWriteHalf>>,
     pub(crate) session: Arc<Mutex<Session>>,
@@ -22,9 +22,9 @@ pub struct RequestMessageHandler {
     pub(crate) connections: Connections
 }
 
-impl RequestMessageHandler {
+impl MessageHandler {
     pub fn new(writer: Arc<Mutex<OwnedWriteHalf>>, session: Arc<Mutex<Session>>, connections: Connections) -> Self {
-        RequestMessageHandler {
+        MessageHandler {
             builder: None,
             writer,
             session,
@@ -95,7 +95,7 @@ impl RequestMessageHandler {
     }
 }
 
-impl Drop for RequestMessageHandler {
+impl Drop for MessageHandler {
     fn drop(&mut self) {
         tokio::spawn({
             let connections: Connections = Arc::clone(&self.connections);    

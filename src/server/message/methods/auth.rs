@@ -5,7 +5,7 @@ use crate::{
     server::{
         message::{
             builder::MessageBuilder,
-            handler::RequestMessageHandler,
+            handler::MessageHandler,
             types::{
                 error::error::PPErrorSender, request::auth::*,
             },
@@ -51,7 +51,7 @@ where
     Ok(())
 }
 
-pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
+pub async fn handle(handler: &mut MessageHandler, method: &str) {
     let builder = handler.builder.as_ref().unwrap();
     let buffer = builder.content();
 

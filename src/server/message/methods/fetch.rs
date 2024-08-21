@@ -3,8 +3,10 @@ use serde::de;
 use serde_json::{json, Value};
 use tokio::{io::AsyncWriteExt, sync::Mutex};
 
+use crate::db::chat::messages::MESSAGES_DB;
 use crate::server::message::types::chat::ChatDetails;
-use crate::server::message::types::fetch::fetch::BaseFetchRequestMessage;
+use crate::server::message::types::fetch::fetch::{BaseFetchRequestMessage, FetchMessagesRequestMessage};
+use crate::server::message::types::request::message::{DbMesssage, Message};
 use crate::server::session::Session;
 use crate::{
     db::{
@@ -14,7 +16,7 @@ use crate::{
     },
     server::message::{
         builder::MessageBuilder,
-        handler::RequestMessageHandler,
+        handler::MessageHandler,
         types::{
             error::error::PPErrorSender,
             user::{User, UserId},
@@ -23,7 +25,9 @@ use crate::{
 };
 use std::sync::Arc;
 
-async fn handle_fetch_chats(handler: &RequestMessageHandler) -> Option<Vec<ChatDetails>> {
+use super::send::find_chat_id;
+
+async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>> {
     let users_db = USERS_DB.get().unwrap();
     let chats_db = CHATS_DB.get().unwrap();
 
@@ -43,7 +47,7 @@ async fn handle_fetch_chats(handler: &RequestMessageHandler) -> Option<Vec<ChatD
                             }
                         }
                         Err(err) => {
-                            err.safe_send("fetch_chats", Arc::clone(&handler.writer));
+                            err.safe_send("fetch_chats", Arc::clone(&handler.writer)).await;
                         }
                     }
                 }
@@ -60,7 +64,7 @@ async fn handle_fetch_chats(handler: &RequestMessageHandler) -> Option<Vec<ChatD
 
 async fn fetch_user(
     method: &str,
-    handler: &RequestMessageHandler,
+    handler: &MessageHandler,
     identifier: UserId,
 ) -> Option<User> {
     match USERS_DB.get().unwrap().fetch_user(identifier).await {
@@ -72,12 +76,12 @@ async fn fetch_user(
     }
 }
 
-async fn handle_fetch_self(handler: &RequestMessageHandler) -> Option<User> {
+async fn handle_fetch_self(handler: &MessageHandler) -> Option<User> {
     let (user_id, _) = handler.session.lock().await.get_credentials()?;
     fetch_user("fetch_user", handler, user_id.into()).await
 }
 
-async fn handle_fetch_user(username: &str, handler: &RequestMessageHandler) -> Option<User> {
+async fn handle_fetch_user(username: &str, handler: &MessageHandler) -> Option<User> {
     match USERS_DB.get().unwrap().exists(username.into()).await {
         Ok(exists) => {
             if exists {
@@ -93,26 +97,41 @@ async fn handle_fetch_user(username: &str, handler: &RequestMessageHandler) -> O
     None
 }
 
-// async fn handle_fetch_message(handler: &RequestMessageHandler)
+async fn handle_fetch_message(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> Option<Vec<DbMesssage>> {
+    let res = {
+        let session = handler.session.lock().await;
+        find_chat_id(&session, msg.chat_id).await
+    };
 
-pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
+    match res {
+        Ok(chat_id) => {
+            if let Some(target_chat_id) = chat_id {
+                match MESSAGES_DB.get().unwrap().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await {
+                    Ok(messages) => {
+                        return messages
+                    }
+                    Err(err) => {
+                        err.safe_send("fetch_messages", Arc::clone(&handler.writer)).await;
+                    }
+                }
+            }
+            
+        }
+        Err(err) => {
+            err.safe_send("fetch_messages", Arc::clone(&handler.writer)).await;
+        }
+    };
+    
+    None
+}
+
+pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
         let session = handler.session.lock().await;
         if !session.is_authenticated() {
             handler.send_error(method, "You aren't authenticated!").await;
         }
     }
-
-    // "user" => {
-    //                 let username: Option<Option<&str>> = base_fetch_msg.get("username").map(|v| v.as_str());
-    //                 if let Some(Some(username)) = username {
-    //                     handle_fetch_user(username, &handler)
-    //                         .await
-    //                         .map(|v| ResponseUserDetails::to_json_string("fetch_user", v))
-    //                 } else {
-    //                     None
-    //                 }
-    //             }
 
     match serde_json::from_str::<BaseFetchRequestMessage>(handler.builder.as_ref().unwrap().content()) {
         Ok(base_fetch_msg) => {
@@ -121,7 +140,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
                     let details = json!({
                         "ok": true,
                         "method": "fetch_chats",
-                        "data": chats,
+                        "data": if chats.is_empty() {None} else {Some(chats)},
                     });
                     serde_json::to_value(details).unwrap()
                 }),
@@ -130,6 +149,46 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
                     .map(|v| {
                         v.build_response("fetch_self")
                     }),
+                "user" => {
+                    let value = serde_json::from_str::<Value>(&handler.builder.as_ref().unwrap().content());
+
+                    match value {
+                        Ok(value) => {
+                            let username: Option<Option<&str>> = value.get("username").map(|v| v.as_str());
+                            if let Some(Some(username)) = username {
+                                handle_fetch_user(username, &handler)
+                                    .await
+                                    .map(|v| v.build_response("fetch_user"))
+                            } else {
+                                None
+                            }
+                        }
+                        Err(err) => {
+                            handler.send_error("fetch_user", err.to_string()).await;
+                            None
+                        }
+                    }
+                }
+                "messages" => {
+                    let value = serde_json::from_str::<FetchMessagesRequestMessage>(&handler.builder.as_ref().unwrap().content());
+
+                    match value {
+                        Ok(msg) => {
+                            let out = handle_fetch_message(&handler, msg).await;
+                            let response = json!({
+                                "method": "fetch_messages",
+                                "ok": true,
+                                "data": out
+                            });
+
+                            Some(response)
+                        }
+                        Err(err) => {
+                            handler.send_error("fetch_messages", err.to_string()).await;
+                            None
+                        }
+                    }
+                }
                 _ => {
                     handler.send_error(method, "Unknown 'what' field!").await;
                     return;

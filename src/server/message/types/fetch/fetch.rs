@@ -13,15 +13,8 @@ pub struct FetchUserRequestMessage {
     pub username: String
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-struct FetchChatsResponseMessage {
-    pub method: String,
-    pub ok: bool,
-    pub chats: Vec<i32> // basically user_ids, because on them the messages are sent
-}
-
 #[derive(Deserialize, Serialize)]
-struct FetchMessagesRequestMessage {
+pub struct FetchMessagesRequestMessage {
     pub method: String,
     pub what: String,
     pub chat_id: i32,

@@ -22,8 +22,7 @@ pub struct MediaItem {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MediaMessage {
     pub media: Vec<MediaItem>,
-    pub has_caption: bool,
-    pub caption: String,
+    pub caption: Option<String>,
 }
 
 // Define a struct to represent text messages
@@ -42,8 +41,24 @@ pub enum MessageContent {
 
 // Define a struct to represent the complete message
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct RequestMessage {
+pub(crate) struct Message {
     #[serde(flatten)]
     pub common: CommonFields,
     pub content: MessageContent,
+}
+
+pub(crate) type MessageId = i32;
+
+#[derive(Serialize, Deserialize)]
+pub struct DbMesssage {
+    pub message_id: i32,
+    pub is_unread: bool,
+    pub from_id: i32,
+    pub chat_id: i32, 
+    pub date: i64,
+    pub reply_to: Option<i32>,
+    pub content: Option<String>,
+    pub media_datas: Vec<Vec<u8>>,
+    pub media_types: Vec<String>,
+    pub media_names: Vec<String>
 }

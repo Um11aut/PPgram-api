@@ -1,6 +1,6 @@
-use crate::server::message::handler::RequestMessageHandler;
+use crate::server::message::handler::MessageHandler;
 
-pub async fn handle(handler: &mut RequestMessageHandler, method: &str) 
+pub async fn handle(handler: &mut MessageHandler, method: &str) 
 {
 
 }

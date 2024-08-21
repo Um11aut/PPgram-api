@@ -9,7 +9,7 @@ use crate::{
     },
     server::{
         message::{
-            self, builder::MessageBuilder, handler::RequestMessageHandler, types::{chat::ChatId, error::error::PPErrorSender, request::message::RequestMessage, user::UserId}
+            self, builder::MessageBuilder, handler::MessageHandler, types::{chat::ChatId, error::error::PPErrorSender, request::message::Message, user::UserId}
         },
         server::Connections,
         session::Session,
@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// It goes through all the registered to user chats and finds the target id 
 /// 
 /// TODO: Fully remake this system, because it may significantly affect performance
-async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i32>, PPError> {
+pub async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i32>, PPError> {
     let users_db = USERS_DB.get().unwrap();
     let (self_user_id, _) = session.get_credentials().unwrap();
     let chat_ids = users_db.fetch_chats(&self_user_id).await?;
@@ -44,7 +44,7 @@ async fn find_chat_id(session: &Session, target_user_id: i32) -> Result<Option<i
 /// Returns latest chat message id if sucessful
 async fn handle_send_message(
     session: &Session,
-    msg: RequestMessage,
+    msg: Message,
     connections: Connections,
 ) -> Result<i32 /* message_id */, PPError> {
     let (user_id, _) = session.get_credentials().unwrap();
@@ -92,7 +92,7 @@ async fn handle_send_message(
     Ok(latest)
 }
 
-pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
+pub async fn handle(handler: &mut MessageHandler, method: &str) {
     let session = handler.session.lock().await;
     if !session.is_authenticated() {
         PPErrorSender::send(
@@ -104,7 +104,7 @@ pub async fn handle(handler: &mut RequestMessageHandler, method: &str) {
         return;
     }
 
-    match serde_json::from_str::<RequestMessage>(handler.builder.as_ref().unwrap().content()) {
+    match serde_json::from_str::<Message>(handler.builder.as_ref().unwrap().content()) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
                 match handle_send_message(&session, msg, Arc::clone(&handler.connections)).await {

@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use serde::{Deserialize, Serialize};
 
 use crate::db::{chat::chats::CHATS_DB, internal::error::PPError, user::USERS_DB};
@@ -9,7 +11,7 @@ pub type ChatId = i32;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ChatDetails {
     name: String,
-    photo: Vec<u8>,
+    photo: Option<Vec<u8>>,
     username: String,
 }
 
@@ -18,7 +20,7 @@ impl ChatDetails {
         &self.name
     }
 
-    pub fn photo(&self) -> &Vec<u8> {
+    pub fn photo(&self) -> &Option<Vec<u8>> {
         &self.photo
     }
 
@@ -74,10 +76,10 @@ impl Chat {
         match self.is_group {
             // if not is_group, just take the account of other participant
             false => {
-                if let Some(ref peer) = self.participants.iter().find(|&participant| participant.user_id() != me.get_i32().unwrap()) {
+                if let Some(peer) = self.participants.iter().find(|&participant| participant.user_id() != me.get_i32().unwrap()) {
                     return Ok(Some(ChatDetails{
                         name: peer.name().into(),
-                        photo: if peer.photo().is_none() {vec![]} else {peer.photo().as_ref().unwrap().to_vec()},
+                        photo: peer.photo().clone(),
                         username: peer.username().to_owned()
                     }))
                     } else {
