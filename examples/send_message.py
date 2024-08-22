@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
         # Define the messages as dictionaries
         register_message = {
-            "method": "login",
+            "method": "register",
             "username": "@pepuk",
             "name": "Pepuk Alpha",
             "password_hash": "asd"
