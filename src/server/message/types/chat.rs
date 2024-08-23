@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{chat::chats::CHATS_DB, internal::error::PPError, user::USERS_DB};
+use crate::{db::{chat::chats::CHATS_DB, internal::error::PPError, user::USERS_DB}};
 
 use super::user::{User, UserId};
 
@@ -11,6 +11,7 @@ pub type ChatId = i32;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ChatDetails {
     name: String,
+    chat_id: i32, // User/Group ChatId
     photo: Option<Vec<u8>>,
     username: String,
 }
@@ -29,6 +30,7 @@ impl ChatDetails {
     }
 }
 
+#[derive(Debug)]
 pub struct Chat {
     chat_id: ChatId,
     is_group: bool,
@@ -72,13 +74,14 @@ impl Chat {
     /// If the chat isn't group(2 people only), it will fetch the info of another user in the chat.
     /// 
     /// If the chat is group, info must be present, it will fetch the chat info.
-    pub async fn details(&self, me: &UserId) -> Result<Option<ChatDetails>, PPError> {
+    pub async fn details(&self, me: &UserId, chat_id: ChatId) -> Result<Option<ChatDetails>, PPError> {
         match self.is_group {
             // if not is_group, just take the account of other participant
             false => {
                 if let Some(peer) = self.participants.iter().find(|&participant| participant.user_id() != me.get_i32().unwrap()) {
                     return Ok(Some(ChatDetails{
                         name: peer.name().into(),
+                        chat_id,
                         photo: peer.photo().clone(),
                         username: peer.username().to_owned()
                     }))

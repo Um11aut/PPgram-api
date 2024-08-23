@@ -24,6 +24,6 @@ impl PPErrorSender
         let builder = MessageBuilder::build_from(serde_json::to_string(&error).unwrap());
 
         let mut writer = writer.lock().await;
-        writer.write_all(builder.packed().as_bytes()).await.unwrap();
+        writer.write_all(&builder.packed()).await.unwrap();
     }
 }

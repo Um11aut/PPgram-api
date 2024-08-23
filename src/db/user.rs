@@ -2,10 +2,13 @@ use cassandra_cpp;
 use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
+use cassandra_cpp::MapIterator;
 use cassandra_cpp::SetIterator;
 use log::error;
 use rand::{distributions::Alphanumeric, Rng};
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::result;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
@@ -39,7 +42,7 @@ impl Database for UsersDB {
                 photo BLOB,
                 password_hash TEXT, 
                 sessions LIST<TEXT>,
-                chats LIST<int>
+                chats MAP<int, int>
             )
         "#;
 
@@ -90,7 +93,7 @@ impl UsersDB {
 
         let user_id = rand::random::<i32>();
         let query = r#"
-            INSERT INTO users (id, name, username, password_hash, sessions, photo) VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, name, username, password_hash, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?)
         "#;
         let mut statement = self.session.statement(query);
 
@@ -100,6 +103,7 @@ impl UsersDB {
         statement.bind_string(3, password_hash)?;
         statement.bind_list(4, cassandra_cpp::List::new())?;
         statement.bind_bytes(5, Vec::new())?;
+        statement.bind_map(6, cassandra_cpp::Map::new())?;
 
         statement.execute().await?;
 
@@ -266,7 +270,7 @@ impl UsersDB {
         }
     }
 
-    pub async fn fetch_chats(&self, user_id: &UserId) -> Result<Vec<i32 /* chat_id */>, PPError> {
+    pub async fn fetch_chats(&self, user_id: &UserId) -> Result<HashMap<i32, ChatId>, PPError> {
         let statement = match user_id {
             UserId::UserId(user_id) => {
                 let query = "SELECT chats FROM users WHERE id = ?";
@@ -283,15 +287,15 @@ impl UsersDB {
         };
         let result = statement.execute().await?;
 
-        let mut output: Vec<ChatId> = vec![];
+        let mut output: HashMap<i32, ChatId> = HashMap::new();
 
         let mut iter = result.iter();
         while let Some(row) = iter.next() {
-            let chats: cassandra_cpp::Result<SetIterator> = row.get(0);
+            let maybe_iter: cassandra_cpp::Result<MapIterator> = row.get(0);
 
-            if let Ok(mut chats) = chats {
-                while let Some(chat) = chats.next() {
-                    output.push(chat.get_i32()?);
+            if let Ok(mut chats) = maybe_iter {
+                while let Some((key, val)) = chats.next() {
+                    output.insert(key.get_i32()?.into(), val.get_i32()?);
                 }
             }
         }
@@ -299,7 +303,37 @@ impl UsersDB {
         Ok(output)
     }
 
-    pub async fn add_chat(&self, user_id: &UserId, chat_id: ChatId) -> Result<(), PPError> {
+    pub async fn get_associated_chat_id(&self, user_id: &UserId, key_user_id: &UserId) -> Result<Option<ChatId>, PPError> {
+        let mut statement = match user_id {
+            UserId::UserId(user_id) => {
+                let query = "SELECT chats[?] FROM users WHERE id = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_int32(1, *user_id)?;
+                statement
+            }
+            UserId::Username(username) => {
+                let query = "SELECT chats[?] FROM users WHERE username = ?";
+                let mut statement = self.session.statement(query);
+                statement.bind_string(1, &username)?;
+                statement
+            }
+        };
+        statement.bind_int32(0, key_user_id.get_i32().unwrap())?;
+
+        let result = statement.execute().await?;
+
+        if let Some(row) = result.first_row() {
+            let maybe_chat_id: cassandra_cpp::Result<i32> = row.get(0);
+
+            if let Ok(associated_chat_id) = maybe_chat_id {
+                return Ok(Some(associated_chat_id))
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub async fn add_chat(&self, user_id: &UserId, target_user_id: &UserId, target_chat_id: ChatId) -> Result<(), PPError> {
         let query = match user_id {
             UserId::UserId(_) => {
                 "UPDATE users SET chats = chats + ? WHERE id = ?"
@@ -308,14 +342,19 @@ impl UsersDB {
                 "UPDATE users SET chats = chats + ? WHERE username = ?"
             }
         };
+
+        if let UserId::Username(_) = target_user_id {
+            return Err(PPError::from("target_user_id must be integer, not string!"))
+        }
     
         let mut statement = self.session.statement(query);
     
         // Create a list with a single chat_id to append to the chats list
-        let mut chat_list = cassandra_cpp::List::new();
-        chat_list.append_int32(chat_id)?;
-    
-        statement.bind_list(0, chat_list)?;
+        let mut chat_list = cassandra_cpp::Map::new();
+        chat_list.append_int32(target_user_id.get_i32().unwrap())?;
+        chat_list.append_int32(target_chat_id)?;
+
+        statement.bind_map(0, chat_list)?;
     
         match user_id {
             UserId::UserId(user_id) => {

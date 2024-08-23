@@ -25,8 +25,6 @@ use crate::{
 };
 use std::sync::Arc;
 
-use super::send::find_chat_id;
-
 async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>> {
     let users_db = USERS_DB.get().unwrap();
     let chats_db = CHATS_DB.get().unwrap();
@@ -35,10 +33,10 @@ async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>
     return match users_db.fetch_chats(&user_id).await {
         Ok(chat_ids) => {
             let mut chats_details: Vec<ChatDetails> = vec![];
-            for chat_id in chat_ids {
-                let chat = chats_db.fetch_chat(chat_id).await.unwrap();
+            for (chat_id, associated_chat_id) in chat_ids {
+                let chat = chats_db.fetch_chat(associated_chat_id).await.unwrap();
                 if let Some(chat) = chat {
-                    let details = chat.details(&user_id).await;
+                    let details = chat.details(&user_id, chat_id).await;
 
                     match details {
                         Ok(details) => {
@@ -97,10 +95,11 @@ async fn handle_fetch_user(username: &str, handler: &MessageHandler) -> Option<U
     None
 }
 
-async fn handle_fetch_message(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> Option<Vec<DbMesssage>> {
+async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> Option<Vec<DbMesssage>> {
     let res = {
         let session = handler.session.lock().await;
-        find_chat_id(&session, msg.chat_id).await
+        let (user_id, _) = session.get_credentials().unwrap();
+        USERS_DB.get().unwrap().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
     };
 
     match res {
@@ -130,6 +129,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
         let session = handler.session.lock().await;
         if !session.is_authenticated() {
             handler.send_error(method, "You aren't authenticated!").await;
+            return;
         }
     }
 
@@ -140,7 +140,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                     let details = json!({
                         "ok": true,
                         "method": "fetch_chats",
-                        "data": if chats.is_empty() {None} else {Some(chats)},
+                        "data": if chats.is_empty() {None} else { Some(chats)},
                     });
                     serde_json::to_value(details).unwrap()
                 }),
@@ -174,7 +174,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
 
                     match value {
                         Ok(msg) => {
-                            let out = handle_fetch_message(&handler, msg).await;
+                            let out = handle_fetch_messages(&handler, msg).await;
                             let response = json!({
                                 "method": "fetch_messages",
                                 "ok": true,

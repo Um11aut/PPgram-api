@@ -46,7 +46,6 @@ impl Database for MessagesDB {
                 content TEXT,
                 has_media boolean,
                 media_datas LIST<BLOB>,
-                media_types LIST<TEXT>,
                 media_names LIST<TEXT>,
                 PRIMARY KEY (chat_id, id)
             )
@@ -69,8 +68,8 @@ impl MessagesDB {
             INSERT INTO messages 
                 (id, is_unread, from_id, chat_id, date, has_reply,
                 reply_to, has_content, content, 
-                has_media, media_datas, media_types, media_names)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                has_media, media_datas, media_names)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
 
         let mut statement = self.session.statement(&insert_query);
@@ -119,8 +118,7 @@ impl MessagesDB {
                 statement.bind_bool(9, true)?; // has_media
 
                 statement.bind_list(10, List::new())?; // media_datas
-                statement.bind_list(11, List::new())?; // media_types
-                statement.bind_list(12, List::new())?; // media_names
+                statement.bind_list(11, List::new())?; // media_names
 
                 // TODO: Implement media messages
                 todo!()
@@ -130,8 +128,7 @@ impl MessagesDB {
                 statement.bind_string(8, &text.text)?; // content
                 statement.bind_bool(9, false)?; // has_media
                 statement.bind_list(10, List::new())?; // media_datas
-                statement.bind_list(11, List::new())?; // media_types
-                statement.bind_list(12, List::new())?; // media_names
+                statement.bind_list(11, List::new())?; // media_names
             }
         }
 
@@ -238,7 +235,6 @@ impl MessagesDB {
                     reply_to: if has_reply {Some(reply_to)} else {None},
                     content: if has_content {Some(content)} else {None},
                     media_datas: vec![],
-                    media_types: vec![],
                     media_names: vec![],
                 }
             )

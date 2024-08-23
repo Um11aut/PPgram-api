@@ -25,9 +25,7 @@ async fn check_username(username: &str, handler: &mut MessageHandler) {
                 .lock()
                 .await
                 .write_all(
-                    MessageBuilder::build_from(serde_json::to_string(&data).unwrap())
-                        .packed()
-                        .as_bytes(),
+                    &MessageBuilder::build_from(serde_json::to_string(&data).unwrap()).packed(),
                 )
                 .await
                 .unwrap();

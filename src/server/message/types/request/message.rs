@@ -59,6 +59,5 @@ pub struct DbMesssage {
     pub reply_to: Option<i32>,
     pub content: Option<String>,
     pub media_datas: Vec<Vec<u8>>,
-    pub media_types: Vec<String>,
     pub media_names: Vec<String>
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use log::debug;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf};
 
@@ -42,9 +42,22 @@ impl MessageHandler {
             .writer
             .lock()
             .await
-            .write_all(MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed().as_bytes())
+            .write_all(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed())
             .await
             .unwrap();
+    }
+
+    pub fn send_msg_to_connection(&self, to: i32, msg: impl Serialize + Send + 'static) {
+        tokio::spawn({
+            let connections = Arc::clone(&self.connections);
+            async move {
+                if let Some(reciever_session) = connections.read().await.get(&to) {
+                    let target_connection = reciever_session.lock().await;
+                    
+                    target_connection.send(msg).await;
+                }
+            }
+        });
     }
 
     async fn handle_message(&mut self, message: &str) {

@@ -1,5 +1,6 @@
 use log::debug;
 use log::error;
+use log::info;
 use serde_json::Value;
 use std::collections::hash_map;
 use std::collections::HashMap;
@@ -76,7 +77,8 @@ impl Server {
 
         while let Some(message) = rx.recv().await {
             let mut writer = writer.lock().await;
-            if let Err(e) = writer.write_all(MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed().as_bytes()).await {
+            info!("{}", serde_json::to_string(&message).unwrap());
+            if let Err(e) = writer.write_all(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed()).await {
                 error!("Failed to send message: {}", e);
             }
         }
