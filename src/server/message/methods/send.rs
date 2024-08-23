@@ -12,7 +12,7 @@ use crate::{
         message::{
             self, builder::MessageBuilder, handler::MessageHandler, types::{chat::{Chat, ChatId}, error::error::PPErrorSender, request::message::{DbMesssage, Message, MessageId}, user::UserId}
         },
-        server::Connections,
+        server::Sessions,
         session::Session,
     },
 };
@@ -79,15 +79,9 @@ async fn handle_send_message(
 }
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
-    let session = handler.session.lock().await;
+    let session = handler.session.read().await;
     if !session.is_authenticated() {
-        PPErrorSender::send(
-            method,
-            "You aren't authenticated!",
-            Arc::clone(&handler.writer),
-        )
-        .await;
-        return;
+        handler.send_err_str(method, "You aren't authenticated!").await;
     }
 
     match serde_json::from_str::<Message>(handler.builder.as_ref().unwrap().content()) {
@@ -96,23 +90,15 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                 match handle_send_message(&session, msg, &handler).await {
                     Ok((latest_msg_id, target_chat_id)) => {
                         let data = serde_json::json!({ "method": "send_message", "message_id": latest_msg_id, "chat_id": target_chat_id, "ok": true });
-                        handler
-                            .writer
-                            .lock()
-                            .await
-                            .write_all(
-                                &MessageBuilder::build_from(serde_json::to_string(&data).unwrap()).packed(),
-                            )
-                            .await
-                            .unwrap();
+                        handler.send_message(&data).await;
                     }
-                    Err(err) => {err.safe_send(method, Arc::clone(&handler.writer)).await;},
+                    Err(err) => {handler.send_error(method, err).await;},
                 }
             }
-            _ => PPErrorSender::send(method, "Unknown method!", Arc::clone(&handler.writer)).await,
+            _ => handler.send_err_str(method, "Unknown method given!").await,
         },
         Err(err) => {
-            PPErrorSender::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
+            handler.send_err_str(method, err.to_string()).await;
         }
     }
 }

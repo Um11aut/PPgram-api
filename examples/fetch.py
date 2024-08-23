@@ -1,11 +1,12 @@
 import socket
+import time
 
-from examples import send_message
+from api import send_message
 
 # Example usage
 if __name__ == "__main__":
     # Define the server address and port
-    server_address = ('127.0.0.1', 8080)
+    server_address = ('6.tcp.eu.ngrok.io', 16349)
 
     # Create a TCP/IP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -16,17 +17,26 @@ if __name__ == "__main__":
 
         # Define the messages as dictionaries
         login_message = {
-            "method": "register",
+            "method": "login",
             "username": "@pavlo",
             "name": "Pepuk Alpha",
             "password_hash": "asd"
         }
+        print(send_message(sock, login_message))
 
         fetch = {
             "method": "fetch",
             "what": "chats"
         }
         print(send_message(sock, fetch))
+
+        fetch = {
+            "method": "fetch",
+            "what": "messages",
+            "chat_id": -2079655369,
+            "range": [-1, -500]
+        }
+        print(len(send_message(sock, fetch)))
 
     finally:
         # Close the socket

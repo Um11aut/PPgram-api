@@ -30,12 +30,15 @@ def send_message(sock: socket.socket, message: dict) -> str:
 
     # Send the length-prefixed message
     sock.sendall(message_to_send)
+    
+    time.sleep(1)
 
     # First, read the first 4 bytes to get the length of the incoming message
     length_bytes = sock.recv(4)
 
     # Convert the length bytes to an integer
     message_length = struct.unpack('!I', length_bytes)[0]
+    print(message_length)
 
     # Now read the actual message based on the length
     response_bytes = sock.recv(message_length)

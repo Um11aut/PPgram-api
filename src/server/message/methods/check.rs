@@ -20,18 +20,10 @@ async fn check_username(username: &str, handler: &mut MessageHandler) {
                 })
             };
 
-            handler
-                .writer
-                .lock()
-                .await
-                .write_all(
-                    &MessageBuilder::build_from(serde_json::to_string(&data).unwrap()).packed(),
-                )
-                .await
-                .unwrap();
+            handler.send_message(&data).await;
         }
         Err(err) => {
-            PPErrorSender::send("check", err.to_string(), Arc::clone(&handler.writer)).await;
+            handler.send_error("check_username", err).await;
         }
     }
 }
@@ -43,7 +35,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str)
             check_username(&msg.data, handler).await;
         },
         Err(err) => {
-            PPErrorSender::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
+            handler.send_err_str(method, err.to_string()).await;
         },
     }
 }

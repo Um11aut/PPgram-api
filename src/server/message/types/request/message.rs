@@ -50,6 +50,7 @@ pub(crate) struct Message {
 pub(crate) type MessageId = i32;
 
 #[derive(Serialize, Deserialize, Debug)]
+/// Message type that is stored in Database
 pub struct DbMesssage {
     pub message_id: i32,
     pub is_unread: bool,

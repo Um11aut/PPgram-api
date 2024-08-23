@@ -72,7 +72,7 @@ impl MessageBuilder {
         self.size
     }
 
-    pub fn packed<'a>(&self) -> Vec<u8> {
+    pub fn packed(&self) -> Vec<u8> {
         let size_bytes = self.size.to_be_bytes();
 
         let full_len = self.content.len() + self.size as usize;

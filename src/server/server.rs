@@ -18,13 +18,13 @@ use crate::server::{message::handler::MessageHandler, session::Session};
 
 use super::message::builder::MessageBuilder;
 
-const PACKET_SIZE: u32 = 65535;
+const PACKET_SIZE: u32 = 1024;
 
-pub(super) type Connections = Arc<RwLock<HashMap<i32, Arc<Mutex<Session>>>>>;
+pub(super) type Sessions = Arc<RwLock<HashMap<i32, Arc<RwLock<Session>>>>>;
 
 pub(crate) struct Server {
     listener: TcpListener,
-    connections: Connections,
+    connections: Sessions,
 }
 
 impl Server {
@@ -43,20 +43,18 @@ impl Server {
     }
 
     async fn event_handler(
-        reader: Arc<Mutex<OwnedReadHalf>>,
-        writer: Arc<Mutex<OwnedWriteHalf>>,
-        connections: Connections,
-        session: Arc<Mutex<Session>>,
+        sessions: Sessions,
+        session: Arc<RwLock<Session>>,
         addr: SocketAddr,
     ) {
         debug!("Connection established: {}", addr);
 
         let mut handler = MessageHandler::new(
-            Arc::clone(&writer),
             Arc::clone(&session),
-            Arc::clone(&connections),
+            Arc::clone(&sessions),
         );
 
+        let reader = Arc::clone(&session.read().await.main_connection().reader);
         loop {
             let mut buffer = [0; PACKET_SIZE as usize];
 
@@ -72,41 +70,17 @@ impl Server {
         debug!("Connection closed: {}", addr);
     }
 
-    async fn receiver_handler(mut rx: mpsc::Receiver<Value>, writer: Arc<Mutex<OwnedWriteHalf>>) {
-        let writer = Arc::clone(&writer);
-
-        while let Some(message) = rx.recv().await {
-            let mut writer = writer.lock().await;
-            info!("{}", serde_json::to_string(&message).unwrap());
-            if let Err(e) = writer.write_all(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed()).await {
-                error!("Failed to send message: {}", e);
-            }
-        }
-    }
-
     pub async fn poll_events(&mut self) {
         loop {
             match self.listener.accept().await {
                 Ok((socket, addr)) => {
-                    let (sender, receiver) = mpsc::channel::<Value>(PACKET_SIZE as usize);
-
-                    let session = Arc::new(Mutex::new(Session::new(addr, sender)));
-
-                    let (reader, writer) = {
-                        let (r, w) = socket.into_split();
-
-                        (Arc::new(Mutex::new(r)), Arc::new(Mutex::new(w)))
-                    };
+                    let session = Arc::new(RwLock::new(Session::new(socket)));
 
                     tokio::spawn(Self::event_handler(
-                        Arc::clone(&reader),
-                        Arc::clone(&writer),
                         Arc::clone(&self.connections),
                         Arc::clone(&session),
                         addr,
                     ));
-
-                    tokio::spawn(Self::receiver_handler(receiver, writer));
                 }
                 Err(err) => {
                     error!("Error while establishing new connection: {}", err);

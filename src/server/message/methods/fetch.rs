@@ -29,7 +29,7 @@ async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>
     let users_db = USERS_DB.get().unwrap();
     let chats_db = CHATS_DB.get().unwrap();
 
-    let (user_id, _) = handler.session.lock().await.get_credentials().unwrap();
+    let (user_id, _) = handler.session.read().await.get_credentials().unwrap();
     return match users_db.fetch_chats(&user_id).await {
         Ok(chat_ids) => {
             let mut chats_details: Vec<ChatDetails> = vec![];
@@ -45,7 +45,7 @@ async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>
                             }
                         }
                         Err(err) => {
-                            err.safe_send("fetch_chats", Arc::clone(&handler.writer)).await;
+                            handler.send_error("fetch_chats", err).await;
                         }
                     }
                 }
@@ -53,8 +53,7 @@ async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>
             Some(chats_details)
         }
         Err(err) => {
-            err.safe_send("fetch_chats", Arc::clone(&handler.writer))
-                .await;
+            handler.send_error("fetch_chats", err).await;
             None
         }
     };
@@ -68,14 +67,14 @@ async fn fetch_user(
     match USERS_DB.get().unwrap().fetch_user(identifier).await {
         Ok(details) => return details,
         Err(err) => {
-            err.safe_send(method, Arc::clone(&handler.writer)).await;
+            handler.send_error(method, err).await;
             return None;
         }
     }
 }
 
 async fn handle_fetch_self(handler: &MessageHandler) -> Option<User> {
-    let (user_id, _) = handler.session.lock().await.get_credentials()?;
+    let (user_id, _) = handler.session.read().await.get_credentials()?;
     fetch_user("fetch_user", handler, user_id.into()).await
 }
 
@@ -87,8 +86,7 @@ async fn handle_fetch_user(username: &str, handler: &MessageHandler) -> Option<U
             }
         }
         Err(err) => {
-            err.safe_send("fetch_user", Arc::clone(&handler.writer))
-                .await;
+            handler.send_error("fetch_user", err).await;
         }
     }
 
@@ -97,11 +95,12 @@ async fn handle_fetch_user(username: &str, handler: &MessageHandler) -> Option<U
 
 async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> Option<Vec<DbMesssage>> {
     let res = {
-        let session = handler.session.lock().await;
+        let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
         USERS_DB.get().unwrap().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
     };
 
+    info!("{:?}", res);
     match res {
         Ok(chat_id) => {
             if let Some(target_chat_id) = chat_id {
@@ -110,14 +109,14 @@ async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesReque
                         return messages
                     }
                     Err(err) => {
-                        err.safe_send("fetch_messages", Arc::clone(&handler.writer)).await;
+                        handler.send_error("fetch_messages", err).await;
                     }
                 }
             }
             
         }
         Err(err) => {
-            err.safe_send("fetch_messages", Arc::clone(&handler.writer)).await;
+            handler.send_error("fetch_messages", err).await;
         }
     };
     
@@ -126,9 +125,9 @@ async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesReque
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
-        let session = handler.session.lock().await;
+        let session = handler.session.read().await;
         if !session.is_authenticated() {
-            handler.send_error(method, "You aren't authenticated!").await;
+            handler.send_err_str(method, "You aren't authenticated!").await;
             return;
         }
     }
@@ -164,7 +163,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                             }
                         }
                         Err(err) => {
-                            handler.send_error("fetch_user", err.to_string()).await;
+                            handler.send_err_str("fetch_user", err.to_string()).await;
                             None
                         }
                     }
@@ -184,13 +183,13 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                             Some(response)
                         }
                         Err(err) => {
-                            handler.send_error("fetch_messages", err.to_string()).await;
+                            handler.send_err_str("fetch_messages", err.to_string()).await;
                             None
                         }
                     }
                 }
                 _ => {
-                    handler.send_error(method, "Unknown 'what' field!").await;
+                    handler.send_err_str(method, "Unknown 'what' field!").await;
                     return;
                 }
             };
@@ -201,7 +200,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
             return;
         }
         Err(err) => {
-            PPErrorSender::send(method, err.to_string(), Arc::clone(&handler.writer)).await;
+            handler.send_err_str(method, err.to_string()).await;
             return;
         }
     }

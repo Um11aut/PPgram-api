@@ -1,12 +1,12 @@
 import socket
 
-from examples import send_message
-from examples.api import listen_for_messages
+from api import send_message
+from api import listen_for_messages
 
 # Example usage
 if __name__ == "__main__":
     # Define the server address and port
-    server_address = ('127.0.0.1', 8080)
+    server_address = ('6.tcp.eu.ngrok.io', 16349)
 
     # Create a TCP/IP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -17,8 +17,8 @@ if __name__ == "__main__":
 
         # Define the login message
         login_message = {
-            "method": "register",
-            "username": "@pepuk",
+            "method": "login",
+            "username": "@pavlo",
             "name": "Pepuk Alpha",
             "password_hash": "asd"
         }

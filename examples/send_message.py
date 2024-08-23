@@ -3,7 +3,7 @@ import simple
 
 if __name__ == "__main__":
     # Define the server address and port
-    server_address = ('127.0.0.1', 8080)
+    server_address = ('6.tcp.eu.ngrok.io', 16349)
 
     # Create a TCP/IP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -14,8 +14,8 @@ if __name__ == "__main__":
 
         # Define the messages as dictionaries
         register_message = {
-            "method": "register",
-            "username": "@pepuk",
+            "method": "login",
+            "username": "@pavlo",
             "name": "Pepuk Alpha",
             "password_hash": "asd"
         }
@@ -25,16 +25,18 @@ if __name__ == "__main__":
 
         send_message_dict = {
             "method": "send_message",
-            "to": 1008019800,
+            "to": -2079655369,
             "has_reply": False,
             "reply_to": 0,
             "content": {
-                "text": "Pepuk pidar"
+                "text": "Huy"
             }
         }
 
-        resp = simple.send_message(sock, send_message_dict)
-        print('Sending Message Response: ' + resp)
+        while True:
+            resp = simple.send_message(sock, send_message_dict)
+            print('Sending Message Response: ' + resp)
+
 
     finally:
         # Close the socket

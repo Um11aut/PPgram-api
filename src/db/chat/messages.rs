@@ -3,6 +3,7 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::List;
+use log::debug;
 use log::info;
 use core::range::RangeInclusive;
 use std::ops::Range;
@@ -182,6 +183,7 @@ impl MessagesDB {
             }
         }
         let (start, end) = validate_range(RangeInclusive::from(range.start..=range.end))?;
+        debug!("Messages range: {}, {}", start, end);
 
         let statement = if end != 0 {
             let query = r#"
@@ -212,7 +214,6 @@ impl MessagesDB {
         let mut output: Vec<DbMesssage> = vec![];
         let mut iter = result.iter();
         while let Some(row) = iter.next() {
-            info!("{}", row);
             let message_id: i32 = row.get_by_name("id")?;
             let is_unread: bool = row.get_by_name("is_unread")?;
             let from_id: i32 = row.get_by_name("from_id")?;
