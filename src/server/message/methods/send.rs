@@ -60,7 +60,7 @@ async fn handle_send_message(
                 "data": chat_details
             }));
 
-            msg.common.to
+            chat_id.chat_id()
         }
     };
     
