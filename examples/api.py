@@ -3,6 +3,17 @@ import socket
 import struct
 import time
 
+def time_it(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()  # Record the start time
+        result = func(*args, **kwargs)  # Call the actual function
+        end_time = time.time()  # Record the end time
+        elapsed_time = end_time - start_time  # Calculate the elapsed time
+        print(f"Function '{func.__name__}' took {elapsed_time:.6f} seconds to complete.")
+        return result
+    return wrapper
+
+@time_it
 def send_message(sock: socket.socket, message: dict) -> str:
     """
     Send a message over an open socket and receive a response.
@@ -33,15 +44,23 @@ def send_message(sock: socket.socket, message: dict) -> str:
 
     # First, read the first 4 bytes to get the length of the incoming message
     length_bytes = sock.recv(4)
+    if len(length_bytes) < 4:
+        raise ValueError("Received incomplete message length")
 
     # Convert the length bytes to an integer
-    message_length = struct.unpack('!I', length_bytes)[0]
-    print(message_length)
+    expected_size = struct.unpack('!I', length_bytes)[0]
+
+    # Initialize a buffer to accumulate the incoming data
+    chunks = b''
 
     # Now read the actual message based on the length
-    response_bytes = sock.recv(message_length)
-    response = response_bytes.decode('utf-8')
+    while len(chunks) < expected_size:
+        response_bytes = sock.recv(expected_size - len(chunks))
+        if not response_bytes:
+            raise ConnectionError("Connection lost during message reception")
+        chunks += response_bytes
 
+    response = chunks.decode('utf-8')
     return response
 
 def listen_for_messages(sock: socket.socket):

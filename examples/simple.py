@@ -6,7 +6,7 @@ from api import listen_for_messages
 # Example usage
 if __name__ == "__main__":
     # Define the server address and port
-    server_address = ('6.tcp.eu.ngrok.io', 16349)
+    server_address = ('127.0.0.1', 8080)
 
     # Create a TCP/IP socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -17,11 +17,12 @@ if __name__ == "__main__":
 
         # Define the login message
         login_message = {
-            "method": "login",
-            "username": "@pavlo",
-            "name": "Pepuk Alpha",
-            "password_hash": "asd"
+            "method": "auth",
+            "session_id": "Fm8rUecSkI7ueI9C8pKun2OrPplrk8",
+            "user_id": -497022138,
         }
+
+
 
         # Send the login message
         login_response = send_message(sock, login_message)

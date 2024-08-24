@@ -76,6 +76,9 @@ impl Session {
         Ok(())
     }
 
+    pub fn session_id(&self) -> Option<&String> {
+        self.session_id.as_ref()
+    }
 
     pub async fn connections(&self) -> &Vec<Connection> {
         &self.connections

@@ -100,13 +100,18 @@ async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesReque
         USERS_DB.get().unwrap().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
     };
 
-    info!("{:?}", res);
     match res {
         Ok(chat_id) => {
             if let Some(target_chat_id) = chat_id {
                 match MESSAGES_DB.get().unwrap().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await {
-                    Ok(messages) => {
-                        return messages
+                    Ok(maybe_messages) => {
+                        match maybe_messages {
+                            Some(mut messages) => {
+                                messages.iter_mut().for_each(|message| message.chat_id = msg.chat_id);
+                                return Some(messages)
+                            }
+                            None => return None
+                        }
                     }
                     Err(err) => {
                         handler.send_error("fetch_messages", err).await;

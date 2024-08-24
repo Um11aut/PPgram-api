@@ -13,14 +13,14 @@ use crate::server::server::Sessions;
 use crate::server::session::Session;
 
 use super::builder::MessageBuilder;
-use super::methods::{auth, check, edit, fetch, send};
+use super::methods::{auth, bind, check, edit, fetch, send};
 use super::types::error::error::PPErrorSender;
 
 pub struct MessageHandler {
     pub(crate) builder: Option<MessageBuilder>,
     pub(crate) session: Arc<RwLock<Session>>,
     pub(crate) connections: Sessions,
-    connection_idx: usize,
+    pub(crate) connection_idx: usize,
     is_first: bool,
 }
 
@@ -63,7 +63,8 @@ impl MessageHandler {
         });
     }
 
-    async fn handle_message(&mut self, message: &str) {
+    async fn handle_message(&mut self) {
+        let message = self.builder.as_ref().unwrap().content();
         match serde_json::from_str::<Value>(&message) {
             Ok(value) => {
                 match value.get("method").and_then(Value::as_str) {
@@ -74,6 +75,7 @@ impl MessageHandler {
                             "edit_message" => edit::handle(self, method).await,
                             "fetch" => fetch::handle(self, method).await,
                             "check" => check::handle(self, method).await,
+                            "bind" => bind::handle(self, method).await,
                             _ => self.send_err_str(method, "Unknown method given!").await
                         }
                     },  
@@ -93,24 +95,27 @@ impl MessageHandler {
                 debug!("Got the message! \n Message size: {}", builder.size());
             }
             self.is_first = false;
-            if !self.builder.as_ref().unwrap().ready() {
-                return;
+
+            if let Some(ref message) = self.builder {
+                if !message.ready() {
+                    return;
+                }
             }
         }
         
-        let mut content = String::new();
+        let mut do_handle = false;
         if let Some(ref mut message) = self.builder {
             if !message.ready() {
                 message.extend(buffer);
             }
             
             if message.ready() {
-                content = message.content().clone();
+                do_handle = true;
             }
         }
 
-        if !content.is_empty() {
-            self.handle_message(&content).await;
+        if do_handle {
+            self.handle_message().await;
     
             if let Some(ref mut message) = self.builder {
                 message.clear();
@@ -126,12 +131,17 @@ impl Drop for MessageHandler {
         tokio::spawn({
             let connections: Sessions = Arc::clone(&self.connections);    
             let session = Arc::clone(&self.session);
+            let connection_idx = self.connection_idx;
 
             async move {
                 let mut connections = connections.write().await;
-                let session = session.read().await;
+                let mut session = session.write().await;
+
+                session.connections.remove(connection_idx);
                 if let Some((user_id, _)) = session.get_credentials() {
-                    connections.remove(&user_id.get_i32().unwrap());
+                    if session.connections.is_empty() {
+                        connections.remove(&user_id.get_i32().unwrap());
+                    }
                 }
             }
         });

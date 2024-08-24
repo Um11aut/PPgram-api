@@ -1,6 +1,6 @@
 use log::{debug, error, info};
 use serde_json::json;
-use tokio::{io::AsyncWriteExt, sync::Mutex};
+use tokio::{io::AsyncWriteExt, sync::{Mutex, RwLock}};
 
 use crate::{
     db::{
@@ -16,15 +16,17 @@ use crate::{
         session::Session,
     },
 };
-use std::sync::Arc;
+use std::sync::{Arc};
 
 /// Returns latest chat message id if sucessful
 async fn handle_send_message(
-    session: &Session,
+    session: Arc<RwLock<Session>>,
     msg: Message,
     handler: &MessageHandler,
 ) -> Result<(MessageId, ChatId), PPError> {
+    let session = session.read().await;
     let (self_user_id, _) = session.get_credentials().unwrap();
+    drop(session);
 
     if self_user_id.get_i32().unwrap() == msg.common.to {
         return Err(PPError::from("You cannot send messages on yourself!"));
@@ -79,16 +81,18 @@ async fn handle_send_message(
 }
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
-    let session = handler.session.read().await;
-    if !session.is_authenticated() {
-        handler.send_err_str(method, "You aren't authenticated!").await;
-        return;
+    {
+        let session = handler.session.read().await;
+        if !session.is_authenticated() {
+            handler.send_err_str(method, "You aren't authenticated!").await;
+            return;
+        }
     }
 
     match serde_json::from_str::<Message>(handler.builder.as_ref().unwrap().content()) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
-                match handle_send_message(&session, msg, &handler).await {
+                match handle_send_message(Arc::clone(&handler.session), msg, &handler).await {
                     Ok((latest_msg_id, target_chat_id)) => {
                         let data = serde_json::json!({ "method": "send_message", "message_id": latest_msg_id, "chat_id": target_chat_id, "ok": true });
                         handler.send_message(&data).await;

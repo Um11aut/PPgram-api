@@ -19,7 +19,7 @@ use crate::server::{message::handler::MessageHandler, session::Session};
 
 use super::message::builder::MessageBuilder;
 
-const PACKET_SIZE: u32 = 1024;
+const MESSAGE_ALLOCATION_SIZE: usize = 1024;
 
 pub(super) type Sessions = Arc<RwLock<HashMap<i32, Arc<RwLock<Session>>>>>;
 
@@ -51,29 +51,25 @@ impl Server {
         debug!("Connection established: {}", addr);
 
         let session_locked = session.read().await;
-        for (i, connection) in session_locked.connections.iter().enumerate() {
-            tokio::spawn({
-                let reader = Arc::clone(&connection.reader);
+        let reader = Arc::clone(&session_locked.connections[0].reader);
+        drop(session_locked);
 
-                let mut handler =MessageHandler::new(
-                    Arc::clone(&session),
-                    Arc::clone(&sessions),
-                    i
-                );
+        let mut handler = MessageHandler::new(
+            Arc::clone(&session),
+            Arc::clone(&sessions),
+            0
+        );
 
-                async move {
-                loop {
-                    let mut buffer = [0; PACKET_SIZE as usize];
-    
-                    match reader.lock().await.read(&mut buffer).await {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            handler.handle_segmented_frame(&buffer[0..n]).await;
-                        }
-                        Err(_) => break,
-                    }
+        loop {
+            let mut buffer = [0; MESSAGE_ALLOCATION_SIZE];
+
+            match reader.lock().await.read(&mut buffer).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
-            }});
+                Err(_) => break,
+            }
         }
 
         debug!("Connection closed: {}", addr);
