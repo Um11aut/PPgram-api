@@ -20,32 +20,34 @@ pub struct MessageHandler {
     pub(crate) builder: Option<MessageBuilder>,
     pub(crate) session: Arc<RwLock<Session>>,
     pub(crate) connections: Sessions,
+    connection_idx: usize,
     is_first: bool,
 }
 
 impl MessageHandler {
-    pub fn new(session: Arc<RwLock<Session>>, sessions: Sessions) -> Self {
+    pub fn new(session: Arc<RwLock<Session>>, sessions: Sessions, connection_idx: usize) -> Self {
         MessageHandler {
             builder: None,
             session,
             connections: sessions,
+            connection_idx,
             is_first: true
         }
     }
 
     pub async fn send_err_str<T: Into<Cow<'static, str>>>(&self, method: &str, what: T) {
         let session = self.session.read().await;
-        PPErrorSender::send(method, what, session.main_connection()).await;
+        PPErrorSender::send(method, what, &session.connections[self.connection_idx]).await;
     }
 
     pub async fn send_error(&self, method: &str, err: PPError) {
         let session = self.session.read().await;
-        err.safe_send(method, session.main_connection()).await;
+        err.safe_send(method, &session.connections[self.connection_idx]).await;
     }
 
     pub async fn send_message<T: ?Sized + Serialize>(&self, message: &T) {
         let session = self.session.read().await;
-        session.main_connection().write(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed()).await;
+        session.connections[self.connection_idx].write(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed()).await;
     }
 
     pub fn send_msg_to_connection(&self, to: i32, msg: impl Serialize + Send + 'static) {
@@ -55,7 +57,7 @@ impl MessageHandler {
                 if let Some(receiver_session) = connections.read().await.get(&to) {
                     let mut target_connection = receiver_session.write().await;
                     
-                    target_connection.mpsc_send(msg).await;
+                    target_connection.mpsc_send(msg, 0).await;
                 }
             }
         });
@@ -88,23 +90,33 @@ impl MessageHandler {
         if self.is_first {
             self.builder = MessageBuilder::parse(buffer);
             if let Some(builder) = &self.builder {
-                debug!("Got the message! \n Message size: {} \n Content: {}", builder.size(), builder.content());
+                debug!("Got the message! \n Message size: {}", builder.size());
             }
             self.is_first = false;
+            if !self.builder.as_ref().unwrap().ready() {
+                return;
+            }
         }
         
-        if let Some(mut message) = self.builder.clone() {
+        let mut content = String::new();
+        if let Some(ref mut message) = self.builder {
             if !message.ready() {
                 message.extend(buffer);
             }
-    
+            
             if message.ready() {
-                self.handle_message(&message.content()).await;
-
-                message.clear();
-                self.builder = None;
-                self.is_first = true;
+                content = message.content().clone();
             }
+        }
+
+        if !content.is_empty() {
+            self.handle_message(&content).await;
+    
+            if let Some(ref mut message) = self.builder {
+                message.clear();
+            }
+            self.builder = None;
+            self.is_first = true;
         }
     }
 }

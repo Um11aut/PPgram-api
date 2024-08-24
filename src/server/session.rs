@@ -77,12 +77,12 @@ impl Session {
     }
 
 
-    pub fn main_connection(&self) -> &Connection {
-        &self.connections[0]
+    pub async fn connections(&self) -> &Vec<Connection> {
+        &self.connections
     }
 
-    pub async fn mpsc_send(&mut self, message: impl Serialize) {
-        self.connections[0].send(message).await;
+    pub async fn mpsc_send(&mut self, message: impl Serialize, index: usize) {
+        self.connections[index].send(message).await;
     }
 
     // `(i32, String)` -> user_id, session_id 

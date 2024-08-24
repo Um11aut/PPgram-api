@@ -183,7 +183,6 @@ impl MessagesDB {
             }
         }
         let (start, end) = validate_range(RangeInclusive::from(range.start..=range.end))?;
-        debug!("Messages range: {}, {}", start, end);
 
         let statement = if end != 0 {
             let query = r#"

@@ -30,8 +30,6 @@ def send_message(sock: socket.socket, message: dict) -> str:
 
     # Send the length-prefixed message
     sock.sendall(message_to_send)
-    
-    time.sleep(1)
 
     # First, read the first 4 bytes to get the length of the incoming message
     length_bytes = sock.recv(4)

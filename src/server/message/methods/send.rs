@@ -82,6 +82,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     let session = handler.session.read().await;
     if !session.is_authenticated() {
         handler.send_err_str(method, "You aren't authenticated!").await;
+        return;
     }
 
     match serde_json::from_str::<Message>(handler.builder.as_ref().unwrap().content()) {
