@@ -5,12 +5,12 @@ use log::info;
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)
 #[derive(Clone)]
-pub(crate) struct Message {
+pub(crate) struct MessageBuilder {
     size: u32,
     content: String
 }
 
-impl Message {
+impl MessageBuilder {
     pub fn build_from<T: Into<Cow<'static, str>>>(message: T) -> Self {
         let message: Cow<'static, str> = message.into();
         let message = message.into_owned();
@@ -72,13 +72,14 @@ impl Message {
         self.size
     }
 
-    pub fn packed(&self) -> String {
+    pub fn packed(&self) -> Vec<u8> {
         let size_bytes = self.size.to_be_bytes();
 
-        let mut full_message = String::with_capacity(size_bytes.len() + self.content.len());
-        full_message.push_str(&String::from_utf8_lossy(&size_bytes));
-        full_message.push_str(&self.content);
-    
+        let full_len = self.content.len() + self.size as usize;
+        let mut full_message: Vec<u8> = Vec::with_capacity(full_len);
+        full_message.extend_from_slice(&size_bytes);
+        full_message.extend_from_slice(&self.content.as_bytes());
+
         full_message
     }
 }

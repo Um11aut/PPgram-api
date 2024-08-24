@@ -1,45 +1,66 @@
 use std::borrow::Cow;
-use std::slice;
+use std::ops::Deref;
 use std::sync::Arc;
-use std::{fmt::Write, future::Future, process::Output};
 
-use log::{debug, error, info};
-use serde::de::Error as SerdeError;
+use log::{debug, info};
+use serde::Serialize;
 use serde_json::{json, Value};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::{io::AsyncWriteExt, net::tcp::OwnedWriteHalf};
 
-use crate::server::server::Connections;
+use crate::db::internal::error::PPError;
+use crate::server::server::Sessions;
 use crate::server::session::Session;
-use crate::server::message::types::{
-    authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage}, message::{MessageContent, RequestMessage},
-    error::error::{PPErrorSender}
-};
 
-use super::builder::Message;
-use super::handlers::{auth, check, edit, fetch, send};
+use super::builder::MessageBuilder;
+use super::methods::{auth, check, edit, fetch, send};
+use super::types::error::error::PPErrorSender;
 
-pub struct RequestMessageHandler {
-    pub(crate) builder: Option<Message>,
-    pub(crate) writer: Arc<Mutex<OwnedWriteHalf>>,
-    pub(crate) session: Arc<Mutex<Session>>,
-    pub(crate) is_first: bool,
-    pub(crate) connections: Connections
+pub struct MessageHandler {
+    pub(crate) builder: Option<MessageBuilder>,
+    pub(crate) session: Arc<RwLock<Session>>,
+    pub(crate) connections: Sessions,
+    connection_idx: usize,
+    is_first: bool,
 }
 
-impl RequestMessageHandler {
-    pub fn new(writer: Arc<Mutex<OwnedWriteHalf>>, session: Arc<Mutex<Session>>, connections: Connections) -> Self {
-        RequestMessageHandler {
+impl MessageHandler {
+    pub fn new(session: Arc<RwLock<Session>>, sessions: Sessions, connection_idx: usize) -> Self {
+        MessageHandler {
             builder: None,
-            writer,
             session,
-            is_first: true,
-            connections
+            connections: sessions,
+            connection_idx,
+            is_first: true
         }
     }
 
-    async fn send_error<T: Into<Cow<'static, str>>>(&self, method: &str, what: T) {
-        PPErrorSender::send(method, what, Arc::clone(&self.writer)).await;
+    pub async fn send_err_str<T: Into<Cow<'static, str>>>(&self, method: &str, what: T) {
+        let session = self.session.read().await;
+        PPErrorSender::send(method, what, &session.connections[self.connection_idx]).await;
+    }
+
+    pub async fn send_error(&self, method: &str, err: PPError) {
+        let session = self.session.read().await;
+        err.safe_send(method, &session.connections[self.connection_idx]).await;
+    }
+
+    pub async fn send_message<T: ?Sized + Serialize>(&self, message: &T) {
+        let session = self.session.read().await;
+        session.connections[self.connection_idx].write(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed()).await;
+    }
+
+    pub fn send_msg_to_connection(&self, to: i32, msg: impl Serialize + Send + 'static) {
+        tokio::spawn({
+            let connections = Arc::clone(&self.connections);
+            async move {
+                if let Some(receiver_session) = connections.read().await.get(&to) {
+                    let mut target_connection = receiver_session.write().await;
+                    
+                    target_connection.mpsc_send(msg, 0).await;
+                }
+            }
+        });
     }
 
     async fn handle_message(&mut self, message: &str) {
@@ -53,54 +74,64 @@ impl RequestMessageHandler {
                             "edit_message" => edit::handle(self, method).await,
                             "fetch" => fetch::handle(self, method).await,
                             "check" => check::handle(self, method).await,
-                            _ => self.send_error(method, "Unknown method given!").await
+                            _ => self.send_err_str(method, "Unknown method given!").await
                         }
                     },  
-                    None => self.send_error("none", "Failed to get the method from the json message!").await
+                    None => self.send_err_str("none", "Failed to get the method from the json message!").await
                 }
             },
             Err(err) => {
-                self.send_error("none", err.to_string()).await;
+                self.send_err_str("none", err.to_string()).await;
             }
         }
     }
 
     pub async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
         if self.is_first {
-            self.builder = Message::parse(buffer);
+            self.builder = MessageBuilder::parse(buffer);
             if let Some(builder) = &self.builder {
-                debug!("Got the message! \n Message size: {} \n Content: {}", builder.size(), builder.content());
+                debug!("Got the message! \n Message size: {}", builder.size());
             }
             self.is_first = false;
+            if !self.builder.as_ref().unwrap().ready() {
+                return;
+            }
         }
         
-        if let Some(mut message) = self.builder.clone() {
+        let mut content = String::new();
+        if let Some(ref mut message) = self.builder {
             if !message.ready() {
                 message.extend(buffer);
             }
-    
+            
             if message.ready() {
-                self.handle_message(&message.content()).await;
-
-                message.clear();
-                self.builder = None;
-                self.is_first = true;
+                content = message.content().clone();
             }
+        }
+
+        if !content.is_empty() {
+            self.handle_message(&content).await;
+    
+            if let Some(ref mut message) = self.builder {
+                message.clear();
+            }
+            self.builder = None;
+            self.is_first = true;
         }
     }
 }
 
-impl Drop for RequestMessageHandler {
+impl Drop for MessageHandler {
     fn drop(&mut self) {
         tokio::spawn({
-            let connections: Connections = Arc::clone(&self.connections);    
+            let connections: Sessions = Arc::clone(&self.connections);    
             let session = Arc::clone(&self.session);
 
             async move {
                 let mut connections = connections.write().await;
-                let session = session.lock().await;
+                let session = session.read().await;
                 if let Some((user_id, _)) = session.get_credentials() {
-                    connections.remove(&user_id);
+                    connections.remove(&user_id.get_i32().unwrap());
                 }
             }
         });

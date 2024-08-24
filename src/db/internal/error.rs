@@ -3,7 +3,7 @@ use std::{fmt::{self}, sync::Arc};
 use log::error;
 use tokio::{net::tcp::OwnedWriteHalf, sync::Mutex};
 
-use crate::server::message::types::error::error::PPErrorSender;
+use crate::server::{connection::Connection, message::types::error::error::PPErrorSender};
 
 #[derive(Debug)]
 pub enum PPError {
@@ -54,7 +54,7 @@ impl PPError {
     /// if Cassandra error, writes error to console and sends 'Internal error.' to user.
     /// 
     /// if Client error, sends error to the client
-    pub async fn safe_send(&self, method: &str, writer: Arc<Mutex<OwnedWriteHalf>>) {
+    pub async fn safe_send(&self, method: &str, connection: &Connection) {
         let err: String = match self {
             PPError::Cassandra(internal) => {
                 error!("{}", internal);
@@ -64,6 +64,6 @@ impl PPError {
                 self.to_string()
             }
         };
-        PPErrorSender::send(method, err, Arc::clone(&writer)).await;
+        PPErrorSender::send(method, err, connection).await;
     }
 }

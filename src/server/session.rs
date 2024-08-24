@@ -1,41 +1,30 @@
 use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
 
-use log::{error, info};
+use log::{debug, error, info};
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::db::{internal::error::PPError, user::USERS_DB};
 
-use super::message::types::authentication::message::{RequestAuthMessage, RequestLoginMessage, RequestRegisterMessage};
-use tokio::sync::mpsc;
+use tokio::{net::TcpStream, sync::mpsc};
+
+use super::{connection::{self, Connection, ConnectionType}, message::types::{request::auth::*, user::UserId}};
 
 #[derive(Debug)]
 pub struct Session {
     session_id: Option<String>,
     user_id: Option<i32>,
-    ip_addr: SocketAddr,
-    sender: mpsc::Sender<String>
+    pub connections: Vec<Connection>
 }
-
-impl Hash for Session {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.ip_addr.hash(state);
-    }
-}
-
-impl PartialEq for Session {
-    fn eq(&self, other: &Self) -> bool {
-        self.ip_addr == other.ip_addr
-    }
-}
-
-impl Eq for Session {}
 
 impl Session {
-    pub fn new(ip_addr: SocketAddr, sender: mpsc::Sender<String>) -> Session {
+    pub fn new(socket: TcpStream) -> Session {
+        let main_connection = Connection::new(socket, ConnectionType::MainEvents);
+        
         Session {
             session_id: None,
             user_id: None,
-            ip_addr,
-            sender
+            connections: vec![main_connection]
         }
     }
 
@@ -87,14 +76,19 @@ impl Session {
         Ok(())
     }
 
-    pub async fn send(&self, message: String) {
-        self.sender.send(message).await.unwrap();
-    } 
+
+    pub async fn connections(&self) -> &Vec<Connection> {
+        &self.connections
+    }
+
+    pub async fn mpsc_send(&mut self, message: impl Serialize, index: usize) {
+        self.connections[index].send(message).await;
+    }
 
     // `(i32, String)` -> user_id, session_id 
-    pub fn get_credentials(&self) -> Option<(i32, String)> {
+    pub fn get_credentials(&self) -> Option<(UserId, String)> {
         if self.is_authenticated() {
-            return Some((self.user_id.unwrap(), self.session_id.clone().unwrap()))
+            return Some((self.user_id.unwrap().into(), self.session_id.clone().unwrap()))
         }
 
         None

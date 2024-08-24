@@ -1,7 +1,7 @@
 import socket
+import time
 
 from api import send_message
-from api import listen_for_messages
 
 # Example usage
 if __name__ == "__main__":
@@ -15,23 +15,29 @@ if __name__ == "__main__":
         # Connect the socket to the server
         sock.connect(server_address)
 
-        # Define the login message
+        # Define the messages as dictionaries
         login_message = {
             "method": "login",
             "username": "@pavlo",
             "name": "Pepuk Alpha",
             "password_hash": "asd"
         }
+        print(send_message(sock, login_message))
 
-        # Send the login message
-        login_response = send_message(sock, login_message)
-        print('Response:', login_response)
+        fetch = {
+            "method": "fetch",
+            "what": "chats"
+        }
+        print(send_message(sock, fetch))
 
-        # Now listen for incoming messages indefinitely
-        listen_for_messages(sock)
+        fetch = {
+            "method": "fetch",
+            "what": "messages",
+            "chat_id": -2079655369,
+            "range": [-1, -500]
+        }
+        print(len(send_message(sock, fetch)))
 
-    except Exception as e:
-        print(f"An error occurred during connection or messaging: {e}")
     finally:
-        # Close the socket when done or in case of an error
+        # Close the socket
         sock.close()
