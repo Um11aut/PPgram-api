@@ -1,4 +1,4 @@
-use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr};
+use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr, sync::Arc};
 
 use log::{debug, error, info};
 use serde::Serialize;
@@ -14,7 +14,7 @@ use super::{connection::{self, Connection, ConnectionType}, message::types::{req
 pub struct Session {
     session_id: Option<String>,
     user_id: Option<i32>,
-    pub connections: Vec<Connection>
+    connections: Vec<Arc<Connection>>
 }
 
 impl Session {
@@ -24,7 +24,7 @@ impl Session {
         Session {
             session_id: None,
             user_id: None,
-            connections: vec![main_connection]
+            connections: vec![Arc::new(main_connection)]
         }
     }
 
@@ -80,8 +80,26 @@ impl Session {
         self.session_id.as_ref()
     }
 
-    pub async fn connections(&self) -> &Vec<Connection> {
+    pub fn connections(&self) -> &Vec<Arc<Connection>> {
         &self.connections
+    }
+
+    pub fn get_connection_idx(&self, connection: Arc<Connection>) -> Option<usize> {
+        for idx in 0..self.connections.len() {
+            if Arc::ptr_eq(&self.connections[idx], &connection) {
+                return Some(idx)
+            }
+        }
+
+        None
+    }
+
+    pub fn add_connection(&mut self, connection: Arc<Connection>) {
+        self.connections.push(connection);
+    }
+
+    pub fn remove_connection(&mut self, connection: Arc<Connection>) {
+        self.connections.retain(|x| Arc::ptr_eq(x, &connection));
     }
 
     pub async fn mpsc_send(&mut self, message: impl Serialize, index: usize) {

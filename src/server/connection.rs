@@ -16,9 +16,9 @@ pub enum ConnectionType {
 #[derive(Debug)]
 pub struct Connection {
     con_type: ConnectionType,
-    sender: mpsc::Sender<Value>,
+    sender: Mutex<mpsc::Sender<Value>>,
     writer: Arc<Mutex<OwnedWriteHalf>>,
-    pub reader: Arc<Mutex<OwnedReadHalf>>,
+    reader: Arc<Mutex<OwnedReadHalf>>,
 }
 
 impl Connection {
@@ -35,19 +35,23 @@ impl Connection {
         
         Self {
             con_type: connection_type,
-            sender,
+            sender: Mutex::new(sender),
             writer,
             reader
         }
     }
 
-    pub async fn send(&mut self, value: impl Serialize) {
-        self.sender.send(serde_json::to_value(&value).unwrap()).await.unwrap();
+    pub async fn send(&self, value: impl Serialize) {
+        self.sender.lock().await.send(serde_json::to_value(&value).unwrap()).await.unwrap();
     } 
 
     pub async fn write(&self, buf: &[u8]) {
         let mut writer = self.writer.lock().await;
         writer.write_all(buf).await.unwrap();
+    }
+
+    pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {
+        Arc::clone(&self.reader)
     }
 
     async fn receiver_handler(writer: Arc<Mutex<OwnedWriteHalf>>, mut receiver: mpsc::Receiver<Value>) {

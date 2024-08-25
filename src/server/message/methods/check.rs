@@ -35,7 +35,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str)
             check_username(&msg.data, handler).await;
         },
         Err(err) => {
-            handler.send_err_str(method, err.to_string()).await;
+            handler.send_error_str(method, err.to_string()).await;
         },
     }
 }

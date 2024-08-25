@@ -22,9 +22,9 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
-pub(crate) static CHATS_DB: OnceCell<ChatsDB> = OnceCell::const_new();
+pub static CHATS_DB: OnceCell<ChatsDB> = OnceCell::const_new();
 
-pub(crate) struct ChatsDB {
+pub struct ChatsDB {
     session: Arc<cassandra_cpp::Session>,
 }
 

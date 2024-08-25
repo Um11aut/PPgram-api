@@ -5,7 +5,7 @@ use log::info;
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)
 #[derive(Clone)]
-pub(crate) struct MessageBuilder {
+pub struct MessageBuilder {
     size: u32,
     content: String
 }

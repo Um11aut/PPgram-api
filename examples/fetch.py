@@ -16,8 +16,8 @@ if __name__ == "__main__":
         sock.connect(server_address)
         bind = {
             "method": "bind",
-            "session_id": "Fm8rUecSkI7ueI9C8pKun2OrPplrk8",
-            "user_id": -497022138
+            "session_id": "IXwF5drI8RsEEhsEfEfIwuxI47DLyR",
+            "user_id": -1836339167,
         }
         print(send_message(sock, bind))
 
@@ -33,7 +33,7 @@ if __name__ == "__main__":
             "chat_id": -2079655369,
             "range": [-1, -300_000]
         }
-        print(len(send_message(sock, fetch)))
+        print(send_message(sock, fetch))
 
         listen_for_messages(sock)
 

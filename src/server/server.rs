@@ -23,7 +23,7 @@ const MESSAGE_ALLOCATION_SIZE: usize = 1024;
 
 pub(super) type Sessions = Arc<RwLock<HashMap<i32, Arc<RwLock<Session>>>>>;
 
-pub(crate) struct Server {
+pub struct Server {
     listener: TcpListener,
     connections: Sessions,
 }
@@ -50,15 +50,12 @@ impl Server {
     ) {
         debug!("Connection established: {}", addr);
 
-        let session_locked = session.read().await;
-        let reader = Arc::clone(&session_locked.connections[0].reader);
-        drop(session_locked);
-
         let mut handler = MessageHandler::new(
             Arc::clone(&session),
             Arc::clone(&sessions),
-            0
-        );
+        ).await;
+
+        let reader = handler.reader();
 
         loop {
             let mut buffer = [0; MESSAGE_ALLOCATION_SIZE];

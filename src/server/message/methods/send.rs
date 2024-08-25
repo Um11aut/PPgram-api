@@ -84,7 +84,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {
-            handler.send_err_str(method, "You aren't authenticated!").await;
+            handler.send_error_str(method, "You aren't authenticated!").await;
             return;
         }
     }
@@ -100,10 +100,10 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                     Err(err) => {handler.send_error(method, err).await;},
                 }
             }
-            _ => handler.send_err_str(method, "Unknown method given!").await,
+            _ => handler.send_error_str(method, "Unknown method given!").await,
         },
         Err(err) => {
-            handler.send_err_str(method, err.to_string()).await;
+            handler.send_error_str(method, err.to_string()).await;
         }
     }
 }

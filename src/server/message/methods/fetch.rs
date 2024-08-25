@@ -132,7 +132,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {
-            handler.send_err_str(method, "You aren't authenticated!").await;
+            handler.send_error_str(method, "You aren't authenticated!").await;
             return;
         }
     }
@@ -168,7 +168,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                             }
                         }
                         Err(err) => {
-                            handler.send_err_str("fetch_user", err.to_string()).await;
+                            handler.send_error_str("fetch_user", err.to_string()).await;
                             None
                         }
                     }
@@ -188,13 +188,13 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                             Some(response)
                         }
                         Err(err) => {
-                            handler.send_err_str("fetch_messages", err.to_string()).await;
+                            handler.send_error_str("fetch_messages", err.to_string()).await;
                             None
                         }
                     }
                 }
                 _ => {
-                    handler.send_err_str(method, "Unknown 'what' field!").await;
+                    handler.send_error_str(method, "Unknown 'what' field!").await;
                     return;
                 }
             };
@@ -205,7 +205,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
             return;
         }
         Err(err) => {
-            handler.send_err_str(method, err.to_string()).await;
+            handler.send_error_str(method, err.to_string()).await;
             return;
         }
     }

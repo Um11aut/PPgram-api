@@ -22,9 +22,9 @@ use super::db::Database;
 use super::internal::error::PPError;
 use super::internal::validate;
 
-pub(crate) static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
+pub static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
 
-pub(crate) struct UsersDB {
+pub struct UsersDB {
     session: Arc<cassandra_cpp::Session>,
 }
 

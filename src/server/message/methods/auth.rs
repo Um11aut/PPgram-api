@@ -55,7 +55,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if session.is_authenticated() {
-            handler.send_err_str(method, "You are already authenticated!").await;
+            handler.send_error_str(method, "You are already authenticated!").await;
             return;
         }
     }
@@ -93,14 +93,14 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     };
 
     if let Err(err) = res {
-        handler.send_err_str(method, err.to_string()).await;
+        handler.send_error_str(method, err.to_string()).await;
         return;
     }
 
     if let Some((user_id, session_id)) = handler.session.read().await.get_credentials() {
         let user_id = user_id.get_i32().unwrap();
         {
-            let mut connections = handler.connections.write().await;
+            let mut connections = handler.sessions.write().await;
             connections.insert(user_id, Arc::clone(&handler.session));
         }
 

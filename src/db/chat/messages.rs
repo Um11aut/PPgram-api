@@ -20,9 +20,9 @@ use crate::server::message::types::request::message::*;
 use crate::server::message::types::user::UserId;
 
 
-pub(crate) static MESSAGES_DB: OnceCell<MessagesDB> = OnceCell::const_new();
+pub static MESSAGES_DB: OnceCell<MessagesDB> = OnceCell::const_new();
 
-pub(crate) struct MessagesDB {
+pub struct MessagesDB {
     session: Arc<cassandra_cpp::Session>,
 }
 

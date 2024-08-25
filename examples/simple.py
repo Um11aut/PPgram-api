@@ -18,8 +18,8 @@ if __name__ == "__main__":
         # Define the login message
         login_message = {
             "method": "auth",
-            "session_id": "Fm8rUecSkI7ueI9C8pKun2OrPplrk8",
-            "user_id": -497022138,
+            "session_id": "IXwF5drI8RsEEhsEfEfIwuxI47DLyR",
+            "user_id": -1836339167,
         }
 
 

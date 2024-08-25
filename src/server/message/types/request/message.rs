@@ -41,13 +41,13 @@ pub enum MessageContent {
 
 // Define a struct to represent the complete message
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Message {
+pub struct Message {
     #[serde(flatten)]
     pub common: CommonFields,
     pub content: MessageContent,
 }
 
-pub(crate) type MessageId = i32;
+pub type MessageId = i32;
 
 #[derive(Serialize, Deserialize, Debug)]
 /// Message type that is stored in Database
