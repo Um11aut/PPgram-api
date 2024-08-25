@@ -1,6 +1,5 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
-use log::info;
 
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)

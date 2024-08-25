@@ -1,8 +1,7 @@
-use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{db::{chat::chats::CHATS_DB, internal::error::PPError, user::USERS_DB}};
+use crate::db::{chat::chats::CHATS_DB, internal::error::PPError};
 
 use super::user::{User, UserId};
 
@@ -34,8 +33,7 @@ impl ChatDetails {
 pub struct Chat {
     chat_id: ChatId,
     is_group: bool,
-    participants: Vec<User>,
-    details: Option<ChatDetails>
+    participants: Vec<User>
 }
 
 impl Chat {
@@ -52,8 +50,7 @@ impl Chat {
         Self {
             chat_id,
             is_group,
-            participants,
-            details: None
+            participants
         }
     }
 

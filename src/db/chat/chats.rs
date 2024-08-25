@@ -3,13 +3,7 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::SetIterator;
-use cassandra_cpp::TimestampGen;
-use log::debug;
-use log::{error, info};
-use rand::{distributions::Alphanumeric, Rng};
 use std::sync::Arc;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 use tokio::sync::OnceCell;
 
 use db::internal::error::PPError;

@@ -1,7 +1,5 @@
-use std::ops::{Range, RangeBounds};
-use std::mem::swap;
+use std::ops::RangeBounds;
 
-use crate::db::chat::messages::MESSAGES_DB;
 
 use super::error::PPError;
 

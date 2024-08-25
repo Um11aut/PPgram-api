@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{debug, info};
+use log::debug;
 use serde_json::json;
 
 use crate::server::message::{handler::MessageHandler, types::request::bind::BindRequestMessage};
@@ -9,7 +9,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     match serde_json::from_str::<BindRequestMessage>(&handler.builder.as_ref().unwrap().content()) {
         Ok(message) => {
             if message.method != "bind" {
-                handler.send_error_str(method, "method must be 'bind'.").await;
+                handler.send_error(method, "method must be 'bind'.".into()).await;
                 return;
             }
 
@@ -30,14 +30,14 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                         "ok": true
                     })).await;
                 } else {
-                    handler.send_error_str(method, "User with given `session_id` isn't connected to the server").await;
+                    handler.send_error(method, "User with given `session_id` isn't connected to the server".into()).await;
                 }
             } else {
-                handler.send_error_str(method, "User with given `user_id` isn't connected to the server").await;
+                handler.send_error(method, "User with given `user_id` isn't connected to the server".into()).await;
             }
         },
         Err(err) => {
-            handler.send_error_str(method, err.to_string()).await;
+            handler.send_error(method, err.to_string().into()).await;
         }
     }
 }

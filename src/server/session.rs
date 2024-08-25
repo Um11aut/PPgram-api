@@ -1,14 +1,12 @@
-use std::{error::Error, hash::{Hash, Hasher}, net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
-use log::{debug, error, info};
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::db::{internal::error::PPError, user::USERS_DB};
 
-use tokio::{net::TcpStream, sync::mpsc};
+use tokio::net::TcpStream;
 
-use super::{connection::{self, Connection}, message::types::{request::auth::*, user::UserId}};
+use super::{connection::Connection, message::types::{request::auth::*, user::UserId}};
 
 #[derive(Debug)]
 pub struct Session {

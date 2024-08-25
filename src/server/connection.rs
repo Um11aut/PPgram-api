@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{error, info};
+use log::error;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}};

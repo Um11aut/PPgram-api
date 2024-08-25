@@ -8,15 +8,12 @@ use log::error;
 use rand::{distributions::Alphanumeric, Rng};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::result;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-use crate::server::message::types::chat::Chat;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
-use crate::server::session;
 
 use super::db::Database;
 use super::internal::error::PPError;

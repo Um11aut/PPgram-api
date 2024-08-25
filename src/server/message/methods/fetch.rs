@@ -1,29 +1,19 @@
-use log::{error, info};
-use serde::de;
 use serde_json::{json, Value};
-use tokio::{io::AsyncWriteExt, sync::Mutex};
 
 use crate::db::chat::messages::MESSAGES_DB;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::fetch::fetch::{BaseFetchRequestMessage, FetchMessagesRequestMessage};
-use crate::server::message::types::request::message::{DbMesssage, Message};
-use crate::server::session::Session;
+use crate::server::message::types::request::message::DbMesssage;
 use crate::{
     db::{
         chat::chats::CHATS_DB,
-        internal::error::PPError,
-        user::{self, USERS_DB},
+        user::USERS_DB,
     },
     server::message::{
-        builder::MessageBuilder,
         handler::MessageHandler,
-        types::{
-            error::error::PPErrorSender,
-            user::{User, UserId},
-        },
+        types::user::{User, UserId},
     },
 };
-use std::sync::Arc;
 
 async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>> {
     let users_db = USERS_DB.get().unwrap();
@@ -132,7 +122,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {
-            handler.send_error_str(method, "You aren't authenticated!").await;
+            handler.send_error(method, "You aren't authenticated!".into()).await;
             return;
         }
     }
@@ -168,7 +158,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                             }
                         }
                         Err(err) => {
-                            handler.send_error_str("fetch_user", err.to_string()).await;
+                            handler.send_error("fetch_user", err.to_string().into()).await;
                             None
                         }
                     }
@@ -188,13 +178,13 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                             Some(response)
                         }
                         Err(err) => {
-                            handler.send_error_str("fetch_messages", err.to_string()).await;
+                            handler.send_error("fetch_messages", err.to_string().into()).await;
                             None
                         }
                     }
                 }
                 _ => {
-                    handler.send_error_str(method, "Unknown 'what' field!").await;
+                    handler.send_error(method, "Unknown 'what' field!".into()).await;
                     return;
                 }
             };
@@ -205,7 +195,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
             return;
         }
         Err(err) => {
-            handler.send_error_str(method, err.to_string()).await;
+            handler.send_error(method, err.to_string().into()).await;
             return;
         }
     }

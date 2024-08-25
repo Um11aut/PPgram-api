@@ -1,6 +1,6 @@
-use log::{debug, error, info};
+use log::debug;
 use serde_json::json;
-use tokio::{io::AsyncWriteExt, sync::{Mutex, RwLock}};
+use tokio::sync::RwLock;
 
 use crate::{
     db::{
@@ -10,13 +10,12 @@ use crate::{
     },
     server::{
         message::{
-            self, builder::MessageBuilder, handler::MessageHandler, types::{chat::{Chat, ChatId}, error::error::PPErrorSender, request::message::{DbMesssage, Message, MessageId}, user::UserId}
+            handler::MessageHandler, types::{chat::ChatId, request::message::{Message, MessageId}}
         },
-        server::Sessions,
         session::Session,
     },
 };
-use std::sync::{Arc};
+use std::sync::Arc;
 
 /// Returns latest chat message id if sucessful
 async fn handle_send_message(
@@ -84,7 +83,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {
-            handler.send_error_str(method, "You aren't authenticated!").await;
+            handler.send_error(method, "You aren't authenticated!".into()).await;
             return;
         }
     }
@@ -100,10 +99,10 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                     Err(err) => {handler.send_error(method, err).await;},
                 }
             }
-            _ => handler.send_error_str(method, "Unknown method given!").await,
+            _ => handler.send_error(method, "Unknown method given!".into()).await,
         },
         Err(err) => {
-            handler.send_error_str(method, err.to_string()).await;
+            handler.send_error(method, err.to_string().into()).await;
         }
     }
 }

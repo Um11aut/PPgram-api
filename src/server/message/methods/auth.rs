@@ -1,21 +1,17 @@
-use std::{future::Future, ops::DerefMut, sync::Arc};
+use std::{future::Future, sync::Arc};
 
 use crate::{
     db::internal::error::PPError,
     server::{
         message::{
-            builder::MessageBuilder,
             handler::MessageHandler,
-            types::{
-                error::error::PPErrorSender, request::auth::*,
-            },
+            types::request::auth::*,
         },
-        session::{self, Session},
+        session::Session,
     },
 };
-use log::{error, info};
+use log::error;
 use serde_json::json;
-use tokio::{io::AsyncWriteExt, sync::RwLock};
 
 
 async fn handle_auth_message<'a, T, F, Fut>(
@@ -55,7 +51,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if session.is_authenticated() {
-            handler.send_error_str(method, "You are already authenticated!").await;
+            handler.send_error(method, "You are already authenticated!".into()).await;
             return;
         }
     }
@@ -93,7 +89,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     };
 
     if let Err(err) = res {
-        handler.send_error_str(method, err.to_string()).await;
+        handler.send_error(method, err.to_string().into()).await;
         return;
     }
 

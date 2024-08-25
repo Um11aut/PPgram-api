@@ -3,8 +3,6 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::List;
-use log::debug;
-use log::info;
 use core::range::RangeInclusive;
 use std::ops::Range;
 use std::sync::Arc;
@@ -222,7 +220,7 @@ impl MessagesDB {
             let reply_to: i32 = row.get_by_name("reply_to")?;
             let has_content: bool = row.get_by_name("has_content")?;
             let content: String = row.get_by_name("content")?;
-            let has_media: bool = row.get_by_name("has_media")?;
+            let _: bool = row.get_by_name("has_media")?;
             // TODO: Media
 
             output.push(

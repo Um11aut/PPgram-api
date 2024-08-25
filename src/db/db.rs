@@ -7,8 +7,8 @@ use log::error;
 use super::{chat::{chats::CHATS_DB, messages::MESSAGES_DB}, internal::error::PPError, user::USERS_DB};
 
 pub trait Database {
-    async fn new(session: Arc<cassandra_cpp::Session>) -> Self;
-    async fn create_table(&self) -> Result<(), PPError>;
+    fn new(session: Arc<cassandra_cpp::Session>) -> impl std::future::Future<Output = Self> + Send;
+    fn create_table(&self) -> impl std::future::Future<Output = Result<(), PPError>> + Send;
 }
 
 async fn init<T: Database>(db: &OnceCell<T>, session: Arc<cassandra_cpp::Session>) {

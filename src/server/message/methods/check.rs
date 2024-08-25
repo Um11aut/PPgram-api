@@ -1,9 +1,7 @@
-use std::sync::Arc;
 
 use serde_json::json;
-use tokio::io::AsyncWriteExt;
 
-use crate::{db::user::USERS_DB, server::message::{builder::MessageBuilder, handler::MessageHandler, types::{error::error::PPErrorSender, fetch::check::CheckUsernameRequestMessage}}};
+use crate::{db::user::USERS_DB, server::message::{handler::MessageHandler, types::fetch::check::CheckUsernameRequestMessage}};
 
 async fn check_username(username: &str, handler: &mut MessageHandler) {
     match USERS_DB.get().unwrap().exists(username.into()).await {
@@ -35,7 +33,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str)
             check_username(&msg.data, handler).await;
         },
         Err(err) => {
-            handler.send_error_str(method, err.to_string()).await;
+            handler.send_error(method, err.to_string().into()).await;
         },
     }
 }

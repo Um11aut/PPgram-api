@@ -1,9 +1,23 @@
-use std::{fmt::{self}, sync::Arc};
+use std::{borrow::Cow, fmt::{self}};
 
 use log::error;
-use tokio::{net::tcp::OwnedWriteHalf, sync::Mutex};
+use serde_json::json;
 
-use crate::server::{connection::Connection, message::types::error::error::PPErrorSender};
+use crate::server::{connection::Connection, message::builder::MessageBuilder};
+
+async fn send_str_as_err<T: Into<Cow<'static, str>>>(method: &str, what: T, connection: &Connection) {
+    let what: String = what.into().to_string();
+
+    let error = json!({
+        "ok": false,
+        "method": method,
+        "error": what
+    });
+
+    let builder = MessageBuilder::build_from(serde_json::to_string(&error).unwrap());
+
+    connection.write(&builder.packed()).await;
+}
 
 #[derive(Debug)]
 pub enum PPError {
@@ -64,6 +78,6 @@ impl PPError {
                 self.to_string()
             }
         };
-        PPErrorSender::send(method, err, connection).await;
+        send_str_as_err(method, err, connection).await;
     }
 }
