@@ -3,6 +3,7 @@
 
 pub mod db;
 pub mod server;
+pub mod fs;
 
 use db::db::init_dbs;
 use log::error;

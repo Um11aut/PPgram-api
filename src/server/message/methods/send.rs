@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     db::{
-        chat::{chats::CHATS_DB, messages::MESSAGES_DB},
+        chat::{self, chats::CHATS_DB, messages::MESSAGES_DB},
         internal::error::PPError,
         user::USERS_DB,
     },
@@ -54,7 +54,8 @@ async fn handle_send_message(
             users_db.add_chat(&self_user_id, &msg.common.to.into(), chat_id.chat_id()).await.unwrap();
             users_db.add_chat(&msg.common.to.into(), &self_user_id, chat_id.chat_id()).await.unwrap();
 
-            let chat_details = chat_id.details(&self_user_id, msg.common.to).await?.unwrap();
+            let mut chat_details = chat_id.details(&msg.common.to.into()).await?.unwrap();
+            chat_details.chat_id = self_user_id.get_i32().unwrap();
             handler.send_msg_to_connection(msg.common.to, json!({
                 "event": "new_chat",
                 "ok": true,

@@ -26,11 +26,12 @@ async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>
             for (chat_id, associated_chat_id) in chat_ids {
                 let chat = chats_db.fetch_chat(associated_chat_id).await.unwrap();
                 if let Some(chat) = chat {
-                    let details = chat.details(&user_id, chat_id).await;
+                    let details = chat.details(&user_id).await;
 
                     match details {
                         Ok(details) => {
-                            if let Some(details) = details {
+                            if let Some(mut details) = details {
+                                details.chat_id = chat_id;
                                 chats_details.push(details);
                             }
                         }
