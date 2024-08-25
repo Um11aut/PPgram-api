@@ -1,7 +1,7 @@
 
 use serde_json::json;
 
-use crate::{db::user::USERS_DB, server::message::{handler::MessageHandler, types::fetch::check::CheckUsernameRequestMessage}};
+use crate::{db::user::USERS_DB, server::message::{handler::MessageHandler, types::request::check::*}};
 
 async fn check_username(username: &str, handler: &mut MessageHandler) {
     match USERS_DB.get().unwrap().exists(username.into()).await {

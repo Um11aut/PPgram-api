@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use crate::db::chat::messages::MESSAGES_DB;
 use crate::server::message::types::chat::ChatDetails;
-use crate::server::message::types::fetch::fetch::{BaseFetchRequestMessage, FetchMessagesRequestMessage};
+use crate::server::message::types::request::fetch::*;
 use crate::server::message::types::request::message::DbMesssage;
 use crate::{
     db::{
