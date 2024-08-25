@@ -8,21 +8,14 @@ use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpSt
 use super::message::builder::MessageBuilder;
 
 #[derive(Debug)]
-pub enum ConnectionType {
-    MainEvents,
-    MediaEvents
-}
-
-#[derive(Debug)]
 pub struct Connection {
-    con_type: ConnectionType,
     sender: Mutex<mpsc::Sender<Value>>,
     writer: Arc<Mutex<OwnedWriteHalf>>,
     reader: Arc<Mutex<OwnedReadHalf>>,
 }
 
 impl Connection {
-    pub fn new(socket: TcpStream, connection_type: ConnectionType) -> Self {
+    pub fn new(socket: TcpStream) -> Self {
         let (reader, writer) = {
             let (r, w) = socket.into_split();
 
@@ -34,7 +27,6 @@ impl Connection {
         tokio::spawn(Self::receiver_handler(Arc::clone(&writer), receiver));
         
         Self {
-            con_type: connection_type,
             sender: Mutex::new(sender),
             writer,
             reader

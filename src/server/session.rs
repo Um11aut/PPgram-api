@@ -8,7 +8,7 @@ use crate::db::{internal::error::PPError, user::USERS_DB};
 
 use tokio::{net::TcpStream, sync::mpsc};
 
-use super::{connection::{self, Connection, ConnectionType}, message::types::{request::auth::*, user::UserId}};
+use super::{connection::{self, Connection}, message::types::{request::auth::*, user::UserId}};
 
 #[derive(Debug)]
 pub struct Session {
@@ -19,7 +19,7 @@ pub struct Session {
 
 impl Session {
     pub fn new(socket: TcpStream) -> Session {
-        let main_connection = Connection::new(socket, ConnectionType::MainEvents);
+        let main_connection = Connection::new(socket);
         
         Session {
             session_id: None,
