@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use log::info;
+
 
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)
@@ -60,6 +62,29 @@ impl MessageBuilder {
 
     pub fn extend(&mut self, buffer: &[u8]) 
     {
+        // if debug, show the progress bar of the message
+        if cfg!(debug_assertions) {
+            let percentage = (self.content.len() as f32 / self.size as f32) * 100.0;
+            let bar_width = 10; // Total width of the progress bar
+            let filled_length = (percentage / 100.0 * bar_width as f32).round() as usize;
+
+            let mut bar = String::new();
+            for _ in 0..filled_length {
+                bar.push('=');
+            }
+            if filled_length <= bar_width {
+                bar.push('>');
+                for _ in filled_length + 1..bar_width {
+                    bar.push(' ');
+                }
+            }
+            for _ in bar.len()-1..bar_width {
+                bar.push(' ')
+            }
+
+            info!("[{}] {}%", bar, percentage as u32);
+        } 
+
         self.content.extend_from_slice(&buffer)
     }
 
