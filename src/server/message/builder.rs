@@ -12,10 +12,20 @@ pub struct MessageBuilder {
 }
 
 impl MessageBuilder {
-    pub fn build_from<T: Into<Cow<'static, str>>>(message: T) -> Self {
+    pub fn build_from_str<T: Into<Cow<'static, str>>>(message: T) -> Self {
         let message: Cow<'static, str> = message.into();
         let message = message.into_owned();
 
+        let size = message.len() as u32;
+
+        Self {
+            size,
+            content: message.into(),
+            utf8_content: None
+        }
+    }
+
+    pub fn build_from_vec(message: &[u8]) -> Self {
         let size = message.len() as u32;
 
         Self {

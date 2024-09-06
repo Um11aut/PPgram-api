@@ -20,3 +20,10 @@ pub struct FetchMessagesRequestMessage {
     pub chat_id: i32,
     pub range: [i32; 2]
 }
+
+#[derive(Deserialize, Serialize)]
+pub struct FetchMediaRequestMessage {
+    pub method: String,
+    pub what: String,
+    pub media_hash: String
+}

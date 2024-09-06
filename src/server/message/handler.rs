@@ -43,12 +43,29 @@ impl MessageHandler {
         err.safe_send(method, &self.connection).await;
     }
 
+    /// Sending message with tokio::spawn. 
+    /// Necessary for large media, so the read operation won't be stopped
+    pub fn send_raw_detached(&self, data: Arc<[u8]>) {
+        tokio::spawn({
+            let connection = Arc::clone(&self.connection);
+            let data = Arc::clone(&data);
+            info!("Sending media back: {}", data.len());
+            async move {
+                connection.write(&MessageBuilder::build_from_vec(&data).packed()).await
+            }
+        });
+    }
+
+    pub async fn send_raw(&self, data: &[u8]) {
+        self.connection.write(&MessageBuilder::build_from_vec(&data).packed()).await;
+    }
+
     pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {
         Arc::clone(&self.connection.reader())
     }
 
     pub async fn send_message<T: ?Sized + Serialize>(&self, message: &T) {
-        self.connection.write(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed()).await;
+        self.connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await;
     }
 
     pub fn send_msg_to_connection(&self, to: i32, msg: impl Serialize + Send + 'static) {

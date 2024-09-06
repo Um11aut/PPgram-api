@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::db::chat::messages::MESSAGES_DB;
+use crate::fs::media::get_media;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::request::fetch::*;
 use crate::server::message::types::request::message::DbMesssage;
@@ -130,7 +131,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
 
     let content = handler.builder.as_mut().unwrap().content_utf8().unwrap();
 
-    match serde_json::from_str::<BaseFetchRequestMessage>(content) {
+    match serde_json::from_str::<BaseFetchRequestMessage>(&content) {
         Ok(base_fetch_msg) => {
             let response: Option<Value> = match base_fetch_msg.what.as_str() {
                 "chats" => handle_fetch_chats(&handler).await.map(|chats| {
@@ -186,8 +187,29 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                         }
                     }
                 }
+                "media" => {
+                    let value = serde_json::from_str::<FetchMediaRequestMessage>(&content);
+                
+                    match value {
+                        Ok(msg) => {
+                            let maybe_media = get_media(&msg.media_hash).await.ok();
+
+                            if let Some(media) = maybe_media {
+                                handler.send_raw(&media).await;
+                            } else {
+                                handler.send_error("fetch_media", "Media wasn't found!".into()).await;
+                            }
+
+                            None
+                        }
+                        Err(err) => {
+                            handler.send_error("fetch_media", err.to_string().into()).await;
+                            None
+                        }
+                    }
+                }
                 _ => {
-                    handler.send_error(method, "Unknown 'what' field!".into()).await;
+                    handler.send_error(method, "Unknown 'what' field provided!".into()).await;
                     return;
                 }
             };

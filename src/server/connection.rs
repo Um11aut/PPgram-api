@@ -51,7 +51,7 @@ impl Connection {
 
         while let Some(message) = receiver.recv().await {
             let mut writer = writer.lock().await;
-            if let Err(e) = writer.write_all(&MessageBuilder::build_from(serde_json::to_string(&message).unwrap()).packed()).await {
+            if let Err(e) = writer.write_all(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await {
                 error!("Failed to send message: {}", e);
             }
         }

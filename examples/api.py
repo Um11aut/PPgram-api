@@ -62,8 +62,11 @@ def send_message(sock: socket.socket, message: dict) -> str:
             raise ConnectionError("Connection lost during message reception")
         chunks += response_bytes
 
-    response = chunks.decode('utf-8')
-    return response
+    try:
+        decoded = chunks.decode('utf-8')
+    except:
+        return chunks
+    return decoded
 
 @time_it
 def send_message_bytes(sock: socket.socket, message: bytes) -> str:

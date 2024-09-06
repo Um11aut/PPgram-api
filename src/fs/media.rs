@@ -1,5 +1,6 @@
 use core::error;
 use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::fmt::format;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -12,16 +13,13 @@ use crate::db::internal::error::PPError;
 
 use super::hasher::BinaryHasher;
 
-const BASE_DIRECTORY_PREFIX: &str = "~/server_media/";
+fn get_target_media_dir(sha256_encoded_hash: &String) -> Result<PathBuf, PPError> {
+    let path = std::env::current_dir().map_err(|err| PPError::from(err.to_string()))?;
+    Ok(path.join(sha256_encoded_hash))
+}
 
 async fn put_media(media_name: &String, sha256_encoded_hash: &String, binary: &Vec<u8>) -> Result<(), PPError> {
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| String::from("/"));
-    let base_directory: PathBuf = BASE_DIRECTORY_PREFIX.replace("~", &home_dir).into();
-
-    let mut path = base_directory;
-    path = path.join(sha256_encoded_hash);
-
-    info!("{}", path.display());
+    let mut path = get_target_media_dir(sha256_encoded_hash)?;
 
     match filesystem::create_dir(&path).await {
         Ok(_) => {
@@ -49,6 +47,49 @@ async fn put_media(media_name: &String, sha256_encoded_hash: &String, binary: &V
     }
 
     Ok(())
+}
+
+pub async fn media_exists(binary: &Vec<u8>) -> Result<bool, PPError> {
+    let mut hasher = BinaryHasher::new();
+    hasher.hash_part(&binary);
+    let sha256_encoded_hash = hasher.finalize();
+
+    let exists = filesystem::try_exists(get_target_media_dir(&sha256_encoded_hash)?).await.map_err(|err| {
+        error!("{}", err);
+        PPError::from(err.to_string())
+    })?;
+
+    Ok(exists)
+}
+
+pub async fn media_hash_exists(media_hash: &String) -> Result<bool, PPError> {
+    let exists = filesystem::try_exists(get_target_media_dir(&media_hash)?).await.map_err(|err| {
+        error!("{}", err);
+        PPError::from(err.to_string())
+    })?;
+
+    Ok(exists)
+}
+
+pub async fn get_media(media_hash: &String) -> Result<Vec<u8>, PPError> {
+    let path = get_target_media_dir(media_hash)?;
+
+    if !media_hash_exists(media_hash).await? {
+        return Err(PPError::from("Media with the given hash doesn't exist"));
+    }
+
+    let mut file = filesystem::File::open(path.join("file")).await.map_err(|err| {
+        error!("{}", err);
+        PPError::from("Internal Filesystem error.")
+    })?;
+
+    let mut file_data: Vec<u8> = vec![];
+    file.read_to_end(&mut file_data).await.map_err(|err| {
+        error!("{}", err);
+        PPError::from("Internal Filesystem error.")
+    })?;
+
+    Ok(file_data)
 }
 
 // Pass in encoded base64 binary.

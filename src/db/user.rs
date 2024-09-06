@@ -36,7 +36,7 @@ impl Database for UsersDB {
                 id int PRIMARY KEY, 
                 name TEXT, 
                 username TEXT,
-                photo BLOB,
+                photo TEXT,
                 password_hash TEXT, 
                 sessions LIST<TEXT>,
                 chats MAP<int, int>
@@ -99,7 +99,7 @@ impl UsersDB {
         statement.bind_string(2, username)?;
         statement.bind_string(3, password_hash)?;
         statement.bind_list(4, cassandra_cpp::List::new())?;
-        statement.bind_bytes(5, Vec::new())?;
+        statement.bind_string(5, "")?;
         statement.bind_map(6, cassandra_cpp::Map::new())?;
 
         statement.execute().await?;
@@ -249,17 +249,16 @@ impl UsersDB {
         }
     }
 
-    pub async fn update_photo<T: Into<Cow<'static, Vec<u8>>>>(
+    pub async fn update_photo(
         &self,
-        user_id: i32,
-        photo: T,
+        user_id: UserId,
+        media_hash: &String,
     ) -> std::result::Result<(), PPError> {
         let query = "UPDATE users SET photo = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
-        let photo = photo.into().to_vec();
 
-        statement.bind_bytes(0, photo)?;
-        statement.bind_int32(1, user_id)?;
+        statement.bind_string(0, &media_hash)?;
+        statement.bind_int32(1, user_id.get_i32().unwrap())?;
 
         match statement.execute().await {
             Ok(_) => Ok(()),

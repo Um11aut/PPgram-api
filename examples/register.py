@@ -1,5 +1,5 @@
 import socket
-import simple
+from api import send_message, listen_for_messages
 
 if __name__ == "__main__":
     # Define the server address and port
@@ -14,14 +14,21 @@ if __name__ == "__main__":
 
         # Define the messages as dictionaries
         register_message = {
-            "method": "register",
+            "method": "login",
             "username": "@pavlo",
             "name": "Pavlo Alpha",
-            "password_hash": "asd"
+            "password_hash": "huzpidaras"
         }
 
-        resp = simple.send_message(sock, register_message)
+        resp = send_message(sock, register_message)
         print('Response: ' + resp)
+
+        fetch = {
+            "method": "fetch",
+            "what": "media",
+            "media_hash": "ad175a0bf3ae35303b54157bf176139d63b1b3e3003cc624c0e9e30f3b762ff3",
+        }
+        print(len(send_message(sock, fetch)))
 
     finally:
         # Close the socket

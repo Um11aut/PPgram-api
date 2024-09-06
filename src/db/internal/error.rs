@@ -14,7 +14,7 @@ async fn send_str_as_err<T: Into<Cow<'static, str>>>(method: &str, what: T, conn
         "error": what
     });
 
-    let builder = MessageBuilder::build_from(serde_json::to_string(&error).unwrap());
+    let builder = MessageBuilder::build_from_str(serde_json::to_string(&error).unwrap());
 
     connection.write(&builder.packed()).await;
 }
