@@ -128,7 +128,9 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
         }
     }
 
-    match serde_json::from_str::<BaseFetchRequestMessage>(handler.builder.as_ref().unwrap().content()) {
+    let content = handler.builder.as_mut().unwrap().content_utf8().unwrap();
+
+    match serde_json::from_str::<BaseFetchRequestMessage>(content) {
         Ok(base_fetch_msg) => {
             let response: Option<Value> = match base_fetch_msg.what.as_str() {
                 "chats" => handle_fetch_chats(&handler).await.map(|chats| {
@@ -145,7 +147,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                         v.build_response("fetch_self")
                     }),
                 "user" => {
-                    let value = serde_json::from_str::<Value>(&handler.builder.as_ref().unwrap().content());
+                    let value = serde_json::from_str::<Value>(&content);
 
                     match value {
                         Ok(value) => {
@@ -165,7 +167,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                     }
                 }
                 "messages" => {
-                    let value = serde_json::from_str::<FetchMessagesRequestMessage>(&handler.builder.as_ref().unwrap().content());
+                    let value = serde_json::from_str::<FetchMessagesRequestMessage>(&content);
 
                     match value {
                         Ok(msg) => {

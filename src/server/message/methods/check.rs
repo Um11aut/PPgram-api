@@ -28,7 +28,7 @@ async fn check_username(username: &str, handler: &mut MessageHandler) {
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) 
 {
-    match serde_json::from_str::<CheckUsernameRequestMessage>(handler.builder.as_ref().unwrap().content()) {
+    match serde_json::from_str::<CheckUsernameRequestMessage>(handler.builder.as_mut().unwrap().content_utf8().unwrap()) {
         Ok(msg) => {
             check_username(&msg.data, handler).await;
         },

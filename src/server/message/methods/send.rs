@@ -89,7 +89,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
         }
     }
 
-    match serde_json::from_str::<Message>(handler.builder.as_ref().unwrap().content()) {
+    match serde_json::from_str::<Message>(handler.builder.as_mut().unwrap().content_utf8().unwrap()) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
                 match handle_send_message(Arc::clone(&handler.session), msg, &handler).await {

@@ -1,19 +1,28 @@
+use core::error;
+use std::borrow::Cow;
 use std::fmt::format;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use log::info;
+use log::{info, error};
 use tokio::fs as filesystem;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 
 use crate::db::internal::error::PPError;
-use crate::db::internal::hasher::BinaryHasher;
+
+use super::hasher::BinaryHasher;
 
 const BASE_DIRECTORY_PREFIX: &str = "~/server_media/";
 
-async fn put_media(media_name: String, sha256_encoded_hash: String, binary: Vec<u8>) -> Result<(), PPError> {
-    let mut path = PathBuf::from(BASE_DIRECTORY_PREFIX);
+async fn put_media(media_name: &String, sha256_encoded_hash: &String, binary: &Vec<u8>) -> Result<(), PPError> {
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| String::from("/"));
+    let base_directory: PathBuf = BASE_DIRECTORY_PREFIX.replace("~", &home_dir).into();
+
+    let mut path = base_directory;
     path = path.join(sha256_encoded_hash);
+
+    info!("{}", path.display());
+
     match filesystem::create_dir(&path).await {
         Ok(_) => {
             path = path.join(media_name);
@@ -34,6 +43,8 @@ async fn put_media(media_name: String, sha256_encoded_hash: String, binary: Vec<
                 info!("This media: {} already exists!", path.display());
                 return Err(PPError::from("This media already exists!"));
             }
+            error!("{}", err);
+            return Err(PPError::from("Internal Filesystem error."))
         }
     }
 
@@ -41,13 +52,12 @@ async fn put_media(media_name: String, sha256_encoded_hash: String, binary: Vec<
 }
 
 // Pass in encoded base64 binary.
-pub async fn create_media(encoded_binary: String, media_name: String) -> Result<(), PPError> {
-    let hasher = BinaryHasher::new();
-    let (decoded_binary, sha256_encoded_hash) = hasher
-        .hash_full(&encoded_binary)
-        .map_err(|err| PPError::from(err.to_string()))?;
+pub async fn add_media(binary: &Vec<u8>) -> Result<String, PPError> {
+    let mut hasher = BinaryHasher::new();
+    hasher.hash_part(&binary);
+    let sha256_encoded_hash = hasher.finalize();
 
-    put_media(media_name, sha256_encoded_hash, decoded_binary).await?;
+    put_media(&"file".into(), &sha256_encoded_hash, binary).await?;
 
-    Ok(())
+    Ok(sha256_encoded_hash)
 }

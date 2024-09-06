@@ -6,7 +6,9 @@ use std::borrow::Cow;
 #[derive(Clone)]
 pub struct MessageBuilder {
     size: u32,
-    content: String
+    content: Vec<u8>,
+    /// If utf8 is needed, it will be parsed once
+    utf8_content: Option<String>
 }
 
 impl MessageBuilder {
@@ -18,7 +20,8 @@ impl MessageBuilder {
 
         Self {
             size,
-            content: message,
+            content: message.into(),
+            utf8_content: None
         }
     }
 
@@ -38,20 +41,16 @@ impl MessageBuilder {
             content = (&message[4..]).to_vec();
         }
 
-        if let Ok(content) = String::from_utf8(content) {
-            return Some(
-                Self {
-                    size,
-                    content
-                }
-            );
-        }
-        None
+        Some(Self {
+            size,
+            content,
+            utf8_content: None
+        })
     }
 
     pub fn extend(&mut self, buffer: &[u8]) 
     {
-        unsafe { self.content.as_mut_vec().extend_from_slice(buffer) };
+        self.content.extend_from_slice(&buffer)
     }
 
     pub fn ready(&self) -> bool {
@@ -63,7 +62,16 @@ impl MessageBuilder {
         self.size = 0;
     }
 
-    pub fn content(&self) -> &String {
+    pub fn content_utf8(&mut self) -> Option<&String> {
+        if self.utf8_content.is_none() {
+            self.utf8_content = String::from_utf8(self.content.clone()).ok();
+            self.content.clear()
+        }
+
+        self.utf8_content.as_ref()
+    }
+
+    pub fn content_bytes(&self) -> &Vec<u8> {
         &self.content
     }
 
@@ -74,10 +82,9 @@ impl MessageBuilder {
     pub fn packed(&self) -> Vec<u8> {
         let size_bytes = self.size.to_be_bytes();
 
-        let full_len = self.content.len() + self.size as usize;
-        let mut full_message: Vec<u8> = Vec::with_capacity(full_len);
+        let mut full_message: Vec<u8> = Vec::with_capacity(self.content.len() + self.size as usize);
         full_message.extend_from_slice(&size_bytes);
-        full_message.extend_from_slice(&self.content.as_bytes());
+        full_message.extend_from_slice(&self.content);
 
         full_message
     }

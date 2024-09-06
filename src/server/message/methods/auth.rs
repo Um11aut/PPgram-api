@@ -45,8 +45,7 @@ where
 
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
-    let builder = handler.builder.as_ref().unwrap();
-    let buffer = builder.content();
+    let buffer = handler.builder.as_mut().unwrap().content_utf8().unwrap();
 
     {
         let session = handler.session.read().await;

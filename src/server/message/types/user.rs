@@ -43,8 +43,8 @@ impl User {
         &self.username
     }
 
-    pub fn photo(&self) -> &Option<Vec<u8>> {
-        &self.photo
+    pub fn photo(&self) -> Option<&Vec<u8>> {
+        self.photo.as_ref() 
     }
 
     pub fn build_response(&self, method: &str) -> Value {

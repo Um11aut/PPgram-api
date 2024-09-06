@@ -1,7 +1,8 @@
 import socket
 
-from api import send_message
+from api import send_message, send_message_bytes
 from api import listen_for_messages
+from api import encode_file_to_base64
 
 # Example usage
 if __name__ == "__main__":
@@ -22,7 +23,11 @@ if __name__ == "__main__":
             "user_id": -1836339167,
         }
 
+        binary = encode_file_to_base64('/Users/shevdid/Downloads/cat.jpg')
+        print('Sending binary: ', binary)
 
+        resp = send_message_bytes(sock, binary)
+        print('Sending media respone: ', resp)
 
         # Send the login message
         login_response = send_message(sock, login_message)

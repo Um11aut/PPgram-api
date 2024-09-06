@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::server::message::{handler::MessageHandler, types::request::bind::BindRequestMessage};
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
-    match serde_json::from_str::<BindRequestMessage>(&handler.builder.as_ref().unwrap().content()) {
+    match serde_json::from_str::<BindRequestMessage>(&handler.builder.as_mut().unwrap().content_utf8().unwrap()) {
         Ok(message) => {
             if message.method != "bind" {
                 handler.send_error(method, "method must be 'bind'.".into()).await;

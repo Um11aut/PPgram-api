@@ -13,6 +13,7 @@ cassandra-cpp = "3.0.2"
 rand = "0.8.5"
 sha2 = "0.10.0"
 base64 = "0.22.1"
+hex = "0.4.3"
 
 [profile.release]
 strip=true

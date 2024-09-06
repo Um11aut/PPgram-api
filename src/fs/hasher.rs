@@ -1,3 +1,4 @@
+use log::info;
 use sha2::{Digest, Sha256};
 use base64::prelude::*;
 
@@ -13,11 +14,12 @@ impl BinaryHasher {
         }
     }
 
-    pub fn hash_full(mut self, encoded_binary: &str) -> Result<(Vec<u8>, String), base64::DecodeError> {
-        let decoded_binary = BASE64_STANDARD.decode(encoded_binary)?;
-        self.hasher.update(decoded_binary.as_slice());
+    pub fn hash_part(&mut self, binary: &[u8]) {
+        self.hasher.update(binary);
+    }
 
+    pub fn finalize(self) -> String {
         let res = self.hasher.finalize();
-        Ok((decoded_binary, BASE64_STANDARD.encode(res)))
+        hex::encode(res)
     }
 }

@@ -20,8 +20,8 @@ impl ChatDetails {
         &self.name
     }
 
-    pub fn photo(&self) -> &Option<Vec<u8>> {
-        &self.photo
+    pub fn photo(&self) -> Option<&Vec<u8>> {
+        self.photo.as_ref()
     }
 
     pub fn username(&self) -> &str {
@@ -79,7 +79,7 @@ impl Chat {
                     return Ok(Some(ChatDetails{
                         name: peer.name().into(),
                         chat_id: 0,
-                        photo: peer.photo().clone(),
+                        photo: peer.photo().cloned(),
                         username: peer.username().to_owned()
                     }))
                     } else {

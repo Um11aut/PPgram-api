@@ -1,12 +1,14 @@
 use std::sync::Arc;
+use base64::prelude::*;
 
-use log::debug;
+use log::{debug, info};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::db::internal::error::PPError;
+use crate::fs::media::add_media;
 use crate::server::connection::Connection;
 use crate::server::server::Sessions;
 use crate::server::session::Session;
@@ -62,8 +64,19 @@ impl MessageHandler {
         });
     }
 
-    async fn handle_message(&mut self) {
-        let message = self.builder.as_ref().unwrap().content();
+    async fn try_handle_json_message(&mut self) {
+        let message = self.builder.as_mut().unwrap().content_utf8();
+        if message.is_none() {
+            self.send_error("none", "Invalid utf8 sequence!".into()).await;
+            return
+        }
+        let message = message.unwrap();
+
+        if !message.ends_with('}') {
+            self.send_error("none", "Invalid json string sequence!".into()).await;
+            return
+        }
+
         match serde_json::from_str::<Value>(&message) {
             Ok(value) => {
                 match value.get("method").and_then(Value::as_str) {
@@ -84,6 +97,20 @@ impl MessageHandler {
             Err(err) => {
                 self.send_error("none", err.to_string().into()).await;
             }
+        }
+    }
+
+    async fn try_handle_media_message(&mut self) {
+        let message = self.builder.as_ref().unwrap().content_bytes();
+        match add_media(message).await {
+            Ok(sha256_hash) => {
+                self.send_message(&json!({
+                    "ok": true,
+                    "method": "send_media",
+                    "media_hash": sha256_hash
+                })).await;
+            },
+            Err(err) => self.send_error("send_media", err).await,
         }
     }
 
@@ -114,7 +141,16 @@ impl MessageHandler {
         }
 
         if do_handle {
-            self.handle_message().await;
+            if let Some(ref message) = &self.builder {
+                let content = message.content_bytes();
+
+                if content.starts_with(&['{' as u8]) {
+                    self.try_handle_json_message().await;
+                } else {
+                    // User tries to add media
+                    self.try_handle_media_message().await;
+                }
+            }
     
             if let Some(ref mut message) = self.builder {
                 message.clear();
