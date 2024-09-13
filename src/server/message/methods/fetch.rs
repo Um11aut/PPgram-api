@@ -54,7 +54,7 @@ async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>
 async fn fetch_user(
     method: &str,
     handler: &MessageHandler,
-    identifier: UserId,
+    identifier: &UserId,
 ) -> Option<User> {
     match USERS_DB.get().unwrap().fetch_user(identifier).await {
         Ok(details) => return details,
@@ -67,14 +67,14 @@ async fn fetch_user(
 
 async fn handle_fetch_self(handler: &MessageHandler) -> Option<User> {
     let (user_id, _) = handler.session.read().await.get_credentials()?;
-    fetch_user("fetch_user", handler, user_id.into()).await
+    fetch_user("fetch_user", handler, &user_id).await
 }
 
-async fn handle_fetch_user(username: &str, handler: &MessageHandler) -> Option<User> {
-    match USERS_DB.get().unwrap().exists(username.into()).await {
+async fn handle_fetch_user(username: UserId, handler: &MessageHandler) -> Option<User> {
+    match USERS_DB.get().unwrap().exists(&username).await {
         Ok(exists) => {
             if exists {
-                return fetch_user("fetch_user", handler, username.into()).await;
+                return fetch_user("fetch_user", handler, &username).await;
             }
         }
         Err(err) => {
@@ -153,11 +153,18 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                     match value {
                         Ok(value) => {
                             let username: Option<Option<&str>> = value.get("username").map(|v| v.as_str());
+                            let user_id: Option<Option<i32>> = value.get("user_id").map(|v| v.as_i64().map(|v| v as i32));
                             if let Some(Some(username)) = username {
-                                handle_fetch_user(username, &handler)
+                                handle_fetch_user(username.into(), &handler)
                                     .await
                                     .map(|v| v.build_response("fetch_user"))
-                            } else {
+                            } 
+                            else if let Some(Some(user_id)) = user_id {
+                                handle_fetch_user(user_id.into(), &handler)
+                                    .await
+                                    .map(|v| v.build_response("fetch_user"))
+                            }
+                            else {
                                 None
                             }
                         }

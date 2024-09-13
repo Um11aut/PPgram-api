@@ -55,12 +55,12 @@ impl Database for UsersDB {
 }
 
 impl UsersDB {
-    pub async fn exists(&self, identifier: UserId) -> Result<bool, PPError> {
+    pub async fn exists(&self, identifier: &UserId) -> Result<bool, PPError> {
         let result = match identifier {
             UserId::UserId(user_id) => {
                 let query = "SELECT id FROM users WHERE id = ?";
                 let mut statement = self.session.statement(query);
-                statement.bind_int32(0, user_id)?;
+                statement.bind_int32(0, *user_id)?;
                 statement.execute().await?
             }
             UserId::Username(username) => {
@@ -84,7 +84,7 @@ impl UsersDB {
         validate::validate_name(name)?;
         validate::validate_username(username)?;
 
-        if self.exists(username.into()).await? {
+        if self.exists(&username.into()).await? {
             return Err(PPError::from("Username already taken"));
         }
 
@@ -366,12 +366,12 @@ impl UsersDB {
         Ok(())
     }
     
-    pub async fn fetch_user(&self, identifier: UserId) -> Result<Option<User>, PPError> {
+    pub async fn fetch_user(&self, identifier: &UserId) -> Result<Option<User>, PPError> {
         let statement = match identifier {
             UserId::UserId(user_id) => {
                 let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
                 let mut statement = self.session.statement(query);
-                statement.bind_int32(0, user_id)?;
+                statement.bind_int32(0, *user_id)?;
                 statement
             } 
             UserId::Username(username) => {

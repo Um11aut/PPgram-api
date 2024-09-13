@@ -14,7 +14,7 @@ pub struct User {
 
 impl User {
     pub async fn new(id: UserId) -> Result<User, PPError> {
-        let user = USERS_DB.get().unwrap().fetch_user(id).await?;
+        let user = USERS_DB.get().unwrap().fetch_user(&id).await?;
         
         match user {
             Some(user) => Ok(user),

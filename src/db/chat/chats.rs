@@ -126,7 +126,7 @@ impl ChatsDB {
                     
                     let mut participants: Vec<User> = vec![];
                     while let Some(participant) = iter.next() {
-                        let user = users_db.fetch_user(participant.get_i32()?.into()).await?;
+                        let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;
                         if let Some(user) = user {
                             participants.push(user)
                         }

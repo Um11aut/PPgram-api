@@ -41,7 +41,7 @@ async fn handle_send_message(
             debug!("Message was sent to: {}. Chat with this user wasn't found. Creating chat.", msg.common.to);
             let users_db = USERS_DB.get().unwrap();
 
-            if !users_db.exists(msg.common.to.into()).await? {
+            if !users_db.exists(&msg.common.to.into()).await? {
                 return Err(PPError::from("Target user_id doesn't exist!"));
             }
 
