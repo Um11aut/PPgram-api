@@ -1,21 +1,19 @@
 
-use serde_json::json;
-
-use crate::{db::user::USERS_DB, server::message::{handler::MessageHandler, types::request::check::*}};
+use crate::{db::user::USERS_DB, server::message::{handler::MessageHandler, types::{request::check::*, response::check::CheckResponseMessage}}};
 
 async fn check_username(username: &str, handler: &mut MessageHandler) {
     match USERS_DB.get().unwrap().exists(&username.into()).await {
         Ok(exists) => {
             let data = if exists {
-                json!({
-                    "method": "check_username",
-                    "ok": true
-                })
+                CheckResponseMessage {
+                    ok: true,
+                    method: "check_username".into()
+                }
             } else {
-                json!({
-                    "method": "check_username",
-                    "ok": false,
-                })
+                CheckResponseMessage {
+                    ok: false,
+                    method: "check_username".into()
+                }
             };
 
             handler.send_message(&data).await;

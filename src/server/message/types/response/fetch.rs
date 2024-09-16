@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use crate::server::message::types::{chat::ChatDetails, request::message::DbMesssage};
+use crate::server::message::types::{chat::ChatDetails, message::Message};
 
 #[derive(Serialize, Deserialize)]
 pub struct FetchChatsResponseMessage {
@@ -25,5 +25,5 @@ pub type FetchSelfResponseMessage = FetchUserResponseMessage;
 pub struct FetchMessagesResponseValue {
     pub ok: bool,
     pub method: String,
-    pub messages: Vec<DbMesssage>
+    pub messages: Vec<Message>
 }

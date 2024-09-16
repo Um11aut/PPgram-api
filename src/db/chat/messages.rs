@@ -14,6 +14,7 @@ use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::validate::validate_range;
 use crate::server::message::types::chat::ChatId;
+use crate::server::message::types::message::Message;
 use crate::server::message::types::request::message::*;
 use crate::server::message::types::user::UserId;
 
@@ -44,7 +45,7 @@ impl Database for MessagesDB {
                 has_content boolean,
                 content TEXT,
                 has_media boolean,
-                media_datas LIST<BLOB>,
+                media_hashes LIST<TEXT>,
                 media_names LIST<TEXT>,
                 PRIMARY KEY (chat_id, id)
             )
@@ -59,10 +60,10 @@ impl Database for MessagesDB {
 impl MessagesDB {
     pub async fn add_message(
         &self,
-        msg: &Message,
+        msg: &RequestMessage,
         sender_id: &UserId,
         target_chat_id: ChatId
-    ) -> Result<DbMesssage, PPError> {
+    ) -> Result<Message, PPError> {
         let insert_query = r#"
             INSERT INTO messages 
                 (id, is_unread, from_id, chat_id, date, has_reply,
@@ -169,7 +170,7 @@ impl MessagesDB {
         }
     }
 
-    pub async fn fetch_messages(&self, chat_id: ChatId, mut range: Range<MessageId>) -> Result<Option<Vec<DbMesssage>>, PPError> {
+    pub async fn fetch_messages(&self, chat_id: ChatId, mut range: Range<MessageId>) -> Result<Option<Vec<Message>>, PPError> {
         if range.start == -1 {
             match self.get_latest(chat_id).await? {
                 Some(latest) => {
@@ -208,7 +209,7 @@ impl MessagesDB {
 
         let result = statement.execute().await?;
 
-        let mut output: Vec<DbMesssage> = vec![];
+        let mut output: Vec<Message> = vec![];
         let mut iter = result.iter();
         while let Some(row) = iter.next() {
             let message_id: i32 = row.get_by_name("id")?;
@@ -224,15 +225,15 @@ impl MessagesDB {
             // TODO: Media
 
             output.push(
-                DbMesssage{
+                Message{
                     message_id,
                     is_unread,
                     from_id,
                     chat_id,
                     date,
                     reply_to: if has_reply {Some(reply_to)} else {None},
-                    content: if has_content {Some(content)} else {None},
-                    media_datas: vec![],
+                    content: if has_content && !content.is_empty() {Some(content)} else {None},
+                    media_hashes: vec![],
                     media_names: vec![],
                 }
             )

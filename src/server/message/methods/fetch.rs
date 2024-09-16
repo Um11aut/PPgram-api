@@ -5,8 +5,8 @@ use crate::db::chat::messages::MESSAGES_DB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::fs::media::get_media;
 use crate::server::message::types::chat::ChatDetails;
+use crate::server::message::types::message::Message;
 use crate::server::message::types::request::fetch::*;
-use crate::server::message::types::request::message::DbMesssage;
 use crate::server::message::types::response::fetch::{FetchChatsResponseMessage, FetchMessagesResponseValue, FetchSelfResponseMessage, FetchUserResponseMessage};
 use crate::{
     db::{
@@ -54,7 +54,7 @@ async fn handle_fetch_self(handler: &MessageHandler) -> PPResult<User> {
     fetch_user(&user_id).await
 }
 
-async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> PPResult<Vec<DbMesssage>> {
+async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> PPResult<Vec<Message>> {
     let maybe_chat_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();

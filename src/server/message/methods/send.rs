@@ -10,7 +10,7 @@ use crate::{
     },
     server::{
         message::{
-            handler::MessageHandler, types::{chat::ChatId, request::message::{Message, MessageId}}
+            handler::MessageHandler, types::{chat::ChatId, request::message::{MessageId, RequestMessage}, response::{events::{NewChatEventResponse, NewMessageEventResponse}, send::SendMessageResponse}}
         },
         session::Session,
     },
@@ -20,13 +20,14 @@ use std::sync::Arc;
 /// Returns latest chat message id if sucessful
 async fn handle_send_message(
     session: Arc<RwLock<Session>>,
-    msg: Message,
+    msg: RequestMessage,
     handler: &MessageHandler,
 ) -> Result<(MessageId, ChatId), PPError> {
     let session = session.read().await;
     let (self_user_id, _) = session.get_credentials().unwrap();
     drop(session);
 
+    // TODO: sending messages on yourself is "Saved Messages"
     if self_user_id.get_i32().unwrap() == msg.common.to {
         return Err(PPError::from("You cannot send messages on yourself!"));
     }
@@ -56,11 +57,11 @@ async fn handle_send_message(
 
             let mut chat_details = chat_id.details(&msg.common.to.into()).await?.unwrap();
             chat_details.chat_id = self_user_id.get_i32().unwrap();
-            handler.send_msg_to_connection(msg.common.to, json!({
-                "event": "new_chat",
-                "ok": true,
-                "data": chat_details
-            }));
+            handler.send_msg_to_connection(msg.common.to, NewChatEventResponse {
+                ok: true,
+                event: "new_chat".into(),
+                new_chat: chat_details
+            });
 
             chat_id.chat_id()
         }
@@ -71,11 +72,11 @@ async fn handle_send_message(
     db_message.chat_id = msg.common.to;
     let message_id = db_message.message_id;
 
-    handler.send_msg_to_connection(msg.common.to, json!({
-        "event": "new_message",
-        "ok": true,
-        "data": db_message
-    }));
+    handler.send_msg_to_connection(msg.common.to, NewMessageEventResponse {
+        ok: true,
+        event: "new_message".into(),
+        new_message: db_message
+    });
 
     Ok((message_id, msg.common.to))
 }
@@ -89,12 +90,18 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
         }
     }
 
-    match serde_json::from_str::<Message>(handler.builder.as_mut().unwrap().content_utf8().unwrap()) {
+    let content = handler.utf8_content_unchecked();
+    match serde_json::from_str::<RequestMessage>(&content) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
                 match handle_send_message(Arc::clone(&handler.session), msg, &handler).await {
                     Ok((latest_msg_id, target_chat_id)) => {
-                        let data = serde_json::json!({ "method": "send_message", "message_id": latest_msg_id, "chat_id": target_chat_id, "ok": true });
+                        let data = SendMessageResponse {
+                            ok: true,
+                            method: "send_message".into(),
+                            message_id: latest_msg_id,
+                            chat_id: target_chat_id 
+                        };
                         handler.send_message(&data).await;
                     }
                     Err(err) => {handler.send_error(method, err).await;},
