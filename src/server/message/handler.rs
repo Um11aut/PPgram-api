@@ -39,6 +39,10 @@ impl MessageHandler {
         }
     }
 
+    pub fn utf8_content_unchecked(&mut self) -> &String {
+        self.builder.as_mut().unwrap().content_utf8().unwrap()
+    }
+
     pub async fn send_error(&self, method: &str, err: PPError) {
         err.safe_send(method, &self.connection).await;
     }
@@ -56,6 +60,7 @@ impl MessageHandler {
         });
     }
 
+    /// Instead of json, sends raw buffer directly to the connection
     pub async fn send_raw(&self, data: &[u8]) {
         self.connection.write(&MessageBuilder::build_from_vec(&data).packed()).await;
     }
@@ -100,7 +105,7 @@ impl MessageHandler {
                     Some(method) => {
                         match method {
                             "login" | "auth" | "register" => auth::handle(self, method).await,
-                            "send_message" | "send_media" => send::handle(self, method).await,
+                            "send_message" => send::handle(self, method).await,
                             "edit_message" => edit::handle(self, method).await,
                             "fetch" => fetch::handle(self, method).await,
                             "check" => check::handle(self, method).await,

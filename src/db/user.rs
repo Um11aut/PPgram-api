@@ -387,7 +387,7 @@ impl UsersDB {
         if let Some(row) = row {
             let user_id: i32 = row.get(0)?;
             let name: String = row.get(1)?;
-            let photo: Vec<u8> = row.get(2)?;
+            let photo: String = row.get(2)?;
             let username: String = row.get(3)?;
 
             return Ok(Some(User::construct(

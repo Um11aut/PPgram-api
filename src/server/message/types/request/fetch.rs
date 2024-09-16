@@ -10,7 +10,8 @@ pub struct BaseFetchRequestMessage {
 pub struct FetchUserRequestMessage {
     pub method: String,
     pub what: String,
-    pub username: String
+    pub username: Option<String>,
+    pub user_id: Option<i32>
 }
 
 #[derive(Deserialize, Serialize)]

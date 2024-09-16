@@ -9,7 +9,7 @@ pub struct User {
     name: String,
     user_id: i32,
     username: String,
-    photo: Option<Vec<u8>>,
+    photo: Option<String>,
 }
 
 impl User {
@@ -22,7 +22,7 @@ impl User {
         }
     }
 
-    pub fn construct(name: String, user_id: i32, username: String, photo: Option<Vec<u8>>) -> Self {
+    pub fn construct(name: String, user_id: i32, username: String, photo: Option<String>) -> Self {
         Self {
             name,
             user_id,
@@ -43,8 +43,12 @@ impl User {
         &self.username
     }
 
-    pub fn photo(&self) -> Option<&Vec<u8>> {
+    pub fn photo(&self) -> Option<&String> {
         self.photo.as_ref() 
+    }
+
+    pub fn photo_moved(self) -> Option<String> {
+        self.photo
     }
 
     pub fn build_response(&self, method: &str) -> Value {

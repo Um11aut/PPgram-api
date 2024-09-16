@@ -52,6 +52,12 @@ impl From<cassandra_cpp::Error> for PPError {
     }
 }
 
+impl From<serde_json::Error> for PPError {
+    fn from(err: serde_json::Error) -> Self {
+        PPError::Client(format!("error while parsing json: {}", err.to_string()))
+    }
+}
+
 impl From<String> for PPError {
     fn from(err: String) -> Self {
         PPError::Client(err)
@@ -81,3 +87,5 @@ impl PPError {
         send_str_as_err(method, err, connection).await;
     }
 }
+
+pub type PPResult<T> = Result<T, PPError>;

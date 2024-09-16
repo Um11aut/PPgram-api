@@ -43,7 +43,6 @@ where
     Ok(())
 }
 
-
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
     let buffer = handler.builder.as_mut().unwrap().content_utf8().unwrap();
 
