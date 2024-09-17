@@ -87,10 +87,17 @@ impl From<i32> for UserId {
 }
 
 impl UserId {
-    pub fn get_i32(&self) -> Option<i32> {
+    pub fn as_i32(&self) -> Option<i32> {
         match *self {
             UserId::UserId(user_id) => Some(user_id),
             UserId::Username(_) => None
+        }
+    }
+
+    pub fn as_i32_unchecked(&self) -> i32 {
+        match *self {
+            UserId::UserId(user_id) => user_id,
+            UserId::Username(_) => panic!("UserId must be i32!")
         }
     }
 }

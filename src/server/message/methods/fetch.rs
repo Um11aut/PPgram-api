@@ -6,7 +6,7 @@ use crate::db::internal::error::{PPError, PPResult};
 use crate::fs::media::get_media;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::message::Message;
-use crate::server::message::types::request::fetch::*;
+use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{FetchChatsResponseMessage, FetchMessagesResponseValue, FetchSelfResponseMessage, FetchUserResponseMessage};
 use crate::{
     db::{
@@ -70,12 +70,6 @@ async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesReque
         }
         None => Err("failed to retrieve chat_id!".into())
     }
-}
-
-fn extract_what_field(message: &String) -> PPResult<String> {
-    let what_field = serde_json::from_str::<BaseFetchRequestMessage>(&message)?;
-
-    Ok(what_field.what)
 }
 
 async fn on_chats(handler: &MessageHandler) -> PPResult<FetchChatsResponseMessage> {

@@ -1,3 +1,5 @@
+use argon2::password_hash::SaltString;
+use argon2::Argon2;
 use cassandra_cpp;
 use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
@@ -5,6 +7,7 @@ use cassandra_cpp::LendingIterator;
 use cassandra_cpp::MapIterator;
 use cassandra_cpp::SetIterator;
 use log::error;
+use rand::rngs::OsRng;
 use rand::{distributions::Alphanumeric, Rng};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -17,6 +20,7 @@ use crate::server::message::types::user::UserId;
 
 use super::db::Database;
 use super::internal::error::PPError;
+use super::internal::error::PPResult;
 use super::internal::validate;
 
 pub static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
@@ -30,7 +34,7 @@ impl Database for UsersDB {
         UsersDB { session }
     }
 
-    async fn create_table(&self) -> Result<(), PPError> {
+    async fn create_table(&self) -> PPResult<()> {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS users (
                 id int PRIMARY KEY, 
@@ -55,7 +59,7 @@ impl Database for UsersDB {
 }
 
 impl UsersDB {
-    pub async fn exists(&self, identifier: &UserId) -> Result<bool, PPError> {
+    pub async fn exists(&self, identifier: &UserId) -> PPResult<bool> {
         let result = match identifier {
             UserId::UserId(user_id) => {
                 let query = "SELECT id FROM users WHERE id = ?";
@@ -79,8 +83,8 @@ impl UsersDB {
         &self,
         name: &str,
         username: &str,
-        password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), PPError> {
+        password: &str,
+    ) -> PPResult<(i32 /* user_id */, String /* session_id */)> {
         validate::validate_name(name)?;
         validate::validate_username(username)?;
 
@@ -97,7 +101,7 @@ impl UsersDB {
         statement.bind_int32(0, user_id)?;
         statement.bind_string(1, name)?;
         statement.bind_string(2, username)?;
-        statement.bind_string(3, password_hash)?;
+        statement.bind_string(3, password)?;
         statement.bind_list(4, cassandra_cpp::List::new())?;
         statement.bind_string(5, "")?;
         statement.bind_map(6, cassandra_cpp::Map::new())?;
@@ -114,7 +118,7 @@ impl UsersDB {
         &self,
         username: &str,
         password_hash: &str,
-    ) -> std::result::Result<(i32 /* user_id */, String /* session_id */), PPError> {
+    ) -> PPResult<(i32 /* user_id */, String /* session_id */)> {
         let query = "SELECT id, password_hash FROM users WHERE username = ?";
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username)?;
@@ -154,7 +158,7 @@ impl UsersDB {
         &self,
         user_id: i32,
         session_id: &str,
-    ) -> std::result::Result<(), PPError> {
+    ) -> PPResult<()> {
         let query = "SELECT sessions FROM users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
@@ -192,7 +196,7 @@ impl UsersDB {
         Ok(())
     }
 
-    async fn create_session(&self, user_id: i32) -> Result<String, PPError> {
+    async fn create_session(&self, user_id: i32) -> PPResult<String> {
         let new_session: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(30)
@@ -258,7 +262,7 @@ impl UsersDB {
         let mut statement = self.session.statement(query);
 
         statement.bind_string(0, &media_hash)?;
-        statement.bind_int32(1, user_id.get_i32().unwrap())?;
+        statement.bind_int32(1, user_id.as_i32().unwrap())?;
 
         match statement.execute().await {
             Ok(_) => Ok(()),
@@ -266,7 +270,7 @@ impl UsersDB {
         }
     }
 
-    pub async fn fetch_chats(&self, user_id: &UserId) -> Result<HashMap<i32, ChatId>, PPError> {
+    pub async fn fetch_chats(&self, user_id: &UserId) -> PPResult<HashMap<i32, ChatId>> {
         let statement = match user_id {
             UserId::UserId(user_id) => {
                 let query = "SELECT chats FROM users WHERE id = ?";
@@ -299,7 +303,15 @@ impl UsersDB {
         Ok(output)
     }
 
-    pub async fn get_associated_chat_id(&self, user_id: &UserId, key_user_id: &UserId) -> Result<Option<ChatId>, PPError> {
+    /// In Users Database, the chat id is stored in a map of public chat_ids(for each user it's relative), and private(server) chat_ids
+    /// 
+    /// This is made for simplicity of API usage, meaning that if e.g. user wants to write a message to some `user_id`,
+    /// user shouldn't bother and fetch some other `chat_id` for his intentions, he can just send an intended message to
+    /// the exact `chat_id`(`user_id`), that was fetched by him before
+    /// 
+    /// 
+    /// This function gets associated private `chat_id` from by the public `user_id`(`chat_id`) key
+    pub async fn get_associated_chat_id(&self, user_id: &UserId, key_user_id: &UserId) -> PPResult<Option<ChatId>> {
         let mut statement = match user_id {
             UserId::UserId(user_id) => {
                 let query = "SELECT chats[?] FROM users WHERE id = ?";
@@ -314,7 +326,7 @@ impl UsersDB {
                 statement
             }
         };
-        statement.bind_int32(0, key_user_id.get_i32().unwrap())?;
+        statement.bind_int32(0, key_user_id.as_i32().unwrap())?;
 
         let result = statement.execute().await?;
 
@@ -329,7 +341,7 @@ impl UsersDB {
         Ok(None)
     }
 
-    pub async fn add_chat(&self, user_id: &UserId, target_user_id: &UserId, target_chat_id: ChatId) -> Result<(), PPError> {
+    pub async fn add_chat(&self, user_id: &UserId, target_user_id: &UserId, target_chat_id: ChatId) -> PPResult<()> {
         let query = match user_id {
             UserId::UserId(_) => {
                 "UPDATE users SET chats = chats + ? WHERE id = ?"
@@ -347,7 +359,7 @@ impl UsersDB {
     
         // Create a list with a single chat_id to append to the chats list
         let mut chat_list = cassandra_cpp::Map::new();
-        chat_list.append_int32(target_user_id.get_i32().unwrap())?;
+        chat_list.append_int32(target_user_id.as_i32().unwrap())?;
         chat_list.append_int32(target_chat_id)?;
 
         statement.bind_map(0, chat_list)?;
@@ -366,7 +378,7 @@ impl UsersDB {
         Ok(())
     }
     
-    pub async fn fetch_user(&self, identifier: &UserId) -> Result<Option<User>, PPError> {
+    pub async fn fetch_user(&self, identifier: &UserId) -> PPResult<Option<User>> {
         let statement = match identifier {
             UserId::UserId(user_id) => {
                 let query = "SELECT id, name, photo, username FROM users WHERE id = ?";

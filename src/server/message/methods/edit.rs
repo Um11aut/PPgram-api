@@ -1,6 +1,102 @@
-use crate::server::message::handler::MessageHandler;
+use serde_json::Value;
 
-pub async fn handle(_: &mut MessageHandler, _: &str) 
-{
+use crate::{
+    db::{chat::messages::MESSAGES_DB, internal::error::PPResult, user::USERS_DB},
+    server::{
+        message::{
+            handler::MessageHandler,
+            types::{
+                request::{
+                    edit::{DeleteChatMessage, EditChatMessage, EditSelfMessage},
+                    extract_what_field,
+                },
+                response::edit::EditMessageResponse,
+            },
+        },
+        session::Session,
+    },
+};
 
+async fn handle_edit_message(handler: &mut MessageHandler, msg: &EditChatMessage) -> PPResult<()> {
+    let user_id = {
+        let session = handler.session.read().await;
+        let (user_id, _) = session.get_credentials().unwrap();
+        user_id
+    };
+
+    let users_db = USERS_DB.get().unwrap();
+    let real_chat_id = users_db
+        .get_associated_chat_id(&user_id, &msg.chat_id.into())
+        .await?
+        .ok_or("Chat with the given chat_id doesn't exist!")?;
+    let messages_db = MESSAGES_DB.get().unwrap();
+    if messages_db.message_exists(real_chat_id, msg.message_id).await? {
+        
+    } else {
+        return Err("Message with the given message_id wasn't found!".into())
+    }
+
+    Ok(())
+}
+
+async fn handle_edit_self(handler: &mut MessageHandler, msg: &EditSelfMessage) -> PPResult<()> {
+    Ok(())
+}
+
+async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<EditMessageResponse> {
+    let what_field = extract_what_field(&content)?;
+
+    match what_field.as_str() {
+        "message" => {
+            let msg: EditChatMessage = serde_json::from_str(&content)?;
+            handle_edit_message(handler, &msg).await?;
+            Ok(EditMessageResponse {
+                ok: true,
+                method: "edit_message".into(),
+            })
+        }
+        "self" => {
+            let msg: EditSelfMessage = serde_json::from_str(&content)?;
+            handle_edit_self(handler, &msg).await?;
+            Ok(EditMessageResponse {
+                ok: true,
+                method: "edit_self".into(),
+            })
+        }
+        _ => Err("Unknown what field! Known what fields for edit: 'message', 'self'".into()),
+    }
+}
+
+async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<DeleteChatMessage> {
+    todo!()
+}
+
+async fn handle_messages(handler: &mut MessageHandler, method: &str) -> PPResult<Value> {
+    let content = handler.utf8_content_unchecked().to_owned();
+    match method {
+        "edit" => Ok(serde_json::to_value(on_edit(handler, &content).await?).unwrap()),
+        "delete" => Ok(serde_json::to_value(on_delete(handler, &content).await?).unwrap()),
+        _ => Err("Unknown method".into()),
+    }
+}
+
+pub async fn handle(handler: &mut MessageHandler, method: &str) {
+    {
+        let session = handler.session.read().await;
+        if !session.is_authenticated() {
+            handler
+                .send_error(method, "You aren't authenticated!".into())
+                .await;
+            return;
+        }
+    }
+
+    match handle_messages(handler, method).await {
+        Ok(val) => {
+            handler.send_message(&val).await;
+        }
+        Err(err) => {
+            handler.send_error(method, err).await;
+        }
+    }
 }

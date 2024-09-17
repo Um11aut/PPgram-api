@@ -13,7 +13,7 @@ pub struct RequestAuthMessage {
 pub struct RequestLoginMessage {
     pub method: String,
     pub username: String,
-    pub password_hash: String
+    pub password: String
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -21,5 +21,5 @@ pub struct RequestRegisterMessage {
     pub method: String,
     pub name: String,
     pub username: String,
-    pub password_hash: String
+    pub password: String
 }
