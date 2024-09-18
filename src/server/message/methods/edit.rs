@@ -3,21 +3,17 @@ use serde_json::Value;
 
 use crate::{
     db::{chat::messages::MESSAGES_DB, internal::error::PPResult, user::USERS_DB},
-    server::{
-        message::{
+    server::message::{
             handler::MessageHandler,
-            methods::edit,
             types::{
-                chat::ChatId, edit::EditedMessageBuilder, request::{
-                    delete::DeleteMessageRequest, edit::{EditChatMessage, EditSelfMessage}, extract_what_field
-                }, response::{delete::DeleteMessageResponse, edit::EditMessageResponse, events::{DeleteMessageEventResponse, EditMessageEventResponse}}, user::UserId
+                edit::EditedMessageBuilder, request::{
+                    delete::DeleteMessageRequest, edit::{EditMessageRequest, EditSelfRequest}, extract_what_field
+                }, response::{delete::DeleteMessageResponse, edit::EditMessageResponse, events::{DeleteMessageEvent, EditMessageEvent}}
             },
         },
-        session::Session,
-    },
 };
 
-async fn handle_edit_message(handler: &mut MessageHandler, msg: EditChatMessage) -> PPResult<()> {
+async fn handle_edit_message(handler: &mut MessageHandler, msg: EditMessageRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
@@ -50,7 +46,7 @@ async fn handle_edit_message(handler: &mut MessageHandler, msg: EditChatMessage)
             .edit_message(msg_id, real_chat_id, edited_msg.clone())
             .await?;
         debug!("Edited Message: {:?}", edited_msg);
-        handler.send_msg_to_connection(to_user_id, EditMessageEventResponse{
+        handler.send_msg_to_connection(to_user_id, EditMessageEvent{
             ok: true,
             event: "edit_message".into(),
             new_message: edited_msg
@@ -63,7 +59,7 @@ async fn handle_edit_message(handler: &mut MessageHandler, msg: EditChatMessage)
 }
 
 // TODO: Add self editing(do not travers all subscribtions)
-async fn handle_edit_self(handler: &mut MessageHandler, msg: &EditSelfMessage) -> PPResult<()> {
+async fn handle_edit_self(handler: &mut MessageHandler, msg: &EditSelfRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
@@ -80,7 +76,7 @@ async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<Edi
 
     match what_field.as_str() {
         "message" => {
-            let msg: EditChatMessage = serde_json::from_str(&content)?;
+            let msg: EditMessageRequest = serde_json::from_str(&content)?;
             handle_edit_message(handler, msg).await?;
             Ok(EditMessageResponse {
                 ok: true,
@@ -88,7 +84,7 @@ async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<Edi
             })
         }
         "self" => {
-            let msg: EditSelfMessage = serde_json::from_str(&content)?;
+            let msg: EditSelfRequest = serde_json::from_str(&content)?;
             handle_edit_self(handler, &msg).await?;
             Ok(EditMessageResponse {
                 ok: true,
@@ -120,7 +116,7 @@ async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<D
         .await?
     {
         messages_db.delete_message(real_chat_id, msg.message_id).await?;
-        handler.send_msg_to_connection(msg.chat_id, DeleteMessageEventResponse{
+        handler.send_msg_to_connection(msg.chat_id, DeleteMessageEvent{
             ok: true,
             event: "delete_message".into(),
             chat_id: msg.chat_id,

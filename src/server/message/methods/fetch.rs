@@ -7,7 +7,7 @@ use crate::fs::media::get_media;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
-use crate::server::message::types::response::fetch::{FetchChatsResponseMessage, FetchMessagesResponseValue, FetchSelfResponseMessage, FetchUserResponseMessage};
+use crate::server::message::types::response::fetch::{FetchChatsResponse, FetchMessagesResponse, FetchSelfResponseMessage, FetchUserResponse};
 use crate::{
     db::{
         chat::chats::CHATS_DB,
@@ -54,7 +54,7 @@ async fn handle_fetch_self(handler: &MessageHandler) -> PPResult<User> {
     fetch_user(&user_id).await
 }
 
-async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> PPResult<Vec<Message>> {
+async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
     let maybe_chat_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
@@ -72,9 +72,9 @@ async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesReque
     }
 }
 
-async fn on_chats(handler: &MessageHandler) -> PPResult<FetchChatsResponseMessage> {
+async fn on_chats(handler: &MessageHandler) -> PPResult<FetchChatsResponse> {
     let chats = handle_fetch_chats(&handler).await?;
-    Ok(FetchChatsResponseMessage {
+    Ok(FetchChatsResponse {
         ok: true,
         method: "fetch_chats".into(),
         chats
@@ -93,8 +93,8 @@ async fn on_self(handler: &MessageHandler) -> PPResult<FetchSelfResponseMessage>
     })
 }
 
-async fn on_user(content: &String) -> PPResult<FetchUserResponseMessage> {
-    let msg: FetchUserRequestMessage = serde_json::from_str(&content)?;
+async fn on_user(content: &String) -> PPResult<FetchUserResponse> {
+    let msg: FetchUserRequest = serde_json::from_str(&content)?;
     
     let user_id: UserId = match msg.username {
         Some(username) => username.as_str().into(),
@@ -105,7 +105,7 @@ async fn on_user(content: &String) -> PPResult<FetchUserResponseMessage> {
     };
 
     let self_info = fetch_user(&user_id).await?;
-    Ok(FetchUserResponseMessage {
+    Ok(FetchUserResponse {
         ok: true,
         method: "fetch_user".into(),
         name: self_info.name().into(),
@@ -115,12 +115,12 @@ async fn on_user(content: &String) -> PPResult<FetchUserResponseMessage> {
     })
 }
 
-async fn on_messages(handler: &mut MessageHandler) -> PPResult<FetchMessagesResponseValue> {
+async fn on_messages(handler: &mut MessageHandler) -> PPResult<FetchMessagesResponse> {
     let content = handler.utf8_content_unchecked();
-    let msg = serde_json::from_str::<FetchMessagesRequestMessage>(&content)?;
+    let msg = serde_json::from_str::<FetchMessagesRequest>(&content)?;
     let fetched_msgs = handle_fetch_messages(&handler, msg).await?;
 
-    Ok(FetchMessagesResponseValue{
+    Ok(FetchMessagesResponse{
         ok: true,
         method: "fetch_messages".into(),
         messages: fetched_msgs
@@ -130,7 +130,7 @@ async fn on_messages(handler: &mut MessageHandler) -> PPResult<FetchMessagesResp
 /// Directly sends raw media
 async fn on_media(handler: &mut MessageHandler) -> PPResult<()> {
     let content = handler.utf8_content_unchecked();
-    let msg = serde_json::from_str::<FetchMediaRequestMessage>(&content)?;
+    let msg = serde_json::from_str::<FetchMediaRequest>(&content)?;
 
     let maybe_media = get_media(&msg.media_hash).await?;
     handler.send_raw(&maybe_media).await;

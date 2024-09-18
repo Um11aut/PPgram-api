@@ -39,9 +39,9 @@ pub enum MessageContent {
     Text(TextMessage),
 }
 
-// Define a struct to represent the complete message
+/// a struct to represent the complete message
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RequestMessage {
+pub struct MessageRequest {
     #[serde(flatten)]
     pub common: CommonFields,
     pub content: MessageContent,

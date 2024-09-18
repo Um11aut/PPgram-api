@@ -17,7 +17,7 @@ if __name__ == "__main__":
             "method": "login",
             "username": "@pepuk",
             "name": "Pepuk Alpha",
-            "password_hash": "asd"
+            "password": "asd"
         }
 
         resp = simple.send_message(sock, register_message)
@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
         send_message_dict = {
             "method": "send_message",
-            "to": -497022138,
+            "to": 1612520800,
             "has_reply": False,
             "reply_to": 0,
             "content": {

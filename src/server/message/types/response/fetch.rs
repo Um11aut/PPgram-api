@@ -3,14 +3,14 @@ use serde::{Serialize, Deserialize};
 use crate::server::message::types::{chat::ChatDetails, message::Message};
 
 #[derive(Serialize, Deserialize)]
-pub struct FetchChatsResponseMessage {
+pub struct FetchChatsResponse {
     pub ok: bool,
     pub method: String,
     pub chats: Vec<ChatDetails>
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct FetchUserResponseMessage {
+pub struct FetchUserResponse {
     pub ok: bool,
     pub method: String,
     pub name: String,
@@ -19,10 +19,10 @@ pub struct FetchUserResponseMessage {
     pub photo: Option<String>,
 }
 
-pub type FetchSelfResponseMessage = FetchUserResponseMessage;
+pub type FetchSelfResponseMessage = FetchUserResponse;
 
 #[derive(Serialize, Deserialize)]
-pub struct FetchMessagesResponseValue {
+pub struct FetchMessagesResponse {
     pub ok: bool,
     pub method: String,
     pub messages: Vec<Message>

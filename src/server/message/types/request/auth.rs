@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct RequestAuthMessage {
+pub struct AuthRequest {
     pub method: String,
     pub user_id: i32,
     pub session_id: String
@@ -10,14 +10,14 @@ pub struct RequestAuthMessage {
 
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct RequestLoginMessage {
+pub struct LoginRequest {
     pub method: String,
     pub username: String,
     pub password: String
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct RequestRegisterMessage {
+pub struct RegisterRequest {
     pub method: String,
     pub name: String,
     pub username: String,

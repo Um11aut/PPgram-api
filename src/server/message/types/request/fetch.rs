@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
-pub struct BaseFetchRequestMessage {
+pub struct BaseFetchRequest {
     pub method: String,
     pub what: String,
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct FetchUserRequestMessage {
+pub struct FetchUserRequest {
     pub method: String,
     pub what: String,
     pub username: Option<String>,
@@ -15,7 +15,7 @@ pub struct FetchUserRequestMessage {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct FetchMessagesRequestMessage {
+pub struct FetchMessagesRequest {
     pub method: String,
     pub what: String,
     pub chat_id: i32,
@@ -23,7 +23,7 @@ pub struct FetchMessagesRequestMessage {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct FetchMediaRequestMessage {
+pub struct FetchMediaRequest {
     pub method: String,
     pub what: String,
     pub media_hash: String

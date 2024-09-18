@@ -60,6 +60,7 @@ impl User {
     }
 }
 
+#[derive(Debug)]
 pub enum UserId {
     UserId(i32),
     Username(String)

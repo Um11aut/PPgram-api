@@ -10,7 +10,7 @@ use crate::{
     },
     server::{
         message::{
-            handler::MessageHandler, types::{chat::ChatId, request::message::{MessageId, RequestMessage}, response::{events::{NewChatEventResponse, NewMessageEventResponse}, send::SendMessageResponse}}
+            handler::MessageHandler, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
         },
         session::Session,
     },
@@ -20,7 +20,7 @@ use std::sync::Arc;
 /// Returns latest chat message id if sucessful
 async fn handle_send_message(
     session: Arc<RwLock<Session>>,
-    msg: RequestMessage,
+    msg: MessageRequest,
     handler: &MessageHandler,
 ) -> Result<(MessageId, ChatId), PPError> {
     let session = session.read().await;
@@ -57,7 +57,7 @@ async fn handle_send_message(
 
             let mut chat_details = chat_id.details(&msg.common.to.into()).await?.unwrap();
             chat_details.chat_id = self_user_id.as_i32().unwrap();
-            handler.send_msg_to_connection(msg.common.to, NewChatEventResponse {
+            handler.send_msg_to_connection(msg.common.to, NewChatEvent {
                 ok: true,
                 event: "new_chat".into(),
                 new_chat: chat_details
@@ -72,7 +72,7 @@ async fn handle_send_message(
     db_message.chat_id = msg.common.to;
     let message_id = db_message.message_id;
 
-    handler.send_msg_to_connection(msg.common.to, NewMessageEventResponse {
+    handler.send_msg_to_connection(msg.common.to, NewMessageEvent {
         ok: true,
         event: "new_message".into(),
         new_message: db_message
@@ -91,7 +91,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
     }
 
     let content = handler.utf8_content_unchecked();
-    match serde_json::from_str::<RequestMessage>(&content) {
+    match serde_json::from_str::<MessageRequest>(&content) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
                 match handle_send_message(Arc::clone(&handler.session), msg, &handler).await {

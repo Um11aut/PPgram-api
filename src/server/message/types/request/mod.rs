@@ -11,11 +11,11 @@ pub mod edit;
 pub mod delete;
 
 #[derive(Serialize, Deserialize)]
-struct BaseWhatMessage {
+struct BaseWhatRequest {
     pub what: String
 }
 pub fn extract_what_field(message: &String) -> PPResult<String> {
-    let o = serde_json::from_str::<BaseWhatMessage>(&message)?;
+    let o = serde_json::from_str::<BaseWhatRequest>(&message)?;
 
     Ok(o.what)
 }
