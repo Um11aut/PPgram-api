@@ -1,3 +1,4 @@
+use log::debug;
 use serde_json::Value;
 
 use crate::{
@@ -5,7 +6,9 @@ use crate::{
     server::{
         message::{
             handler::MessageHandler,
+            methods::edit,
             types::{
+                edit::EditedMessageBuilder,
                 request::{
                     edit::{DeleteChatMessage, EditChatMessage, EditSelfMessage},
                     extract_what_field,
@@ -17,30 +20,58 @@ use crate::{
     },
 };
 
-async fn handle_edit_message(handler: &mut MessageHandler, msg: &EditChatMessage) -> PPResult<()> {
-    let user_id = {
+async fn handle_edit_message(handler: &mut MessageHandler, msg: EditChatMessage) -> PPResult<()> {
+    let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
         user_id
     };
 
     let users_db = USERS_DB.get().unwrap();
+    let messages_db = MESSAGES_DB.get().unwrap();
+
     let real_chat_id = users_db
-        .get_associated_chat_id(&user_id, &msg.chat_id.into())
+        .get_associated_chat_id(&self_user_id, &msg.chat_id.into())
         .await?
         .ok_or("Chat with the given chat_id doesn't exist!")?;
-    let messages_db = MESSAGES_DB.get().unwrap();
-    if messages_db.message_exists(real_chat_id, msg.message_id).await? {
-        
+    if messages_db
+        .message_exists(real_chat_id, msg.message_id)
+        .await?
+    {
+        let to_user_id = msg.chat_id.clone();
+        let msg_id = msg.message_id.clone();
+
+        let builder = EditedMessageBuilder::from(msg);
+        let existing_message = messages_db
+            .fetch_messages(real_chat_id, msg_id..0)
+            .await?
+            .remove(0);
+        debug!("Existing Message: {:?}", existing_message);
+
+        let edited_msg = builder.get_edited_message(existing_message);
+        messages_db
+            .edit_message(msg_id, real_chat_id, edited_msg.clone())
+            .await?;
+        debug!("Edited Message: {:?}", edited_msg);
+        handler.send_msg_to_connection(to_user_id, edited_msg);
     } else {
-        return Err("Message with the given message_id wasn't found!".into())
+        return Err("Message with the given message_id wasn't found!".into());
     }
 
     Ok(())
 }
 
+// TODO: Add self editing(do not travers all subscribtions)
 async fn handle_edit_self(handler: &mut MessageHandler, msg: &EditSelfMessage) -> PPResult<()> {
-    Ok(())
+    let self_user_id = {
+        let session = handler.session.read().await;
+        let (user_id, _) = session.get_credentials().unwrap();
+        user_id
+    };
+
+    let users_db = USERS_DB.get().unwrap();
+
+    todo!()
 }
 
 async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<EditMessageResponse> {
@@ -49,7 +80,7 @@ async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<Edi
     match what_field.as_str() {
         "message" => {
             let msg: EditChatMessage = serde_json::from_str(&content)?;
-            handle_edit_message(handler, &msg).await?;
+            handle_edit_message(handler, msg).await?;
             Ok(EditMessageResponse {
                 ok: true,
                 method: "edit_message".into(),

@@ -63,7 +63,7 @@ async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesReque
 
     match maybe_chat_id {
         Some(target_chat_id) => {
-            let mut msgs = MESSAGES_DB.get().unwrap().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await?.unwrap_or(vec![]);
+            let mut msgs = MESSAGES_DB.get().unwrap().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await?;
 
             msgs.iter_mut().for_each(|message| message.chat_id = msg.chat_id);
             Ok(msgs)

@@ -15,3 +15,10 @@ pub struct NewMessageEventResponse {
     pub event: String,
     pub new_message: Message
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct EditMessageEventResponse {
+    pub ok: bool,
+    pub event: String,
+    pub new_message: Message
+}

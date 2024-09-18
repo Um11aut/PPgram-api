@@ -74,6 +74,9 @@ impl MessageHandler {
         self.connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await;
     }
 
+    /// Sends message to other connection(e.g. new chat, new message, or any other event that must be handled in realtime)
+    /// 
+    /// If user isn't connected to the server, nothing happens
     pub fn send_msg_to_connection(&self, to: i32, msg: impl Serialize + Send + 'static) {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
