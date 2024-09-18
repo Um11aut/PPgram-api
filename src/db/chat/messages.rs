@@ -288,4 +288,20 @@ impl MessagesDB {
     
         Ok(())
     }
+
+    pub async fn delete_message(&self, chat_id: ChatId, message_id: i32) -> PPResult<()> {
+        let delete_query = r#"
+            DELETE FROM messages 
+            WHERE chat_id = ? AND id = ?
+        "#;
+    
+        let mut statement = self.session.statement(delete_query);
+    
+        statement.bind_int32(0, chat_id)?; // chat_id
+        statement.bind_int32(1, message_id)?; // message_id
+    
+        statement.execute().await?;
+    
+        Ok(())
+    }
 }

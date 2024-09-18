@@ -22,10 +22,3 @@ pub struct EditChatMessage {
     pub media_hashes: Option<Vec<String>>,
     pub media_names: Option<Vec<String>>
 }
-
-#[derive(Serialize, Deserialize)]
-pub struct DeleteChatMessage {
-    pub method: String,
-    pub chat_id: i32,
-    pub message_id: i32,
-}

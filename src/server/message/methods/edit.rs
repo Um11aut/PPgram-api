@@ -8,12 +8,9 @@ use crate::{
             handler::MessageHandler,
             methods::edit,
             types::{
-                edit::EditedMessageBuilder,
-                request::{
-                    edit::{DeleteChatMessage, EditChatMessage, EditSelfMessage},
-                    extract_what_field,
-                },
-                response::edit::EditMessageResponse,
+                chat::ChatId, edit::EditedMessageBuilder, request::{
+                    delete::DeleteMessageRequest, edit::{EditChatMessage, EditSelfMessage}, extract_what_field
+                }, response::{delete::DeleteMessageResponse, edit::EditMessageResponse, events::{DeleteMessageEventResponse, EditMessageEventResponse}}, user::UserId
             },
         },
         session::Session,
@@ -53,7 +50,11 @@ async fn handle_edit_message(handler: &mut MessageHandler, msg: EditChatMessage)
             .edit_message(msg_id, real_chat_id, edited_msg.clone())
             .await?;
         debug!("Edited Message: {:?}", edited_msg);
-        handler.send_msg_to_connection(to_user_id, edited_msg);
+        handler.send_msg_to_connection(to_user_id, EditMessageEventResponse{
+            ok: true,
+            event: "edit_message".into(),
+            new_message: edited_msg
+        });
     } else {
         return Err("Message with the given message_id wasn't found!".into());
     }
@@ -98,8 +99,41 @@ async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<Edi
     }
 }
 
-async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<DeleteChatMessage> {
-    todo!()
+async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<DeleteMessageResponse> {
+    let msg: DeleteMessageRequest = serde_json::from_str(&content)?;
+
+    let self_user_id = {
+        let session = handler.session.read().await;
+        let (user_id, _) = session.get_credentials().unwrap();
+        user_id
+    };
+    
+    let users_db = USERS_DB.get().unwrap();
+    let messages_db = MESSAGES_DB.get().unwrap();
+
+    let real_chat_id = users_db
+        .get_associated_chat_id(&self_user_id, &msg.chat_id.into())
+        .await?
+        .ok_or("Chat with the given chat_id doesn't exist!")?;
+    if messages_db
+        .message_exists(real_chat_id, msg.message_id)
+        .await?
+    {
+        messages_db.delete_message(real_chat_id, msg.message_id).await?;
+        handler.send_msg_to_connection(msg.chat_id, DeleteMessageEventResponse{
+            ok: true,
+            event: "delete_message".into(),
+            chat_id: msg.chat_id,
+            message_id: msg.message_id
+        });
+
+        Ok(DeleteMessageResponse {
+            ok: true,
+            method: "delete_message".into()
+        })
+    } else {
+        Err("Message with the given message_id wasn't found!".into())
+    }
 }
 
 async fn handle_messages(handler: &mut MessageHandler, method: &str) -> PPResult<Value> {

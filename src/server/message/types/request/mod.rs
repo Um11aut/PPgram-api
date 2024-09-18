@@ -8,6 +8,7 @@ pub mod bind;
 pub mod check;
 pub mod fetch;
 pub mod edit;
+pub mod delete;
 
 #[derive(Serialize, Deserialize)]
 struct BaseWhatMessage {

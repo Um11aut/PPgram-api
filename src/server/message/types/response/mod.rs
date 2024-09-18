@@ -5,3 +5,4 @@ pub mod send;
 pub mod events;
 pub mod auth;
 pub mod edit;
+pub mod delete;
