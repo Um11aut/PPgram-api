@@ -3,6 +3,7 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::List;
+use log::info;
 use core::range::RangeInclusive;
 use std::ops::Range;
 use std::sync::Arc;
@@ -60,7 +61,7 @@ impl Database for MessagesDB {
 impl MessagesDB {
     pub async fn add_message(
         &self,
-        msg: &RequestMessage,
+        msg: &MessageRequest,
         sender_id: &UserId,
         target_chat_id: ChatId,
     ) -> Result<Message, PPError> {
@@ -68,7 +69,7 @@ impl MessagesDB {
             INSERT INTO messages 
                 (id, is_unread, from_id, chat_id, date, has_reply,
                 reply_to, has_content, content, 
-                has_media, media_datas, media_names)
+                has_media, media_hashes, media_names)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
 
@@ -117,7 +118,7 @@ impl MessagesDB {
 
                 statement.bind_bool(9, true)?; // has_media
 
-                statement.bind_list(10, List::new())?; // media_datas
+                statement.bind_list(10, List::new())?; // media_hashes
                 statement.bind_list(11, List::new())?; // media_names
 
                 // TODO: Implement media messages
@@ -127,7 +128,7 @@ impl MessagesDB {
                 statement.bind_bool(7, true)?; // has_content
                 statement.bind_string(8, &text.text)?; // content
                 statement.bind_bool(9, false)?; // has_media
-                statement.bind_list(10, List::new())?; // media_datas
+                statement.bind_list(10, List::new())?; // media_hashes
                 statement.bind_list(11, List::new())?; // media_names
             }
         }
@@ -139,7 +140,7 @@ impl MessagesDB {
     }
 
     pub async fn get_latest(&self, chat_id: ChatId) -> Result<Option<MessageId>, PPError> {
-        let query = "SELECT id FROM messages WHERE chat_id = ? LIMIT 1";
+        let query = "SELECT id FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1";
 
         let mut statement = self.session.statement(&query);
         statement.bind_int32(0, chat_id)?;
@@ -166,6 +167,7 @@ impl MessagesDB {
         statement.bind_int32(1, message_id)?;
 
         let result = statement.execute().await?;
+
 
         if result.first_row().is_some() {
             Ok(true)
@@ -265,7 +267,7 @@ impl MessagesDB {
                 has_reply = ?, 
                 reply_to = ?, 
                 has_media = ?, 
-                media_datas = ?, 
+                media_hashes = ?, 
                 media_names = ? 
             WHERE chat_id = ? AND id = ?
         "#;
@@ -278,8 +280,8 @@ impl MessagesDB {
         statement.bind_bool(3, new_message.reply_to.is_some())?; // has_reply
         statement.bind_int32(4, new_message.reply_to.unwrap_or(0))?; // reply_to
         statement.bind_bool(5, !new_message.media_hashes.is_empty())?; // has_media
-        statement.bind_list(6, List::new())?; // media_datas (assuming no changes for now)
-        statement.bind_list(7, List::new())?; // media_names (assuming no changes for now)
+        statement.bind_list(6, List::new())?; // media_hashes
+        statement.bind_list(7, List::new())?; // media_names
         
         statement.bind_int32(8, chat_id)?; // chat_id
         statement.bind_int32(9, msg_id)?; // id

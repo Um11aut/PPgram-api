@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use log::debug;
 
-use crate::server::message::{handler::MessageHandler, types::{request::bind::BindRequestMessage, response::bind::BindResponseMessage}};
+use crate::server::message::{handler::MessageHandler, types::{request::bind::BindRequest, response::bind::BindReponse}};
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
     let content = handler.utf8_content_unchecked();
-    match serde_json::from_str::<BindRequestMessage>(&content) {
+    match serde_json::from_str::<BindRequest>(&content) {
         Ok(message) => {
             if message.method != "bind" {
                 handler.send_error(method, "method must be 'bind'.".into()).await;
@@ -25,7 +25,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
                     handler.session = Arc::clone(&bind_session_arc);
                     debug!("Binding to session: {}", bind_session.session_id().unwrap());
                     drop(bind_session);
-                    handler.send_message(&BindResponseMessage{
+                    handler.send_message(&BindReponse{
                         ok: true,
                         method: method.into()
                     }).await;

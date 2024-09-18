@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-pub struct EditSelfMessage {
+pub struct EditSelfRequest {
     pub method: String,
     pub what: String,
     pub name: Option<String>,
@@ -11,7 +11,7 @@ pub struct EditSelfMessage {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct EditChatMessage {
+pub struct EditMessageRequest {
     pub method: String,
     pub what: String,
     pub chat_id: i32,

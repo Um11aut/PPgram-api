@@ -1,4 +1,4 @@
-use super::{message::Message, request::edit::EditChatMessage};
+use super::{message::Message, request::edit::EditMessageRequest};
 
 pub struct EditedMessageBuilder {
     pub is_unread: Option<bool>,
@@ -8,8 +8,8 @@ pub struct EditedMessageBuilder {
     pub media_names: Option<Vec<String>>
 }
 
-impl From<EditChatMessage> for EditedMessageBuilder {
-    fn from(value: EditChatMessage) -> Self {
+impl From<EditMessageRequest> for EditedMessageBuilder {
+    fn from(value: EditMessageRequest) -> Self {
         Self {
             is_unread: value.is_unread,
             reply_to: value.reply_to,

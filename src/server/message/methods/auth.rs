@@ -5,7 +5,7 @@ use crate::{
     server::{
         message::{
             handler::MessageHandler,
-            types::{request::auth::*, response::auth::{AuthResponseMessage, RegisterResponseMessage}},
+            types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}},
         },
         session::Session,
     },
@@ -49,19 +49,19 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
 
         match method {
             "login" =>
-                handle_auth_message::<RequestLoginMessage, _, _>(
+                handle_auth_message::<LoginRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
                     Session::login,
                 )
                 .await,
-            "auth" =>  handle_auth_message::<RequestAuthMessage, _, _>(
+            "auth" =>  handle_auth_message::<AuthRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
                     Session::auth,
                 )
                 .await,
-            "register" => handle_auth_message::<RequestRegisterMessage, _, _>(
+            "register" => handle_auth_message::<RegisterRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
                     Session::register,
@@ -85,8 +85,8 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
 
 
         let data = match method {
-            "auth" => serde_json::to_value(AuthResponseMessage{ok: true, method: method.into()}).unwrap(),
-            _ => serde_json::to_value(RegisterResponseMessage{ ok: true, method: method.into(), user_id, session_id}).unwrap(),
+            "auth" => serde_json::to_value(AuthResponse{ok: true, method: method.into()}).unwrap(),
+            _ => serde_json::to_value(RegisterResponse{ ok: true, method: method.into(), user_id, session_id}).unwrap(),
         };
         handler.send_message(&data).await;
     };

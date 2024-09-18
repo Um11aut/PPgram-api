@@ -17,8 +17,10 @@ pub fn validate_username(username: &str) -> Result<(), PPError> {
     allowed_characters.push('_');
     let allowed_set: std::collections::HashSet<_> = allowed_characters.iter().collect();
 
-    if !username.chars().all(|c| allowed_set.contains(&c)) {
-        return Err(PPError::from("Invalid Username charachters provided! Allowed are: \n a..z, A..Z, _"))
+    let username_body = &username[1..]; // Exclude '@' for character validation
+
+    if !username_body.chars().all(|c| allowed_set.contains(&c)) {
+        return Err(PPError::from("Invalid Username characters provided! Allowed are: a..z, A..Z, _"));
     }
 
     if !username.starts_with('@') {
