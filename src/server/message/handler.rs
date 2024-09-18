@@ -15,6 +15,7 @@ use crate::server::session::Session;
 
 use super::builder::MessageBuilder;
 use super::methods::{auth, bind, check, edit, fetch, send};
+use super::types::response::send::UploadMediaResponse;
 
 pub struct MessageHandler {
     pub builder: Option<MessageBuilder>,
@@ -39,6 +40,10 @@ impl MessageHandler {
         }
     }
 
+    pub fn utf8_content_unchecked(&mut self) -> &String {
+        self.builder.as_mut().unwrap().content_utf8().unwrap()
+    }
+
     pub async fn send_error(&self, method: &str, err: PPError) {
         err.safe_send(method, &self.connection).await;
     }
@@ -56,6 +61,7 @@ impl MessageHandler {
         });
     }
 
+    /// Instead of json, sends raw buffer directly to the connection
     pub async fn send_raw(&self, data: &[u8]) {
         self.connection.write(&MessageBuilder::build_from_vec(&data).packed()).await;
     }
@@ -68,6 +74,9 @@ impl MessageHandler {
         self.connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await;
     }
 
+    /// Sends message to other connection(e.g. new chat, new message, or any other event that must be handled in realtime)
+    /// 
+    /// If user isn't connected to the server, nothing happens
     pub fn send_msg_to_connection(&self, to: i32, msg: impl Serialize + Send + 'static) {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
@@ -100,8 +109,8 @@ impl MessageHandler {
                     Some(method) => {
                         match method {
                             "login" | "auth" | "register" => auth::handle(self, method).await,
-                            "send_message" | "send_media" => send::handle(self, method).await,
-                            "edit_message" => edit::handle(self, method).await,
+                            "send_message" => send::handle(self, method).await,
+                            "edit" | "delete" => edit::handle(self, method).await,
                             "fetch" => fetch::handle(self, method).await,
                             "check" => check::handle(self, method).await,
                             "bind" => bind::handle(self, method).await,
@@ -121,11 +130,11 @@ impl MessageHandler {
         let message = self.builder.as_ref().unwrap().content_bytes();
         match add_media(message).await {
             Ok(sha256_hash) => {
-                self.send_message(&json!({
-                    "ok": true,
-                    "method": "send_media",
-                    "media_hash": sha256_hash
-                })).await;
+                self.send_message(&UploadMediaResponse{
+                    ok: true,
+                    method: "send_media".into(),
+                    media_hash: sha256_hash
+                }).await;
             },
             Err(err) => self.send_error("send_media", err).await,
         }
@@ -135,7 +144,18 @@ impl MessageHandler {
         if self.is_first {
             self.builder = MessageBuilder::parse(buffer);
             if let Some(builder) = &self.builder {
-                debug!("Got the message! \n Message size: {}", builder.size());
+                if builder.size() == 0 {
+                    self.send_error("none", "Message size cannot be 0!".into()).await;
+                    self.builder = None;
+                    self.is_first = true;
+                    return;
+                }
+
+                if builder.size() < 1024 {
+                    debug!("Got the message! \n Message size: {} \n Message Content: {}", builder.size(), String::from_utf8_lossy(builder.content_bytes()));
+                } else {
+                    debug!("Got the message! \n Message size: {}", builder.size());
+                }
             }
             self.is_first = false;
 
@@ -192,7 +212,7 @@ impl Drop for MessageHandler {
                 session.remove_connection(connection);
                 if let Some((user_id, _)) = session.get_credentials() {
                     if session.connections().is_empty() {
-                        connections.remove(&user_id.get_i32().unwrap());
+                        connections.remove(&user_id.as_i32().unwrap());
                     }
                 }
             }

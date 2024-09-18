@@ -18,12 +18,11 @@ impl TestConnection {
 
         let len = msg.len().to_be_bytes();
         
-        let mut output_vec: Vec<u8> = Vec::with_capacity(msg.len() + 4);
+        let mut output_vec: Vec<u8> = Vec::with_capacity(msg.len() + len.len());
         output_vec.extend_from_slice(&len);
         output_vec.extend_from_slice(&msg.as_bytes());
 
         self.stream.write_all(&output_vec)?;
-        self.stream.flush()?;
         Ok(())
     }
 

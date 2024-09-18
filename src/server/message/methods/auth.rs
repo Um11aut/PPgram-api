@@ -5,20 +5,18 @@ use crate::{
     server::{
         message::{
             handler::MessageHandler,
-            types::request::auth::*,
+            types::{request::auth::*, response::auth::{AuthResponseMessage, RegisterResponseMessage}},
         },
         session::Session,
     },
 };
-use log::error;
-use serde_json::json;
 
 
 async fn handle_auth_message<'a, T, F, Fut>(
     buffer: &str,
     session: &'a mut Session,
     handler: F,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+) -> Result<(), PPError>
 where
     T: serde::de::DeserializeOwned,
     F: FnOnce(&'a mut Session, T) -> Fut + Send + 'a,
@@ -27,22 +25,13 @@ where
     match serde_json::from_str::<T>(buffer) {
         Ok(auth_message) => match handler(session, auth_message).await {
             Ok(()) => {}
-            Err(err) => match err {
-                PPError::Cassandra(internal_err) => {
-                    error!("{}", internal_err);
-                    return Err(Box::new(PPError::from("Internal error.")));
-                }
-                PPError::Client(_) => {
-                    return Err(Box::new(err));
-                }
-            },
+            Err(err) => return Err(err),
         },
-        Err(err) => return Err(Box::new(err)),
+        Err(err) => return Err(err.into()),
     }
 
     Ok(())
 }
-
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
     let buffer = handler.builder.as_mut().unwrap().content_utf8().unwrap();
@@ -59,41 +48,36 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
         let mut session = handler.session.write().await;
 
         match method {
-            "login" => {
+            "login" =>
                 handle_auth_message::<RequestLoginMessage, _, _>(
                     buffer.as_str(),
                     &mut session,
                     Session::login,
                 )
-                .await
-            }
-            "auth" => {
-                handle_auth_message::<RequestAuthMessage, _, _>(
+                .await,
+            "auth" =>  handle_auth_message::<RequestAuthMessage, _, _>(
                     buffer.as_str(),
                     &mut session,
                     Session::auth,
                 )
-                .await
-            }
-            "register" => {
-                handle_auth_message::<RequestRegisterMessage, _, _>(
+                .await,
+            "register" => handle_auth_message::<RequestRegisterMessage, _, _>(
                     buffer.as_str(),
                     &mut session,
                     Session::register,
                 )
-                .await
-            }
-            _ => Ok(()),
+                .await,
+            _ => Err("Invalid method provided!".into()),
         }
     };
 
     if let Err(err) = res {
-        handler.send_error(method, err.to_string().into()).await;
+        handler.send_error(method, err).await;
         return;
     }
 
     if let Some((user_id, session_id)) = handler.session.read().await.get_credentials() {
-        let user_id = user_id.get_i32().unwrap();
+        let user_id = user_id.as_i32().unwrap();
         {
             let mut connections = handler.sessions.write().await;
             connections.insert(user_id, Arc::clone(&handler.session));
@@ -101,8 +85,8 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
 
 
         let data = match method {
-            "auth" => json!({ "method": method, "ok": true }),
-            _ => json!({ "method": method, "ok": true, "user_id": user_id, "session_id": session_id }),
+            "auth" => serde_json::to_value(AuthResponseMessage{ok: true, method: method.into()}).unwrap(),
+            _ => serde_json::to_value(RegisterResponseMessage{ ok: true, method: method.into(), user_id, session_id}).unwrap(),
         };
         handler.send_message(&data).await;
     };

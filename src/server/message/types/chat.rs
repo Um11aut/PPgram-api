@@ -10,8 +10,8 @@ pub type ChatId = i32;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ChatDetails {
     name: String,
-    pub chat_id: i32, // User/Group ChatId
-    photo: Option<Vec<u8>>,
+    pub chat_id: ChatId,
+    photo: Option<String>,
     username: String,
 }
 
@@ -20,7 +20,7 @@ impl ChatDetails {
         &self.name
     }
 
-    pub fn photo(&self) -> Option<&Vec<u8>> {
+    pub fn photo(&self) -> Option<&String> {
         self.photo.as_ref()
     }
 
@@ -75,10 +75,10 @@ impl Chat {
         match self.is_group {
             // if not is_group, just take the account of other participant
             false => {
-                if let Some(peer) = self.participants.iter().find(|&participant| participant.user_id() != relative_to.get_i32().unwrap()) {
+                if let Some(peer) = self.participants.iter().find(|&participant| participant.user_id() != relative_to.as_i32().unwrap()) {
                     return Ok(Some(ChatDetails{
                         name: peer.name().into(),
-                        chat_id: 0,
+                        chat_id: self.chat_id,
                         photo: peer.photo().cloned(),
                         username: peer.username().to_owned()
                     }))

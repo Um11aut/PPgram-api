@@ -41,24 +41,10 @@ pub enum MessageContent {
 
 // Define a struct to represent the complete message
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Message {
+pub struct RequestMessage {
     #[serde(flatten)]
     pub common: CommonFields,
     pub content: MessageContent,
 }
 
 pub type MessageId = i32;
-
-#[derive(Serialize, Deserialize, Debug)]
-/// Message type that is stored in Database
-pub struct DbMesssage {
-    pub message_id: i32,
-    pub is_unread: bool,
-    pub from_id: i32,
-    pub chat_id: i32, 
-    pub date: i64,
-    pub reply_to: Option<i32>,
-    pub content: Option<String>,
-    pub media_datas: Vec<Vec<u8>>,
-    pub media_names: Vec<String>
-}

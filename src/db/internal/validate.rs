@@ -4,26 +4,45 @@ use std::ops::RangeBounds;
 use super::error::PPError;
 
 const MAX_USERNAME_SIZE: usize = 30;
-const MIN_USERNAME_SIZE: usize = 4;
+const MIN_USERNAME_SIZE: usize = 3;
 
 const MAX_NAME_SIZE: usize = 60;
 const MIN_NAME_SIZE: usize = 1;
 
 pub fn validate_username(username: &str) -> Result<(), PPError> {
+    let lowercase: Vec<char> = ('a'..='z').collect();
+    let uppercase: Vec<char> = ('A'..='Z').collect();
+
+    let mut allowed_characters: Vec<char> = lowercase.iter().chain(uppercase.iter()).copied().collect();
+    allowed_characters.push('_');
+    let allowed_set: std::collections::HashSet<_> = allowed_characters.iter().collect();
+
+    if !username.chars().all(|c| allowed_set.contains(&c)) {
+        return Err(PPError::from("Invalid Username charachters provided! Allowed are: \n a..z, A..Z, _"))
+    }
+
     if !username.starts_with('@') {
         return Err(PPError::from("Username must start with '@' symbol!"))
     }
     
-    if username.len() > MAX_USERNAME_SIZE || username.len() < MIN_USERNAME_SIZE {
-        return Err(PPError::from("Invalid username length"))
+    if username.len() > MAX_USERNAME_SIZE {
+        return Err(PPError::from("Username too big"))
+    }
+
+    if username.len() < MIN_USERNAME_SIZE {
+        return Err(PPError::from("Username too small"))
     }
 
     Ok(())
 }
 
 pub fn validate_name(name: &str) -> Result<(), PPError> {
-    if name.len() > MAX_NAME_SIZE || name.len() < MIN_NAME_SIZE {
-        return Err(PPError::from("Invalid name length"))
+    if name.len() > MAX_NAME_SIZE {
+        return Err(PPError::from("Name too big"))
+    }
+
+    if name.len() < MIN_NAME_SIZE {
+        return Err(PPError::from("Name too small"))
     }
 
     Ok(())

@@ -9,7 +9,7 @@ pub struct User {
     name: String,
     user_id: i32,
     username: String,
-    photo: Option<Vec<u8>>,
+    photo: Option<String>,
 }
 
 impl User {
@@ -22,7 +22,7 @@ impl User {
         }
     }
 
-    pub fn construct(name: String, user_id: i32, username: String, photo: Option<Vec<u8>>) -> Self {
+    pub fn construct(name: String, user_id: i32, username: String, photo: Option<String>) -> Self {
         Self {
             name,
             user_id,
@@ -43,8 +43,12 @@ impl User {
         &self.username
     }
 
-    pub fn photo(&self) -> Option<&Vec<u8>> {
+    pub fn photo(&self) -> Option<&String> {
         self.photo.as_ref() 
+    }
+
+    pub fn photo_moved(self) -> Option<String> {
+        self.photo
     }
 
     pub fn build_response(&self, method: &str) -> Value {
@@ -83,10 +87,17 @@ impl From<i32> for UserId {
 }
 
 impl UserId {
-    pub fn get_i32(&self) -> Option<i32> {
+    pub fn as_i32(&self) -> Option<i32> {
         match *self {
             UserId::UserId(user_id) => Some(user_id),
             UserId::Username(_) => None
+        }
+    }
+
+    pub fn as_i32_unchecked(&self) -> i32 {
+        match *self {
+            UserId::UserId(user_id) => user_id,
+            UserId::Username(_) => panic!("UserId must be i32!")
         }
     }
 }

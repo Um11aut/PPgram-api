@@ -1,10 +1,13 @@
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::db::chat::messages::MESSAGES_DB;
+use crate::db::internal::error::{PPError, PPResult};
 use crate::fs::media::get_media;
 use crate::server::message::types::chat::ChatDetails;
-use crate::server::message::types::request::fetch::*;
-use crate::server::message::types::request::message::DbMesssage;
+use crate::server::message::types::message::Message;
+use crate::server::message::types::request::{extract_what_field, fetch::*};
+use crate::server::message::types::response::fetch::{FetchChatsResponseMessage, FetchMessagesResponseValue, FetchSelfResponseMessage, FetchUserResponseMessage};
 use crate::{
     db::{
         chat::chats::CHATS_DB,
@@ -16,108 +19,153 @@ use crate::{
     },
 };
 
-async fn handle_fetch_chats(handler: &MessageHandler) -> Option<Vec<ChatDetails>> {
+async fn handle_fetch_chats(handler: &MessageHandler) -> PPResult<Vec<ChatDetails>> {
     let users_db = USERS_DB.get().unwrap();
     let chats_db = CHATS_DB.get().unwrap();
 
     let (user_id, _) = handler.session.read().await.get_credentials().unwrap();
-    return match users_db.fetch_chats(&user_id).await {
-        Ok(chat_ids) => {
-            let mut chats_details: Vec<ChatDetails> = vec![];
-            for (chat_id, associated_chat_id) in chat_ids {
-                let chat = chats_db.fetch_chat(associated_chat_id).await.unwrap();
-                if let Some(chat) = chat {
-                    let details = chat.details(&user_id).await;
-
-                    match details {
-                        Ok(details) => {
-                            if let Some(mut details) = details {
-                                details.chat_id = chat_id;
-                                chats_details.push(details);
-                            }
-                        }
-                        Err(err) => {
-                            handler.send_error("fetch_chats", err).await;
-                        }
-                    }
-                }
+    let chat_ids = users_db.fetch_chats(&user_id).await?;
+    let mut chats_details: Vec<ChatDetails> = vec![];
+    for (chat_id, associated_chat_id) in chat_ids {
+        let chat = chats_db.fetch_chat(associated_chat_id).await.unwrap();
+        if let Some(chat) = chat {
+            let details = chat.details(&user_id).await?;
+            if let Some(mut details) = details {
+                details.chat_id = chat_id;
+                chats_details.push(details);
             }
-            Some(chats_details)
         }
-        Err(err) => {
-            handler.send_error("fetch_chats", err).await;
-            None
-        }
-    };
+    }
+    Ok(chats_details)
 }
 
 async fn fetch_user(
-    method: &str,
-    handler: &MessageHandler,
     identifier: &UserId,
-) -> Option<User> {
+) -> PPResult<User> {
     match USERS_DB.get().unwrap().fetch_user(identifier).await {
-        Ok(details) => return details,
-        Err(err) => {
-            handler.send_error(method, err).await;
-            return None;
-        }
+        Ok(details) => return details.ok_or("User wasn't found!".into()),
+        Err(err) => {Err(err)}
     }
 }
 
-async fn handle_fetch_self(handler: &MessageHandler) -> Option<User> {
-    let (user_id, _) = handler.session.read().await.get_credentials()?;
-    fetch_user("fetch_user", handler, &user_id).await
+async fn handle_fetch_self(handler: &MessageHandler) -> PPResult<User> {
+    // Can unwrap because we have checked the creds earlier
+    let (user_id, _) = handler.session.read().await.get_credentials().unwrap();
+    fetch_user(&user_id).await
 }
 
-async fn handle_fetch_user(username: UserId, handler: &MessageHandler) -> Option<User> {
-    match USERS_DB.get().unwrap().exists(&username).await {
-        Ok(exists) => {
-            if exists {
-                return fetch_user("fetch_user", handler, &username).await;
-            }
-        }
-        Err(err) => {
-            handler.send_error("fetch_user", err).await;
-        }
-    }
-
-    None
-}
-
-async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> Option<Vec<DbMesssage>> {
-    let res = {
+async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequestMessage) -> PPResult<Vec<Message>> {
+    let maybe_chat_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
         USERS_DB.get().unwrap().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
+    }?;
+
+    match maybe_chat_id {
+        Some(target_chat_id) => {
+            let mut msgs = MESSAGES_DB.get().unwrap().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await?;
+
+            msgs.iter_mut().for_each(|message| message.chat_id = msg.chat_id);
+            Ok(msgs)
+        }
+        None => Err("failed to retrieve chat_id!".into())
+    }
+}
+
+async fn on_chats(handler: &MessageHandler) -> PPResult<FetchChatsResponseMessage> {
+    let chats = handle_fetch_chats(&handler).await?;
+    Ok(FetchChatsResponseMessage {
+        ok: true,
+        method: "fetch_chats".into(),
+        chats
+    })
+}
+
+async fn on_self(handler: &MessageHandler) -> PPResult<FetchSelfResponseMessage> {
+    let self_info = handle_fetch_self(&handler).await?;
+    Ok(FetchSelfResponseMessage {
+        ok: true,
+        method: "fetch_self".into(),
+        name: self_info.name().into(),
+        user_id: self_info.user_id(),
+        username: self_info.username().into(),
+        photo: self_info.photo_moved()
+    })
+}
+
+async fn on_user(content: &String) -> PPResult<FetchUserResponseMessage> {
+    let msg: FetchUserRequestMessage = serde_json::from_str(&content)?;
+    
+    let user_id: UserId = match msg.username {
+        Some(username) => username.as_str().into(),
+        None => match msg.user_id{
+            Some(user_id) => user_id.into(),
+            None => return Err("Neither 'user_id' nor 'username' were correctly provided".into())
+        }
     };
 
-    match res {
-        Ok(chat_id) => {
-            if let Some(target_chat_id) = chat_id {
-                match MESSAGES_DB.get().unwrap().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await {
-                    Ok(maybe_messages) => {
-                        match maybe_messages {
-                            Some(mut messages) => {
-                                messages.iter_mut().for_each(|message| message.chat_id = msg.chat_id);
-                                return Some(messages)
-                            }
-                            None => return None
-                        }
-                    }
-                    Err(err) => {
-                        handler.send_error("fetch_messages", err).await;
-                    }
-                }
-            }
-            
+    let self_info = fetch_user(&user_id).await?;
+    Ok(FetchUserResponseMessage {
+        ok: true,
+        method: "fetch_user".into(),
+        name: self_info.name().into(),
+        user_id: self_info.user_id(),
+        username: self_info.username().into(),
+        photo: self_info.photo_moved()
+    })
+}
+
+async fn on_messages(handler: &mut MessageHandler) -> PPResult<FetchMessagesResponseValue> {
+    let content = handler.utf8_content_unchecked();
+    let msg = serde_json::from_str::<FetchMessagesRequestMessage>(&content)?;
+    let fetched_msgs = handle_fetch_messages(&handler, msg).await?;
+
+    Ok(FetchMessagesResponseValue{
+        ok: true,
+        method: "fetch_messages".into(),
+        messages: fetched_msgs
+    })
+} 
+
+/// Directly sends raw media
+async fn on_media(handler: &mut MessageHandler) -> PPResult<()> {
+    let content = handler.utf8_content_unchecked();
+    let msg = serde_json::from_str::<FetchMediaRequestMessage>(&content)?;
+
+    let maybe_media = get_media(&msg.media_hash).await?;
+    handler.send_raw(&maybe_media).await;
+
+    Ok(())
+} 
+
+/// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
+async fn handle_json_message(handler: &mut MessageHandler) -> PPResult<Option<Value>> {
+    let content = handler.utf8_content_unchecked();
+    let what = extract_what_field(&content)?;
+
+    match what.as_str() {
+        "chats" => match on_chats(&handler).await.map(|v| serde_json::to_value(v).unwrap()) {
+            Ok(v) => Ok(Some(v)),
+            Err(err) => Err(err)
+        },
+        "self" => match on_self(&handler).await.map(|v| serde_json::to_value(v).unwrap()){
+            Ok(v) => Ok(Some(v)),
+            Err(err) => Err(err)
+        },
+        "user" => match on_user(&content).await.map(|v| serde_json::to_value(v).unwrap()) {
+            Ok(v) => Ok(Some(v)),
+            Err(err) => Err(err)
         }
-        Err(err) => {
-            handler.send_error("fetch_messages", err).await;
+        "messages" => match on_messages(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
+            Ok(v) => Ok(Some(v)),
+            Err(err) => Err(err)
         }
-    };
-    
-    None
+        "media" => match on_media(handler).await {
+            Ok(()) => Ok(None),
+            Err(err) => Err(err)
+        }
+        _ => return Err(PPError::from("Unknown 'what' field provided!"))
+    }
 }
 
 pub async fn handle(handler: &mut MessageHandler, method: &str) {
@@ -129,106 +177,8 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
         }
     }
 
-    let content = handler.builder.as_mut().unwrap().content_utf8().unwrap();
-
-    match serde_json::from_str::<BaseFetchRequestMessage>(&content) {
-        Ok(base_fetch_msg) => {
-            let response: Option<Value> = match base_fetch_msg.what.as_str() {
-                "chats" => handle_fetch_chats(&handler).await.map(|chats| {
-                    let details = json!({
-                        "ok": true,
-                        "method": "fetch_chats",
-                        "data": if chats.is_empty() {None} else { Some(chats)},
-                    });
-                    serde_json::to_value(details).unwrap()
-                }),
-                "self" => handle_fetch_self(&handler)
-                    .await
-                    .map(|v| {
-                        v.build_response("fetch_self")
-                    }),
-                "user" => {
-                    let value = serde_json::from_str::<Value>(&content);
-
-                    match value {
-                        Ok(value) => {
-                            let username: Option<Option<&str>> = value.get("username").map(|v| v.as_str());
-                            let user_id: Option<Option<i32>> = value.get("user_id").map(|v| v.as_i64().map(|v| v as i32));
-                            if let Some(Some(username)) = username {
-                                handle_fetch_user(username.into(), &handler)
-                                    .await
-                                    .map(|v| v.build_response("fetch_user"))
-                            } 
-                            else if let Some(Some(user_id)) = user_id {
-                                handle_fetch_user(user_id.into(), &handler)
-                                    .await
-                                    .map(|v| v.build_response("fetch_user"))
-                            }
-                            else {
-                                None
-                            }
-                        }
-                        Err(err) => {
-                            handler.send_error("fetch_user", err.to_string().into()).await;
-                            None
-                        }
-                    }
-                }
-                "messages" => {
-                    let value = serde_json::from_str::<FetchMessagesRequestMessage>(&content);
-
-                    match value {
-                        Ok(msg) => {
-                            let out = handle_fetch_messages(&handler, msg).await;
-                            let response = json!({
-                                "method": "fetch_messages",
-                                "ok": true,
-                                "data": out
-                            });
-
-                            Some(response)
-                        }
-                        Err(err) => {
-                            handler.send_error("fetch_messages", err.to_string().into()).await;
-                            None
-                        }
-                    }
-                }
-                "media" => {
-                    let value = serde_json::from_str::<FetchMediaRequestMessage>(&content);
-                
-                    match value {
-                        Ok(msg) => {
-                            let maybe_media = get_media(&msg.media_hash).await.ok();
-
-                            if let Some(media) = maybe_media {
-                                handler.send_raw(&media).await;
-                            } else {
-                                handler.send_error("fetch_media", "Media wasn't found!".into()).await;
-                            }
-
-                            None
-                        }
-                        Err(err) => {
-                            handler.send_error("fetch_media", err.to_string().into()).await;
-                            None
-                        }
-                    }
-                }
-                _ => {
-                    handler.send_error(method, "Unknown 'what' field provided!".into()).await;
-                    return;
-                }
-            };
-
-            if let Some(response) = response {
-                handler.send_message(&response).await;
-            }
-            return;
-        }
-        Err(err) => {
-            handler.send_error(method, err.to_string().into()).await;
-            return;
-        }
-    }
+    match handle_json_message(handler).await {
+        Ok(message) => if let Some(msg) = message {handler.send_message(&msg).await},
+        Err(err) => {handler.send_error("fetch", err).await;}
+    };
 }

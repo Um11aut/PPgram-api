@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 mod common;
 
 #[test]
-fn register() -> Result<(), Box<dyn Error>> {
+fn auth_all() -> Result<(), Box<dyn Error>> {
     let mut con = TestConnection::new()?;
 
     con.send_message(&json!({
@@ -17,6 +17,7 @@ fn register() -> Result<(), Box<dyn Error>> {
     }))?;
 
     let response = con.receive_response()?;
+    println!("{}", response);
 
     let res = serde_json::from_str::<Value>(&response)?;
     let maybe_method = res.get("ok");
@@ -24,6 +25,7 @@ fn register() -> Result<(), Box<dyn Error>> {
     let method = maybe_method.unwrap();
     assert!(method.as_str().is_some());
     assert!(method.as_str().unwrap() == "ok");
+
 
     Ok(())
 }

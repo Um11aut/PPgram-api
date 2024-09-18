@@ -45,7 +45,7 @@ impl Session {
     pub async fn login(&mut self, msg: RequestLoginMessage) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
-        match db.login(&msg.username, &msg.password_hash).await {
+        match db.login(&msg.username, &msg.password).await {
             Ok((user_id, session_id)) => {
                 self.user_id = Some(user_id);
                 self.session_id = Some(session_id)
@@ -61,7 +61,7 @@ impl Session {
     pub async fn register(&mut self, msg: RequestRegisterMessage) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
-        match db.register(&msg.name, &msg.username, &msg.password_hash).await {
+        match db.register(&msg.name, &msg.username, &msg.password).await {
             Ok((user_id, session_id)) => {
                 self.user_id = Some(user_id);
                 self.session_id = Some(session_id)
@@ -104,7 +104,7 @@ impl Session {
         self.connections[index].send(message).await;
     }
 
-    // `(i32, String)` -> user_id, session_id 
+    /// `(i32, String)` -> user_id, session_id 
     pub fn get_credentials(&self) -> Option<(UserId, String)> {
         if self.is_authenticated() {
             return Some((self.user_id.unwrap().into(), self.session_id.clone().unwrap()))
