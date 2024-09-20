@@ -86,7 +86,7 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
 
         let data = match method {
             "auth" => serde_json::to_value(AuthResponse{ok: true, method: method.into()}).unwrap(),
-            _ => serde_json::to_value(RegisterResponse{ ok: true, method: method.into(), user_id, session_id}).unwrap(),
+            _ => serde_json::to_value(RegisterResponse{ ok: true, method: method.into(), user_id, session_id: session_id.into()}).unwrap(),
         };
         handler.send_message(&data).await;
     };

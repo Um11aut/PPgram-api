@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use serde::{Serialize, Deserialize};
 
 use crate::server::message::types::{chat::ChatDetails, message::Message};
@@ -22,8 +24,8 @@ pub struct FetchUserResponse {
 pub type FetchSelfResponseMessage = FetchUserResponse;
 
 #[derive(Serialize, Deserialize)]
-pub struct FetchMessagesResponse {
+pub struct FetchMessagesResponse<'a> {
     pub ok: bool,
-    pub method: String,
-    pub messages: Vec<Message>
+    pub method: Cow<'a, str>,
+    pub messages: Vec<Message<'a>>
 }

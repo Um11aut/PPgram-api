@@ -1,15 +1,17 @@
+use std::borrow::Cow;
+
 use super::{message::Message, request::edit::EditMessageRequest};
 
-pub struct EditedMessageBuilder {
+pub struct EditedMessageBuilder<'a> {
     pub is_unread: Option<bool>,
     pub reply_to: Option<i32>,
-    pub content: Option<String>,
-    pub media_hashes: Option<Vec<String>>,
-    pub media_names: Option<Vec<String>>
+    pub content: Option<Cow<'a, str>>,
+    pub media_hashes: Option<Vec<Cow<'a, str>>>,
+    pub media_names: Option<Vec<Cow<'a, str>>>
 }
 
-impl From<EditMessageRequest> for EditedMessageBuilder {
-    fn from(value: EditMessageRequest) -> Self {
+impl<'a> From<EditMessageRequest<'a>> for EditedMessageBuilder<'a> {
+    fn from(value: EditMessageRequest<'a>) -> Self {
         Self {
             is_unread: value.is_unread,
             reply_to: value.reply_to,
@@ -20,8 +22,8 @@ impl From<EditMessageRequest> for EditedMessageBuilder {
     }
 }
 
-impl EditedMessageBuilder {
-    pub fn get_edited_message(self, msg: Message) -> Message {
+impl<'a> EditedMessageBuilder<'a> {
+    pub fn get_edited_message(self, msg: Message<'a>) -> Message<'a> {
         let unread_changed: bool = if let Some(unread) = self.is_unread {
             if !unread {
                 true
@@ -32,7 +34,7 @@ impl EditedMessageBuilder {
             Some(reply_to)
         } else {msg.reply_to};
 
-        let content_changed: Option<String> = if let Some(content) = self.content {
+        let content_changed = if let Some(content) = self.content {
             Some(content)
         } else {msg.content};
 

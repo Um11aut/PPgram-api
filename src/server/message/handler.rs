@@ -133,7 +133,7 @@ impl MessageHandler {
                 self.send_message(&UploadMediaResponse{
                     ok: true,
                     method: "send_media".into(),
-                    media_hash: sha256_hash
+                    media_hash: sha256_hash.into()
                 }).await;
             },
             Err(err) => self.send_error("send_media", err).await,

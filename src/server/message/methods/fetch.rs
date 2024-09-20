@@ -54,7 +54,7 @@ async fn handle_fetch_self(handler: &MessageHandler) -> PPResult<User> {
     fetch_user(&user_id).await
 }
 
-async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
+async fn handle_fetch_messages<'a>(handler: &MessageHandler, msg: FetchMessagesRequest<'a>) -> PPResult<Vec<Message<'a>>> {
     let maybe_chat_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
@@ -97,7 +97,7 @@ async fn on_user(content: &String) -> PPResult<FetchUserResponse> {
     let msg: FetchUserRequest = serde_json::from_str(&content)?;
     
     let user_id: UserId = match msg.username {
-        Some(username) => username.as_str().into(),
+        Some(username) => username.into(),
         None => match msg.user_id{
             Some(user_id) => user_id.into(),
             None => return Err("Neither 'user_id' nor 'username' were correctly provided".into())
@@ -132,7 +132,7 @@ async fn on_media(handler: &mut MessageHandler) -> PPResult<()> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchMediaRequest>(&content)?;
 
-    let maybe_media = get_media(&msg.media_hash).await?;
+    let maybe_media = get_media(&msg.media_hash.into()).await?;
     handler.send_raw(&maybe_media).await;
 
     Ok(())

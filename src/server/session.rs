@@ -26,12 +26,12 @@ impl Session {
         }
     }
 
-    pub async fn auth(&mut self, msg: AuthRequest) -> Result<(), PPError>
+    pub async fn auth(&mut self, msg: AuthRequest<'static>) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
         match db.authenticate(msg.user_id, &msg.session_id).await {
             Ok(_) => {
-                self.session_id = Some(msg.session_id);
+                self.session_id = Some(msg.session_id.into());
                 self.user_id = Some(msg.user_id);
             }
             Err(err) => {
@@ -42,7 +42,7 @@ impl Session {
         Ok(())
     }
 
-    pub async fn login(&mut self, msg: LoginRequest) -> Result<(), PPError>
+    pub async fn login(&mut self, msg: LoginRequest<'static>) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
         match db.login(&msg.username, &msg.password).await {
@@ -58,7 +58,7 @@ impl Session {
         Ok(())
     }
 
-    pub async fn register(&mut self, msg: RegisterRequest) -> Result<(), PPError>
+    pub async fn register(&mut self, msg: RegisterRequest<'static>) -> Result<(), PPError>
     {
         let db = USERS_DB.get().unwrap();
         match db.register(&msg.name, &msg.username, &msg.password).await {

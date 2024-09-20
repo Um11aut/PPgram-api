@@ -1,4 +1,6 @@
 
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -77,6 +79,12 @@ impl Clone for UserId {
 
 impl<'a> From<&'a str> for UserId {
     fn from(str: &'a str) -> Self {
+        UserId::Username(str.into())
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for UserId {
+    fn from(str: Cow<'a, str>) -> Self {
         UserId::Username(str.into())
     }
 }

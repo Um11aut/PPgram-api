@@ -13,7 +13,7 @@ use crate::{
         },
 };
 
-async fn handle_edit_message(handler: &mut MessageHandler, msg: EditMessageRequest) -> PPResult<()> {
+async fn handle_edit_message<'a>(handler: &mut MessageHandler, msg: EditMessageRequest<'a>) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
@@ -59,7 +59,7 @@ async fn handle_edit_message(handler: &mut MessageHandler, msg: EditMessageReque
 }
 
 // TODO: Add self editing(do not travers all subscribtions)
-async fn handle_edit_self(handler: &mut MessageHandler, msg: &EditSelfRequest) -> PPResult<()> {
+async fn handle_edit_self<'a>(handler: &mut MessageHandler, msg: &EditSelfRequest<'a>) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
@@ -71,7 +71,7 @@ async fn handle_edit_self(handler: &mut MessageHandler, msg: &EditSelfRequest) -
     todo!()
 }
 
-async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<EditMessageResponse> {
+async fn on_edit<'a>(handler: &mut MessageHandler, content: &String) -> PPResult<EditMessageResponse<'a>> {
     let what_field = extract_what_field(&content)?;
 
     match what_field.as_str() {
@@ -95,7 +95,7 @@ async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<Edi
     }
 }
 
-async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<DeleteMessageResponse> {
+async fn on_delete<'a>(handler: &mut MessageHandler, content: &String) -> PPResult<DeleteMessageResponse<'a>> {
     let msg: DeleteMessageRequest = serde_json::from_str(&content)?;
 
     let self_user_id = {
