@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::db::{internal::error::PPError, user::USERS_DB};
+use crate::db::{internal::error::PPError, user::UsersDB};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct User {
@@ -13,8 +13,8 @@ pub struct User {
 }
 
 impl User {
-    pub async fn new(id: UserId) -> Result<User, PPError> {
-        let user = USERS_DB.get().unwrap().fetch_user(&id).await?;
+    pub async fn new(users_db: UsersDB, id: UserId) -> Result<User, PPError> {
+        let user = users_db.fetch_user(&id).await?;
         
         match user {
             Some(user) => Ok(user),

@@ -1,7 +1,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{chat::chats::CHATS_DB, internal::error::PPError};
+
+use crate::db::{chat::chats::ChatsDB, internal::error::PPError};
 
 use super::user::{User, UserId};
 
@@ -37,8 +38,8 @@ pub struct Chat {
 }
 
 impl Chat {
-    pub async fn new(chat_id: ChatId) -> Result<Self, PPError> {
-        let chat = CHATS_DB.get().unwrap().fetch_chat(chat_id).await?;
+    pub async fn new(chats_db: ChatsDB, chat_id: ChatId) -> Result<Self, PPError> {
+        let chat = chats_db.fetch_chat(chat_id).await?;
 
         match chat {
             Some(chat) => Ok(chat),

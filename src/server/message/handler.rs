@@ -7,6 +7,8 @@ use serde_json::{json, Value};
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::{Mutex, RwLock};
 
+use crate::db::connection::{DatabaseBucket, DatabaseBuilder};
+use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::fs::media::add_media;
 use crate::server::connection::Connection;
@@ -17,29 +19,36 @@ use super::builder::MessageBuilder;
 use super::methods::{auth, bind, check, edit, fetch, send};
 use super::types::response::send::UploadMediaResponse;
 
-pub struct MessageHandler {
-    pub builder: Option<MessageBuilder>,
-    pub session: Arc<RwLock<Session>>,
+pub type SessionArcLock = Arc<RwLock<Session>>;
+
+/// Main struct that has everything it needs to have to be able
+/// to handle any message type
+pub struct Handler {
+    builder: Option<MessageBuilder>,
+    is_first: bool,
+    pub session: SessionArcLock,
     pub sessions: Sessions,
     pub connection: Arc<Connection>,
-    is_first: bool,
+    bucket: DatabaseBucket
 }
 
-impl MessageHandler {
-    pub async fn new(session: Arc<RwLock<Session>>, sessions: Sessions) -> Self {
+impl Handler {
+    pub async fn new(session: Arc<RwLock<Session>>, sessions: Sessions, bucket: DatabaseBucket) -> Self {
         let session_locked = session.read().await;
         let current_connection = Arc::clone(&session_locked.connections()[0]);
         drop(session_locked);
 
-        MessageHandler {
+        Handler {
             builder: None,
             session: Arc::clone(&session),
             sessions,
             connection: current_connection,
-            is_first: true
+            is_first: true,
+            bucket 
         }
     }
 
+    /// Later, we need to retreive the content of the `self.builder`
     pub fn utf8_content_unchecked(&mut self) -> &String {
         self.builder.as_mut().unwrap().content_utf8().unwrap()
     }
@@ -77,7 +86,7 @@ impl MessageHandler {
     /// Sends message to other connection(e.g. new chat, new message, or any other event that must be handled in realtime)
     /// 
     /// If user isn't connected to the server, nothing happens
-    pub fn send_msg_to_connection(&self, to: i32, msg: impl Serialize + Send + 'static) {
+    pub fn send_msg_to_connection_detached(&self, to: i32, msg: impl Serialize + Send + 'static) {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
             async move {
@@ -88,6 +97,11 @@ impl MessageHandler {
                 }
             }
         });
+    }
+
+    // Function to get any database by just passing the type
+    pub fn get_db<T: From<DatabaseBuilder>>(&self) -> T {
+        DatabaseBuilder::from(self.bucket.clone()).into()
     }
 
     async fn try_handle_json_message(&mut self) {
@@ -198,7 +212,7 @@ impl MessageHandler {
     }
 }
 
-impl Drop for MessageHandler {
+impl Drop for Handler {
     fn drop(&mut self) {
         tokio::spawn({
             let connections: Sessions = Arc::clone(&self.sessions);    

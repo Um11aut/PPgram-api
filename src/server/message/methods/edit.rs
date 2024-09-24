@@ -1,27 +1,24 @@
 use log::debug;
 use serde_json::Value;
 
-use crate::{
-    db::{chat::messages::MESSAGES_DB, internal::error::PPResult, user::USERS_DB},
-    server::message::{
-            handler::MessageHandler,
+use crate::{db::{chat::messages::MessagesDB, internal::error::PPResult, user::UsersDB}, server::message::{
+            handler::Handler,
             types::{
                 edit::EditedMessageBuilder, request::{
                     delete::DeleteMessageRequest, edit::{EditMessageRequest, EditSelfRequest}, extract_what_field
                 }, response::{delete::DeleteMessageResponse, edit::EditMessageResponse, events::{DeleteMessageEvent, EditMessageEvent}}
             },
-        },
-};
+        }};
 
-async fn handle_edit_message(handler: &mut MessageHandler, msg: EditMessageRequest) -> PPResult<()> {
+async fn handle_edit_message(handler: &mut Handler, msg: EditMessageRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
         user_id
     };
 
-    let users_db = USERS_DB.get().unwrap();
-    let messages_db = MESSAGES_DB.get().unwrap();
+    let users_db: UsersDB = handler.get_db();
+    let messages_db: MessagesDB = handler.get_db();
 
     let real_chat_id = users_db
         .get_associated_chat_id(&self_user_id, &msg.chat_id.into())
@@ -46,7 +43,7 @@ async fn handle_edit_message(handler: &mut MessageHandler, msg: EditMessageReque
             .edit_message(msg_id, real_chat_id, edited_msg.clone())
             .await?;
         debug!("Edited Message: {:?}", edited_msg);
-        handler.send_msg_to_connection(to_user_id, EditMessageEvent{
+        handler.send_msg_to_connection_detached(to_user_id, EditMessageEvent{
             ok: true,
             event: "edit_message".into(),
             new_message: edited_msg
@@ -59,19 +56,19 @@ async fn handle_edit_message(handler: &mut MessageHandler, msg: EditMessageReque
 }
 
 // TODO: Add self editing(do not travers all subscribtions)
-async fn handle_edit_self(handler: &mut MessageHandler, msg: &EditSelfRequest) -> PPResult<()> {
+async fn handle_edit_self(handler: &mut Handler, msg: &EditSelfRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
         user_id
     };
 
-    let users_db = USERS_DB.get().unwrap();
+    let users_db: UsersDB = handler.get_db();
 
     todo!()
 }
 
-async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<EditMessageResponse> {
+async fn on_edit(handler: &mut Handler, content: &String) -> PPResult<EditMessageResponse> {
     let what_field = extract_what_field(&content)?;
 
     match what_field.as_str() {
@@ -95,7 +92,7 @@ async fn on_edit(handler: &mut MessageHandler, content: &String) -> PPResult<Edi
     }
 }
 
-async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<DeleteMessageResponse> {
+async fn on_delete(handler: &mut Handler, content: &String) -> PPResult<DeleteMessageResponse> {
     let msg: DeleteMessageRequest = serde_json::from_str(&content)?;
 
     let self_user_id = {
@@ -104,8 +101,8 @@ async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<D
         user_id
     };
     
-    let users_db = USERS_DB.get().unwrap();
-    let messages_db = MESSAGES_DB.get().unwrap();
+    let users_db: UsersDB = handler.get_db();
+    let messages_db: MessagesDB = handler.get_db();
 
     let real_chat_id = users_db
         .get_associated_chat_id(&self_user_id, &msg.chat_id.into())
@@ -116,7 +113,7 @@ async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<D
         .await?
     {
         messages_db.delete_message(real_chat_id, msg.message_id).await?;
-        handler.send_msg_to_connection(msg.chat_id, DeleteMessageEvent{
+        handler.send_msg_to_connection_detached(msg.chat_id, DeleteMessageEvent{
             ok: true,
             event: "delete_message".into(),
             chat_id: msg.chat_id,
@@ -132,7 +129,7 @@ async fn on_delete(handler: &mut MessageHandler, content: &String) -> PPResult<D
     }
 }
 
-async fn handle_messages(handler: &mut MessageHandler, method: &str) -> PPResult<Value> {
+async fn handle_messages(handler: &mut Handler, method: &str) -> PPResult<Value> {
     let content = handler.utf8_content_unchecked().to_owned();
     match method {
         "edit" => Ok(serde_json::to_value(on_edit(handler, &content).await?).unwrap()),
@@ -141,7 +138,7 @@ async fn handle_messages(handler: &mut MessageHandler, method: &str) -> PPResult
     }
 }
 
-pub async fn handle(handler: &mut MessageHandler, method: &str) {
+pub async fn handle(handler: &mut Handler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {

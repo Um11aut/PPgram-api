@@ -1,27 +1,23 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::db::chat::messages::MESSAGES_DB;
+use crate::db::chat::chats::ChatsDB;
+use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
+use crate::db::user::UsersDB;
 use crate::fs::media::get_media;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{FetchChatsResponse, FetchMessagesResponse, FetchSelfResponseMessage, FetchUserResponse};
-use crate::{
-    db::{
-        chat::chats::CHATS_DB,
-        user::USERS_DB,
-    },
-    server::message::{
-        handler::MessageHandler,
+use crate::server::message::{
+        handler::Handler,
         types::user::{User, UserId},
-    },
-};
+    };
 
-async fn handle_fetch_chats(handler: &MessageHandler) -> PPResult<Vec<ChatDetails>> {
-    let users_db = USERS_DB.get().unwrap();
-    let chats_db = CHATS_DB.get().unwrap();
+async fn handle_fetch_chats(handler: &Handler) -> PPResult<Vec<ChatDetails>> {
+    let users_db: UsersDB = handler.get_db();
+    let chats_db: ChatsDB = handler.get_db();
 
     let (user_id, _) = handler.session.read().await.get_credentials().unwrap();
     let chat_ids = users_db.fetch_chats(&user_id).await?;
@@ -41,29 +37,30 @@ async fn handle_fetch_chats(handler: &MessageHandler) -> PPResult<Vec<ChatDetail
 
 async fn fetch_user(
     identifier: &UserId,
+    db: UsersDB
 ) -> PPResult<User> {
-    match USERS_DB.get().unwrap().fetch_user(identifier).await {
+    match db.fetch_user(identifier).await {
         Ok(details) => return details.ok_or("User wasn't found!".into()),
         Err(err) => {Err(err)}
     }
 }
 
-async fn handle_fetch_self(handler: &MessageHandler) -> PPResult<User> {
+async fn handle_fetch_self(handler: &Handler) -> PPResult<User> {
     // Can unwrap because we have checked the creds earlier
     let (user_id, _) = handler.session.read().await.get_credentials().unwrap();
-    fetch_user(&user_id).await
+    fetch_user(&user_id, handler.get_db()).await
 }
 
-async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
+async fn handle_fetch_messages(handler: &Handler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
     let maybe_chat_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
-        USERS_DB.get().unwrap().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
+        handler.get_db::<UsersDB>().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
     }?;
 
     match maybe_chat_id {
         Some(target_chat_id) => {
-            let mut msgs = MESSAGES_DB.get().unwrap().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await?;
+            let mut msgs = handler.get_db::<MessagesDB>().fetch_messages(target_chat_id, msg.range[0]..msg.range[1]).await?;
 
             msgs.iter_mut().for_each(|message| message.chat_id = msg.chat_id);
             Ok(msgs)
@@ -72,7 +69,7 @@ async fn handle_fetch_messages(handler: &MessageHandler, msg: FetchMessagesReque
     }
 }
 
-async fn on_chats(handler: &MessageHandler) -> PPResult<FetchChatsResponse> {
+async fn on_chats(handler: &Handler) -> PPResult<FetchChatsResponse> {
     let chats = handle_fetch_chats(&handler).await?;
     Ok(FetchChatsResponse {
         ok: true,
@@ -81,7 +78,7 @@ async fn on_chats(handler: &MessageHandler) -> PPResult<FetchChatsResponse> {
     })
 }
 
-async fn on_self(handler: &MessageHandler) -> PPResult<FetchSelfResponseMessage> {
+async fn on_self(handler: &Handler) -> PPResult<FetchSelfResponseMessage> {
     let self_info = handle_fetch_self(&handler).await?;
     Ok(FetchSelfResponseMessage {
         ok: true,
@@ -93,7 +90,8 @@ async fn on_self(handler: &MessageHandler) -> PPResult<FetchSelfResponseMessage>
     })
 }
 
-async fn on_user(content: &String) -> PPResult<FetchUserResponse> {
+async fn on_user(handler: &mut Handler) -> PPResult<FetchUserResponse> {
+    let content = handler.utf8_content_unchecked();
     let msg: FetchUserRequest = serde_json::from_str(&content)?;
     
     let user_id: UserId = match msg.username {
@@ -104,7 +102,7 @@ async fn on_user(content: &String) -> PPResult<FetchUserResponse> {
         }
     };
 
-    let self_info = fetch_user(&user_id).await?;
+    let self_info = fetch_user(&user_id, handler.get_db()).await?;
     Ok(FetchUserResponse {
         ok: true,
         method: "fetch_user".into(),
@@ -115,7 +113,7 @@ async fn on_user(content: &String) -> PPResult<FetchUserResponse> {
     })
 }
 
-async fn on_messages(handler: &mut MessageHandler) -> PPResult<FetchMessagesResponse> {
+async fn on_messages(handler: &mut Handler) -> PPResult<FetchMessagesResponse> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchMessagesRequest>(&content)?;
     let fetched_msgs = handle_fetch_messages(&handler, msg).await?;
@@ -128,7 +126,7 @@ async fn on_messages(handler: &mut MessageHandler) -> PPResult<FetchMessagesResp
 } 
 
 /// Directly sends raw media
-async fn on_media(handler: &mut MessageHandler) -> PPResult<()> {
+async fn on_media(handler: &mut Handler) -> PPResult<()> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchMediaRequest>(&content)?;
 
@@ -139,7 +137,7 @@ async fn on_media(handler: &mut MessageHandler) -> PPResult<()> {
 } 
 
 /// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
-async fn handle_json_message(handler: &mut MessageHandler) -> PPResult<Option<Value>> {
+async fn handle_json_message(handler: &mut Handler) -> PPResult<Option<Value>> {
     let content = handler.utf8_content_unchecked();
     let what = extract_what_field(&content)?;
 
@@ -152,7 +150,7 @@ async fn handle_json_message(handler: &mut MessageHandler) -> PPResult<Option<Va
             Ok(v) => Ok(Some(v)),
             Err(err) => Err(err)
         },
-        "user" => match on_user(&content).await.map(|v| serde_json::to_value(v).unwrap()) {
+        "user" => match on_user(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
             Ok(v) => Ok(Some(v)),
             Err(err) => Err(err)
         }
@@ -168,7 +166,7 @@ async fn handle_json_message(handler: &mut MessageHandler) -> PPResult<Option<Va
     }
 }
 
-pub async fn handle(handler: &mut MessageHandler, method: &str) {
+pub async fn handle(handler: &mut Handler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {

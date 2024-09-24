@@ -2,11 +2,21 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::db::{internal::error::PPError, user::USERS_DB};
+use crate::db::{connection::{DatabaseBucket, DatabaseBuilder}, internal::error::PPError, user::UsersDB};
 
 use tokio::net::TcpStream;
 
 use super::{connection::Connection, message::types::{request::auth::*, user::UserId}};
+
+// TODO: create authcomponent instead of using all 3 methods directly on session
+// pub struct AuthComponent {
+    // session_id: String,
+    // user_id: i32
+// }
+
+// impl From<AuthRequest> for AuthComponent {
+
+// }
 
 #[derive(Debug)]
 pub struct Session {
@@ -26,9 +36,8 @@ impl Session {
         }
     }
 
-    pub async fn auth(&mut self, msg: AuthRequest) -> Result<(), PPError>
+    pub async fn auth(&mut self, db: UsersDB, msg: AuthRequest) -> Result<(), PPError>
     {
-        let db = USERS_DB.get().unwrap();
         match db.authenticate(msg.user_id, &msg.session_id).await {
             Ok(_) => {
                 self.session_id = Some(msg.session_id);
@@ -42,9 +51,8 @@ impl Session {
         Ok(())
     }
 
-    pub async fn login(&mut self, msg: LoginRequest) -> Result<(), PPError>
+    pub async fn login(&mut self, db: UsersDB, msg: LoginRequest) -> Result<(), PPError>
     {
-        let db = USERS_DB.get().unwrap();
         match db.login(&msg.username, &msg.password).await {
             Ok((user_id, session_id)) => {
                 self.user_id = Some(user_id);
@@ -58,9 +66,8 @@ impl Session {
         Ok(())
     }
 
-    pub async fn register(&mut self, msg: RegisterRequest) -> Result<(), PPError>
+    pub async fn register(&mut self, db: UsersDB, msg: RegisterRequest) -> Result<(), PPError>
     {
-        let db = USERS_DB.get().unwrap();
         match db.register(&msg.name, &msg.username, &msg.password).await {
             Ok((user_id, session_id)) => {
                 self.user_id = Some(user_id);
@@ -100,8 +107,9 @@ impl Session {
         self.connections.retain(|x| Arc::ptr_eq(x, &connection));
     }
 
-    pub async fn mpsc_send(&mut self, message: impl Serialize, index: usize) {
-        self.connections[index].send(message).await;
+    /// Sends json message to some connection index()
+    pub async fn mpsc_send(&mut self, message: impl Serialize, con_idx: usize) {
+        self.connections[con_idx].send(message).await;
     }
 
     /// `(i32, String)` -> user_id, session_id 

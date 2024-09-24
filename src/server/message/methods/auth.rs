@@ -1,10 +1,10 @@
 use std::{future::Future, sync::Arc};
 
 use crate::{
-    db::internal::error::PPError,
+    db::{internal::error::PPError, user::UsersDB},
     server::{
         message::{
-            handler::MessageHandler,
+            handler::Handler,
             types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}},
         },
         session::Session,
@@ -15,15 +15,16 @@ use crate::{
 async fn handle_auth_message<'a, T, F, Fut>(
     buffer: &str,
     session: &'a mut Session,
+    users_db: UsersDB,
     handler: F,
 ) -> Result<(), PPError>
 where
     T: serde::de::DeserializeOwned,
-    F: FnOnce(&'a mut Session, T) -> Fut + Send + 'a,
+    F: FnOnce(&'a mut Session, UsersDB, T) -> Fut + Send + 'a,
     Fut: Future<Output = Result<(), PPError>> + Send,
 {
     match serde_json::from_str::<T>(buffer) {
-        Ok(auth_message) => match handler(session, auth_message).await {
+        Ok(auth_message) => match handler(session, users_db, auth_message).await {
             Ok(()) => {}
             Err(err) => return Err(err),
         },
@@ -33,8 +34,8 @@ where
     Ok(())
 }
 
-pub async fn handle(handler: &mut MessageHandler, method: &str) {
-    let buffer = handler.builder.as_mut().unwrap().content_utf8().unwrap();
+pub async fn handle(handler: &mut Handler, method: &str) {
+    let buffer = handler.utf8_content_unchecked().clone();
 
     {
         let session = handler.session.read().await;
@@ -46,24 +47,28 @@ pub async fn handle(handler: &mut MessageHandler, method: &str) {
 
     let res = {
         let mut session = handler.session.write().await;
+        let users_db: UsersDB = handler.get_db();
 
         match method {
             "login" =>
                 handle_auth_message::<LoginRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
+                    users_db,
                     Session::login,
                 )
                 .await,
             "auth" =>  handle_auth_message::<AuthRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
+                    users_db,
                     Session::auth,
                 )
                 .await,
             "register" => handle_auth_message::<RegisterRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
+                    users_db,
                     Session::register,
                 )
                 .await,

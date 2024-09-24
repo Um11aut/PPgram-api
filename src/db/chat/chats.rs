@@ -9,21 +9,21 @@ use tokio::sync::OnceCell;
 use db::internal::error::PPError;
 
 use crate::db;
+use crate::db::connection::DatabaseBucket;
+use crate::db::connection::DatabaseBuilder;
 use crate::db::db::Database;
-use crate::db::user::USERS_DB;
+use crate::db::user::UsersDB;
 use crate::server::message::types::chat::Chat;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
-
-pub static CHATS_DB: OnceCell<ChatsDB> = OnceCell::const_new();
 
 pub struct ChatsDB {
     session: Arc<cassandra_cpp::Session>,
 }
 
 impl Database for ChatsDB {
-    async fn new(session: Arc<cassandra_cpp::Session>) -> Self {
+    fn new(session: Arc<cassandra_cpp::Session>) -> Self {
         Self {
             session: Arc::clone(&session),
         }
@@ -41,6 +41,12 @@ impl Database for ChatsDB {
         self.session.execute(create_table_query).await?;
     
         Ok(())
+    }
+}
+
+impl From<DatabaseBucket> for ChatsDB {
+    fn from(value: DatabaseBucket) -> Self {
+        value.into()
     }
 }
 
@@ -122,7 +128,7 @@ impl ChatsDB {
                     let is_group: bool = row.get_by_name("is_group")?;
 
                     let mut iter: SetIterator = row.get_by_name("participants")?;
-                    let users_db = USERS_DB.get().unwrap();
+                    let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
                     
                     let mut participants: Vec<User> = vec![];
                     while let Some(participant) = iter.next() {

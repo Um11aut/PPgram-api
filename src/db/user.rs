@@ -18,19 +18,19 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
+use super::connection::DatabaseBucket;
+use super::connection::DatabaseBuilder;
 use super::db::Database;
 use super::internal::error::PPError;
 use super::internal::error::PPResult;
 use super::internal::validate;
-
-pub static USERS_DB: OnceCell<UsersDB> = OnceCell::const_new();
 
 pub struct UsersDB {
     session: Arc<cassandra_cpp::Session>,
 }
 
 impl Database for UsersDB {
-    async fn new(session: Arc<cassandra_cpp::Session>) -> UsersDB {
+    fn new(session: Arc<cassandra_cpp::Session>) -> UsersDB {
         UsersDB { session }
     }
 

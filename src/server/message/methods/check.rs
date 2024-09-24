@@ -1,8 +1,10 @@
 
-use crate::{db::user::USERS_DB, server::message::{handler::MessageHandler, types::{request::check::*, response::check::CheckResponse}}};
+use crate::{db::user::UsersDB, server::message::{handler::Handler, types::{request::check::*, response::check::CheckResponse}}};
 
-async fn check_username(username: &str, handler: &mut MessageHandler) {
-    match USERS_DB.get().unwrap().exists(&username.into()).await {
+async fn check_username(handler: &mut Handler, username: &str) {
+    let users_db: UsersDB = handler.get_db();
+
+    match users_db.exists(&username.into()).await {
         Ok(exists) => {
             let data = if exists {
                 CheckResponse {
@@ -24,11 +26,11 @@ async fn check_username(username: &str, handler: &mut MessageHandler) {
     }
 }
 
-pub async fn handle(handler: &mut MessageHandler, method: &str) 
+pub async fn handle(handler: &mut Handler, method: &str) 
 {
-    match serde_json::from_str::<CheckUsernameRequest>(handler.builder.as_mut().unwrap().content_utf8().unwrap()) {
+    match serde_json::from_str::<CheckUsernameRequest>(&handler.utf8_content_unchecked()) {
         Ok(msg) => {
-            check_username(&msg.data, handler).await;
+            check_username(handler, &msg.data).await;
         },
         Err(err) => {
             handler.send_error(method, err.to_string().into()).await;
