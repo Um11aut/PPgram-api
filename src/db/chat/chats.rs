@@ -150,3 +150,11 @@ impl ChatsDB {
         }
     }
 }
+
+impl From<DatabaseBuilder> for ChatsDB {
+    fn from(value: DatabaseBuilder) -> Self {
+        ChatsDB {
+            session: value.bucket.get_connection()
+        }
+    }
+}

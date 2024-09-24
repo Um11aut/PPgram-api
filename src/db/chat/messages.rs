@@ -12,6 +12,7 @@ use std::time::UNIX_EPOCH;
 use tokio::sync::OnceCell;
 
 use crate::db::connection::DatabaseBucket;
+use crate::db::connection::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;
@@ -57,9 +58,11 @@ impl Database for MessagesDB {
     }
 }
 
-impl From<DatabaseBucket> for MessagesDB {
-    fn from(value: DatabaseBucket) -> Self {
-        value.into()
+impl From<DatabaseBuilder> for MessagesDB {
+    fn from(value: DatabaseBuilder) -> Self {
+        MessagesDB {
+            session: value.bucket.get_connection()
+        }
     }
 }
 

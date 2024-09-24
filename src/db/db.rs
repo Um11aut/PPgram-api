@@ -20,7 +20,16 @@ pub async fn create_tables() {
     let messages_db: MessagesDB = DatabaseBuilder::from(bucket.clone()).into();
     let chats_db: ChatsDB = DatabaseBuilder::from(bucket.clone()).into();
 
-    users_db.create_table().await;
-    messages_db.create_table().await;
-    chats_db.create_table().await;
+    bucket.get_connection().execute("
+                    CREATE KEYSPACE IF NOT EXISTS main_keyspace
+                    WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };
+                ",
+                )
+                .await
+                .unwrap();
+    bucket.get_connection().execute("USE main_keyspace;").await.unwrap();
+
+    users_db.create_table().await.unwrap();
+    messages_db.create_table().await.unwrap();
+    chats_db.create_table().await.unwrap();
 }

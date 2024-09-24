@@ -51,7 +51,7 @@ impl DatabaseBucket {
     /// 
     /// Reference count in this situation is the count of the 
     /// users that are connected to the server,
-    /// so whenever someone clones `DatabaseBucket`, the
+    /// so whenever some new connection clones `DatabaseBucket`, the
     /// internal reference count is the same
     pub fn clone_increment_rc(&self) -> Self {
         Self {
@@ -63,10 +63,14 @@ impl DatabaseBucket {
     pub fn get_reference_count(&self) -> usize {
         self.reference_count
     }
+
+    pub fn get_connection(&self) -> Arc<cassandra_cpp::Session> {
+        self.connection.clone()
+    }
 }
 
 pub struct DatabaseBuilder {
-    bucket: DatabaseBucket
+    pub bucket: DatabaseBucket
 }
 
 impl From<DatabaseBucket> for DatabaseBuilder {
@@ -74,24 +78,6 @@ impl From<DatabaseBucket> for DatabaseBuilder {
         Self {
             bucket: value
         }
-    }
-}
-
-impl From<DatabaseBuilder> for UsersDB {
-    fn from(value: DatabaseBuilder) -> Self {
-        value.into()
-    }
-}
-
-impl From<DatabaseBuilder> for ChatsDB {
-    fn from(value: DatabaseBuilder) -> Self {
-        value.into()
-    }
-}
-
-impl From<DatabaseBuilder> for MessagesDB {
-    fn from(value: DatabaseBuilder) -> Self {
-        value.into()
     }
 }
 
@@ -117,6 +103,7 @@ impl DatabasePool {
     }
 
     pub async fn get_available_bucket(&mut self) -> DatabaseBucket {
+        info!("fdsfs");
         for bucket in &self.buckets {
             if bucket.get_reference_count() < 3 {
                 return bucket.clone_increment_rc();

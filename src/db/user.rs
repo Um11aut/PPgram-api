@@ -29,6 +29,14 @@ pub struct UsersDB {
     session: Arc<cassandra_cpp::Session>,
 }
 
+impl From<DatabaseBuilder> for UsersDB {
+    fn from(value: DatabaseBuilder) -> Self {
+        UsersDB {
+            session: value.bucket.get_connection()
+        }
+    }
+}
+
 impl Database for UsersDB {
     fn new(session: Arc<cassandra_cpp::Session>) -> UsersDB {
         UsersDB { session }
