@@ -214,6 +214,8 @@ impl Handler {
 
 impl Drop for Handler {
     fn drop(&mut self) {
+        self.bucket.decrement_rc();
+
         tokio::spawn({
             let connections: Sessions = Arc::clone(&self.sessions);    
             let session = Arc::clone(&self.session);

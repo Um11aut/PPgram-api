@@ -1,12 +1,13 @@
-use std::sync::Arc;
+use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
 
 use log::{error, info};
 
 use super::{chat::{chats::ChatsDB, messages::MessagesDB}, user::UsersDB};
 
+#[derive(Debug)]
 pub struct DatabaseBucket {
     connection: Arc<cassandra_cpp::Session>,
-    reference_count: usize,
+    reference_count: Arc<AtomicUsize>,
 }
 
 impl From<Arc<cassandra_cpp::Session>> for DatabaseBucket {
@@ -14,14 +15,14 @@ impl From<Arc<cassandra_cpp::Session>> for DatabaseBucket {
         let count = Arc::strong_count(&value); 
         Self {
             connection: value,
-            reference_count: count 
+            reference_count: Arc::new(AtomicUsize::from(count)) 
         }
     }
 }
 
 impl Clone for DatabaseBucket {
     fn clone(&self) -> Self {
-        Self { connection: self.connection.clone(), reference_count: self.reference_count }
+        Self { connection: self.connection.clone(), reference_count: self.reference_count.clone() }
     }
 }
 
@@ -43,7 +44,7 @@ impl DatabaseBucket {
 
         Self {
             connection: Arc::new(session),
-            reference_count: 1
+            reference_count: Arc::new(1.into())
         }
     }
 
@@ -54,14 +55,19 @@ impl DatabaseBucket {
     /// so whenever some new connection clones `DatabaseBucket`, the
     /// internal reference count is the same
     pub fn clone_increment_rc(&self) -> Self {
-        Self {
-            connection: self.connection.clone(),
-            reference_count: self.reference_count + 1
-        }
+        let rc = Arc::clone(&self.reference_count);
+        rc.fetch_add(1, Ordering::SeqCst);
+        self.clone()
     }
 
-    pub fn get_reference_count(&self) -> usize {
-        self.reference_count
+    pub fn decrement_rc(&mut self) {
+        let rc = Arc::clone(&self.reference_count);
+        rc.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    pub fn is_full(&self) -> bool {
+        let current_value = self.reference_count.clone().load(Ordering::SeqCst);
+        current_value >= 3
     }
 
     pub fn get_connection(&self) -> Arc<cassandra_cpp::Session> {
@@ -103,9 +109,9 @@ impl DatabasePool {
     }
 
     pub async fn get_available_bucket(&mut self) -> DatabaseBucket {
-        info!("fdsfs");
-        for bucket in &self.buckets {
-            if bucket.get_reference_count() < 3 {
+        info!("Getting available db bucket...\nBuckets: {:?}", self.buckets);
+        for bucket in self.buckets.iter_mut() {
+            if !bucket.is_full() {
                 return bucket.clone_increment_rc();
             }
         }
