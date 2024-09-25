@@ -11,6 +11,8 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::OnceCell;
 
+use crate::db::connection::DatabaseBucket;
+use crate::db::connection::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;
@@ -20,14 +22,12 @@ use crate::server::message::types::message::Message;
 use crate::server::message::types::request::message::*;
 use crate::server::message::types::user::UserId;
 
-pub static MESSAGES_DB: OnceCell<MessagesDB> = OnceCell::const_new();
-
 pub struct MessagesDB {
     session: Arc<cassandra_cpp::Session>,
 }
 
 impl Database for MessagesDB {
-    async fn new(session: Arc<cassandra_cpp::Session>) -> Self {
+    fn new(session: Arc<cassandra_cpp::Session>) -> Self {
         Self {
             session: Arc::clone(&session),
         }
@@ -55,6 +55,14 @@ impl Database for MessagesDB {
         self.session.execute(create_table_query).await?;
 
         Ok(())
+    }
+}
+
+impl From<DatabaseBuilder> for MessagesDB {
+    fn from(value: DatabaseBuilder) -> Self {
+        MessagesDB {
+            session: value.bucket.get_connection()
+        }
     }
 }
 

@@ -4,49 +4,32 @@ use tokio::sync::OnceCell;
 
 use log::error;
 
-use super::{chat::{chats::CHATS_DB, messages::MESSAGES_DB}, internal::error::PPError, user::USERS_DB};
+use super::{chat::{chats::ChatsDB, messages::MessagesDB}, connection::{DatabaseBuilder, DatabasePool}, internal::error::PPError, user::UsersDB};
 
 pub trait Database {
-    fn new(session: Arc<cassandra_cpp::Session>) -> impl std::future::Future<Output = Self> + Send;
+    fn new(session: Arc<cassandra_cpp::Session>) -> Self; 
     fn create_table(&self) -> impl std::future::Future<Output = Result<(), PPError>> + Send;
 }
 
-async fn init<T: Database>(db: &OnceCell<T>, session: Arc<cassandra_cpp::Session>) {
-    db.get_or_init(|| async { T::new(Arc::clone(&session)).await }).await;
-    db.get().unwrap().create_table().await.unwrap();
-}
+/// Creates a temporary database pool for creating basic tables
+/// Deallocating pool at the end
+pub async fn create_tables() {
+    let mut pool: DatabasePool = DatabasePool::new().await;
+    let bucket = pool.get_available_bucket().await;
+    let users_db: UsersDB = DatabaseBuilder::from(bucket.clone()).into();
+    let messages_db: MessagesDB = DatabaseBuilder::from(bucket.clone()).into();
+    let chats_db: ChatsDB = DatabaseBuilder::from(bucket.clone()).into();
 
-async fn create_connection() -> Arc<cassandra_cpp::Session> {
-    let contact_points = std::env::var("CASSANDRA_HOST").unwrap_or(String::from("127.0.0.1"));
+    bucket.get_connection().execute("
+                    CREATE KEYSPACE IF NOT EXISTS main_keyspace
+                    WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };
+                ",
+                )
+                .await
+                .unwrap();
+    bucket.get_connection().execute("USE main_keyspace;").await.unwrap();
 
-    let mut cluster = cassandra_cpp::Cluster::default();
-    let cluster = cluster
-        .set_contact_points(contact_points.as_str())
-        .expect("Failed to set contact points");
-    cluster.set_load_balance_round_robin();
-
-    while let Err(err) = cluster.connect().await {
-        error!("{}", err);
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-    let session = cluster.connect().await.unwrap();
-
-    session
-        .execute(
-            "
-            CREATE KEYSPACE IF NOT EXISTS main_keyspace
-            WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };
-        ",
-        )
-        .await
-        .unwrap();
-    session.execute("USE main_keyspace").await.unwrap();
-
-    Arc::new(session)
-}
-
-pub async fn init_dbs() {
-    init(&USERS_DB, create_connection().await).await;
-    init(&CHATS_DB, create_connection().await).await;
-    init(&MESSAGES_DB, create_connection().await).await;
+    users_db.create_table().await.unwrap();
+    messages_db.create_table().await.unwrap();
+    chats_db.create_table().await.unwrap();
 }
