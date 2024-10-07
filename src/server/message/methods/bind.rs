@@ -19,8 +19,8 @@ pub async fn handle(handler: &mut Handler, method: &str) {
                 if bind_session.session_id().unwrap() == &message.session_id {
                     {
                         let mut self_session = handler.session.write().await;
-                        self_session.remove_connection(Arc::clone(&handler.connection));
-                        bind_session.add_connection(Arc::clone(&handler.connection));
+                        self_session.remove_connection(Arc::clone(&handler.output_connection));
+                        bind_session.add_connection(Arc::clone(&handler.output_connection));
                     }
                     handler.session = Arc::clone(&bind_session_arc);
                     debug!("Binding to session: {}", bind_session.session_id().unwrap());

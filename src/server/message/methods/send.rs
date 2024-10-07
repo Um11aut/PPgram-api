@@ -41,7 +41,7 @@ async fn handle_send_message(
             }
 
             let chat_id = handler.get_db::<ChatsDB>()
-                .create_chat(vec![self_user_id.clone(), msg.common.to.into()])
+                .create_private(vec![self_user_id.clone(), msg.common.to.into()])
                 .await
                 .unwrap();
             users_db.add_chat(&self_user_id, &msg.common.to.into(), chat_id.chat_id()).await.unwrap();

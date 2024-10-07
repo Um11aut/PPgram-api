@@ -14,6 +14,7 @@ use crate::db::connection::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::user::UsersDB;
 use crate::server::message::types::chat::Chat;
+use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
@@ -34,7 +35,10 @@ impl Database for ChatsDB {
             CREATE TABLE IF NOT EXISTS chats (
                 id int PRIMARY KEY,
                 is_group boolean,
-                participants LIST<int>            
+                participants LIST<int>,
+                name TEXT,
+                avatar_hash TEXT,
+                username TEXT
             );
         "#;
 
@@ -51,13 +55,13 @@ impl From<DatabaseBucket> for ChatsDB {
 }
 
 impl ChatsDB {
-    pub async fn create_chat(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
+    pub async fn create_private(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
         let chat_id = rand::random::<i32>();
         let insert_query = "INSERT INTO chats (id, is_group, participants) VALUES (?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
         statement.bind_int32(0, chat_id)?;
-        statement.bind_bool(1, participants.len() != 2)?;
+        statement.bind_bool(1, false)?;
         
         let mut list = cassandra_cpp::List::new();
         for participant in participants {
@@ -77,14 +81,36 @@ impl ChatsDB {
         Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
     }
 
+    pub async fn create_group(&self, participants: Vec<UserId>, details: ChatDetails) -> Result<Chat, PPError> {
+        let chat_id = rand::random::<i32>();
+        let insert_query = "INSERT INTO chats (id, is_group, participants, name, avatar_hash, username) VALUES (?, ?, ?, ?, ?, ?)";
+
+        let mut statement = self.session.statement(insert_query);
+        statement.bind_int32(0, chat_id)?;
+        statement.bind_bool(1, true)?;
+        
+        let mut list = cassandra_cpp::List::new();
+        for participant in participants {
+            match participant {
+                UserId::UserId(user_id) => {
+                    list.append_int32(user_id)?;
+                }
+                UserId::Username(_) => {
+                    return Err(PPError::from("Cannot add chat with username!"))
+                }
+            }
+        }
+        statement.bind_list(2, list)?;
+        statement.bind_string(3, details.name())?;
+        statement.bind_string(4, details.photo().map_or("", |v| v))?;
+        statement.bind_string(5, details.username())?;
+
+        statement.execute().await.map_err(PPError::from)?;
+
+        Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
+    }
+
     pub async fn add_participant(&self, chat_id: ChatId, participant: UserId) -> Result<(), PPError> {
-        let current = match self.fetch_chat(chat_id).await? {
-            Some(current) => current,
-            None => return Err(PPError::from("Given Chat Id wasn't found!"))
-        };
-
-        let is_group = current.participants().len() + 1 > 2;
-
         let update_query = "UPDATE chats SET participants = participants + ? WHERE id = ?;";
         
         let mut statement = self.session.statement(update_query);
@@ -100,17 +126,7 @@ impl ChatsDB {
         statement.bind_list(0, list)?;
         statement.bind_int32(1, chat_id)?;
 
-        statement.execute().await.map_err(PPError::from)?;
-
-        if !is_group {
-            let update_is_group_query = "UPDATE chats SET is_group = ? WHERE id = ?;";
-            
-            let mut statement = self.session.statement(update_is_group_query);
-            statement.bind_bool(0, false)?;
-            statement.bind_int32(1, chat_id)?;
-            
-            statement.execute().await.map_err(PPError::from)?;
-        }
+        statement.execute().await?;
 
         Ok(())
     }
@@ -146,7 +162,7 @@ impl ChatsDB {
                 }
                 return Ok(None)
             },
-            Err(err) => return Err(PPError::from(err))
+            Err(err) => return Err(err.into())
         }
     }
 }

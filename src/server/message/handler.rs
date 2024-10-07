@@ -19,16 +19,17 @@ use super::builder::MessageBuilder;
 use super::methods::{auth, bind, check, edit, fetch, send};
 use super::types::response::send::UploadMediaResponse;
 
-pub type SessionArcLock = Arc<RwLock<Session>>;
+pub type SesssionArcRwLock = Arc<RwLock<Session>>;
 
 /// Main struct that has everything it needs to have to be able
 /// to handle any message type
 pub struct Handler {
     builder: Option<MessageBuilder>,
     is_first: bool,
-    pub session: SessionArcLock,
+    pub session: SesssionArcRwLock,
     pub sessions: Sessions,
-    pub connection: Arc<Connection>,
+    // Output TCP connection on which all the responses/messages are sent
+    pub output_connection: Arc<Connection>,
     bucket: DatabaseBucket
 }
 
@@ -42,7 +43,7 @@ impl Handler {
             builder: None,
             session: Arc::clone(&session),
             sessions,
-            connection: current_connection,
+            output_connection: current_connection,
             is_first: true,
             bucket 
         }
@@ -54,14 +55,14 @@ impl Handler {
     }
 
     pub async fn send_error(&self, method: &str, err: PPError) {
-        err.safe_send(method, &self.connection).await;
+        err.safe_send(method, &self.output_connection).await;
     }
 
     /// Sending message with tokio::spawn. 
     /// Necessary for large media, so the read operation won't be stopped
     pub fn send_raw_detached(&self, data: Arc<[u8]>) {
         tokio::spawn({
-            let connection = Arc::clone(&self.connection);
+            let connection = Arc::clone(&self.output_connection);
             let data = Arc::clone(&data);
             info!("Sending media back: {}", data.len());
             async move {
@@ -72,15 +73,15 @@ impl Handler {
 
     /// Instead of json, sends raw buffer directly to the connection
     pub async fn send_raw(&self, data: &[u8]) {
-        self.connection.write(&MessageBuilder::build_from_vec(&data).packed()).await;
+        self.output_connection.write(&MessageBuilder::build_from_vec(&data).packed()).await;
     }
 
     pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {
-        Arc::clone(&self.connection.reader())
+        Arc::clone(&self.output_connection.reader())
     }
 
     pub async fn send_message<T: ?Sized + Serialize>(&self, message: &T) {
-        self.connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await;
+        self.output_connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await;
     }
 
     /// Sends message to other connection(e.g. new chat, new message, or any other event that must be handled in realtime)
@@ -219,7 +220,7 @@ impl Drop for Handler {
         tokio::spawn({
             let connections: Sessions = Arc::clone(&self.sessions);    
             let session = Arc::clone(&self.session);
-            let connection = Arc::clone(&self.connection);
+            let connection = Arc::clone(&self.output_connection);
 
             async move {
                 let mut connections = connections.write().await;

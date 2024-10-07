@@ -74,7 +74,7 @@ impl Chat {
     /// If the chat is group, info must be present, it will fetch the chat info.
     pub async fn details(&self, relative_to: &UserId) -> Result<Option<ChatDetails>, PPError> {
         match self.is_group {
-            // if not is_group, just take the account of other participant
+            // if not is_group, just take the user info of other participant
             false => {
                 if let Some(peer) = self.participants.iter().find(|&participant| participant.user_id() != relative_to.as_i32().unwrap()) {
                     return Ok(Some(ChatDetails{
