@@ -34,7 +34,7 @@ impl Database for ChatsDB {
 
     async fn create_table(&self) -> Result<(), PPError> {
         let create_table_query = r#"
-            CREATE TABLE IF NOT EXISTS chats (
+            CREATE TABLE IF NOT EXISTS ksp.chats (
                 id int PRIMARY KEY,
                 is_group boolean,
                 participants LIST<int>,
@@ -59,7 +59,7 @@ impl From<DatabaseBucket> for ChatsDB {
 impl ChatsDB {
     pub async fn create_private(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
         let chat_id = rand::thread_rng().gen_range(i32::MIN..-1);
-        let insert_query = "INSERT INTO chats (id, is_group, participants) VALUES (?, ?, ?)";
+        let insert_query = "INSERT INTO ksp.chats (id, is_group, participants) VALUES (?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
         statement.bind_int32(0, chat_id)?;
@@ -85,7 +85,7 @@ impl ChatsDB {
 
     pub async fn create_group(&self, participants: Vec<UserId>, details: ChatDetails) -> Result<Chat, PPError> {
         let chat_id = rand::thread_rng().gen_range(i32::MIN..-1);
-        let insert_query = "INSERT INTO chats (id, is_group, participants, name, avatar_hash, username) VALUES (?, ?, ?, ?, ?, ?)";
+        let insert_query = "INSERT INTO ksp.chats (id, is_group, participants, name, avatar_hash, username) VALUES (?, ?, ?, ?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
         statement.bind_int32(0, chat_id)?;
@@ -113,7 +113,7 @@ impl ChatsDB {
     }
 
     pub async fn add_participant(&self, chat_id: ChatId, participant: UserId) -> Result<(), PPError> {
-        let update_query = "UPDATE chats SET participants = participants + ? WHERE id = ?;";
+        let update_query = "UPDATE ksp.chats SET participants = participants + ? WHERE id = ?;";
         
         let mut statement = self.session.statement(update_query);
         let mut list = cassandra_cpp::List::new();
@@ -134,7 +134,7 @@ impl ChatsDB {
     }
 
     pub async fn chat_exists(&self, chat_id: ChatId) -> PPResult<bool> {
-        let query = "SELECT * FROM chats WHERE id = ?";
+        let query = "SELECT * FROM ksp.chats WHERE id = ?";
 
         let mut statement = self.session.statement(&query);
         statement.bind_int32(0, chat_id)?;
@@ -144,7 +144,7 @@ impl ChatsDB {
     }
 
     pub async fn fetch_chat(&self, chat_id: ChatId) -> Result<Option<Chat>, PPError> {
-        let select_query = "SELECT * FROM chats WHERE id = ?";
+        let select_query = "SELECT * FROM ksp.chats WHERE id = ?";
 
         let mut statement = self.session.statement(&select_query);
         statement.bind_int32(0, chat_id)?;

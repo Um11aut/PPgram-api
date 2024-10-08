@@ -44,7 +44,7 @@ impl Database for UsersDB {
 
     async fn create_table(&self) -> PPResult<()> {
         let create_table_query = r#"
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE IF NOT EXISTS ksp.users (
                 id int PRIMARY KEY, 
                 name TEXT, 
                 username TEXT,
@@ -56,7 +56,7 @@ impl Database for UsersDB {
         "#;
 
         let create_index_query = r#"
-            CREATE INDEX IF NOT EXISTS username_idx ON users (username)
+            CREATE INDEX IF NOT EXISTS username_idx ON ksp.users (username)
         "#;
 
         self.session.execute(create_table_query).await?;
@@ -70,13 +70,13 @@ impl UsersDB {
     pub async fn exists(&self, identifier: &UserId) -> PPResult<bool> {
         let result = match identifier {
             UserId::UserId(user_id) => {
-                let query = "SELECT id FROM users WHERE id = ?";
+                let query = "SELECT id FROM ksp.users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(0, *user_id)?;
                 statement.execute().await?
             }
             UserId::Username(username) => {
-                let query = "SELECT id FROM users WHERE username = ?";
+                let query = "SELECT id FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_string(0, username.as_str())?;
                 statement.execute().await?
@@ -102,7 +102,7 @@ impl UsersDB {
 
         let user_id: i32 = rand::thread_rng().gen_range(1..i32::MAX);
         let query = r#"
-            INSERT INTO users (id, name, username, password_hash, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ksp.users (id, name, username, password_hash, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?)
         "#;
         let mut statement = self.session.statement(query);
 
@@ -127,7 +127,7 @@ impl UsersDB {
         username: &str,
         password_hash: &str,
     ) -> PPResult<(i32 /* user_id */, String /* session_id */)> {
-        let query = "SELECT id, password_hash FROM users WHERE username = ?";
+        let query = "SELECT id, password_hash FROM ksp.users WHERE username = ?";
         let mut statement = self.session.statement(query);
         statement.bind_string(0, username)?;
 
@@ -167,7 +167,7 @@ impl UsersDB {
         user_id: i32,
         session_id: &str,
     ) -> PPResult<()> {
-        let query = "SELECT sessions FROM users WHERE id = ?";
+        let query = "SELECT sessions FROM ksp.users WHERE id = ?";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
 
@@ -211,7 +211,7 @@ impl UsersDB {
             .map(char::from)
             .collect();
 
-        let query = "SELECT sessions FROM users WHERE id = ?;";
+        let query = "SELECT sessions FROM ksp.users WHERE id = ?;";
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, user_id)?;
 
@@ -242,7 +242,7 @@ impl UsersDB {
             existing_sessions.drain(..1);
         }
 
-        let query = "UPDATE users SET sessions = ? WHERE id = ?";
+        let query = "UPDATE ksp.users SET sessions = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
         let mut updated_sessions = cassandra_cpp::List::new();
@@ -266,7 +266,7 @@ impl UsersDB {
         user_id: UserId,
         media_hash: &String,
     ) -> std::result::Result<(), PPError> {
-        let query = "UPDATE users SET photo = ? WHERE id = ?";
+        let query = "UPDATE ksp.users SET photo = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
         statement.bind_string(0, &media_hash)?;
@@ -281,13 +281,13 @@ impl UsersDB {
     pub async fn fetch_chats(&self, user_id: &UserId) -> PPResult<HashMap<i32, ChatId>> {
         let statement = match user_id {
             UserId::UserId(user_id) => {
-                let query = "SELECT chats FROM users WHERE id = ?";
+                let query = "SELECT chats FROM ksp.users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(0, *user_id)?;
                 statement
             }
             UserId::Username(username) => {
-                let query = "SELECT chats FROM users WHERE username = ?";
+                let query = "SELECT chats FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_string(0, &username)?;
                 statement
@@ -322,13 +322,13 @@ impl UsersDB {
     pub async fn get_associated_chat_id(&self, user_id: &UserId, key_user_id: &UserId) -> PPResult<Option<ChatId>> {
         let mut statement = match user_id {
             UserId::UserId(user_id) => {
-                let query = "SELECT chats[?] FROM users WHERE id = ?";
+                let query = "SELECT chats[?] FROM ksp.users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(1, *user_id)?;
                 statement
             }
             UserId::Username(username) => {
-                let query = "SELECT chats[?] FROM users WHERE username = ?";
+                let query = "SELECT chats[?] FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_string(1, &username)?;
                 statement
@@ -352,10 +352,10 @@ impl UsersDB {
     pub async fn add_chat(&self, user_id: &UserId, target_user_id: &UserId, target_chat_id: ChatId) -> PPResult<()> {
         let query = match user_id {
             UserId::UserId(_) => {
-                "UPDATE users SET chats = chats + ? WHERE id = ?"
+                "UPDATE ksp.users SET chats = chats + ? WHERE id = ?"
             }
             UserId::Username(_) => {
-                "UPDATE users SET chats = chats + ? WHERE username = ?"
+                "UPDATE ksp.users SET chats = chats + ? WHERE username = ?"
             }
         };
 
@@ -389,13 +389,13 @@ impl UsersDB {
     pub async fn fetch_user(&self, identifier: &UserId) -> PPResult<Option<User>> {
         let statement = match identifier {
             UserId::UserId(user_id) => {
-                let query = "SELECT id, name, photo, username FROM users WHERE id = ?";
+                let query = "SELECT id, name, photo, username FROM ksp.users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(0, *user_id)?;
                 statement
             } 
             UserId::Username(username) => {
-                let query = "SELECT id, name, photo, username FROM users WHERE username = ?";
+                let query = "SELECT id, name, photo, username FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_string(0, &username)?;
                 statement

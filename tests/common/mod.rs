@@ -1,47 +1,58 @@
-use std::{error::Error, io::{self, Read, Write}, net::TcpStream};
-
+use std::{error::Error, io};
+use serde_json::Value;
+use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
 use serde::Serialize;
 
 pub struct TestConnection {
-    stream: TcpStream
+    stream: TcpStream,
 }
 
 impl TestConnection {
-    pub fn new() -> io::Result<Self> {
-        let stream = TcpStream::connect("127.0.0.1:8080")?;
-
+    pub async fn new() -> io::Result<Self> {
+        let stream = TcpStream::connect("127.0.0.1:8080").await?;
         Ok(Self { stream })
     }
 
-    pub fn send_message<T: Serialize>(&mut self, message: &T) -> io::Result<()> {
+    pub async fn send_message<T: Serialize>(&mut self, message: &T) -> io::Result<()> {
         let msg = serde_json::to_string(&message)?;
 
-        let len = msg.len().to_be_bytes();
-        
-        let mut output_vec: Vec<u8> = Vec::with_capacity(msg.len() + len.len());
-        output_vec.extend_from_slice(&len);
-        output_vec.extend_from_slice(&msg.as_bytes());
+        let len = (msg.len() as u32).to_be_bytes();
 
-        self.stream.write_all(&output_vec)?;
+        let mut output_vec: Vec<u8> = Vec::with_capacity(len.len() + msg.len());
+        output_vec.extend_from_slice(&len);
+        output_vec.extend_from_slice(msg.as_bytes());
+
+        self.stream.write_all(&output_vec).await?;
         Ok(())
     }
 
-    pub fn receive_response(&mut self) -> Result<String, Box<dyn Error>> {
-        let mut buffer = [0; 4]; // Message size
-        let n = self.stream.read(&mut buffer)?;
-        assert_eq!(n, 4);
-
-        let expected_size = u32::from_be_bytes(buffer) as usize;
-        assert!(expected_size < 1_000_000_000);
+    pub async fn receive_response(&mut self) -> Result<String, Box<dyn Error>> {
+        let mut size_buffer = [0; 4]; // Buffer to read message size
+        self.stream.read_exact(&mut size_buffer).await?;
         
-        let mut response: Vec<u8> = vec![]; 
+        let expected_size = u32::from_be_bytes(size_buffer) as usize;
+        assert!(expected_size < 1_000_000_000);
 
-        while response.len() <= expected_size {
-            let mut buffer = [0; 65535];
-            let n = self.stream.read(&mut buffer)?;
-            response.extend_from_slice(&buffer[0..n]);
-        }
+        let mut response = vec![0; expected_size];
+        self.stream.read_exact(&mut response).await?;
 
         Ok(String::from_utf8(response)?)
     }
+}
+
+
+pub fn ok(resp: String) -> Result<(), Box<dyn Error>> {
+    let res = serde_json::from_str::<Value>(&resp)?;
+    let ok = res.get("ok").unwrap();
+    assert!(ok.as_bool().unwrap() == true);
+
+    Ok(())
+}
+
+pub fn nok(resp: String) -> Result<(), Box<dyn Error>> {
+    let res = serde_json::from_str::<Value>(&resp)?;
+    let ok = res.get("ok").unwrap();
+    assert!(ok.as_bool().unwrap() == false);
+
+    Ok(())
 }

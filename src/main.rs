@@ -12,8 +12,6 @@ use server::server::Server;
 #[tokio::main]
 async fn main() {
     create_tables().await;
-    info!("Starting server...");
-
     env_logger::init();
     let server = Server::new("0.0.0.0:8080").await;
 

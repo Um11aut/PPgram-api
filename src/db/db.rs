@@ -21,13 +21,12 @@ pub async fn create_tables() {
     let chats_db: ChatsDB = DatabaseBuilder::from(bucket.clone()).into();
 
     bucket.get_connection().execute("
-                    CREATE KEYSPACE IF NOT EXISTS main_keyspace
+                    CREATE KEYSPACE IF NOT EXISTS ksp
                     WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };
                 ",
                 )
                 .await
                 .unwrap();
-    bucket.get_connection().execute("USE main_keyspace;").await.unwrap();
 
     users_db.create_table().await.unwrap();
     messages_db.create_table().await.unwrap();
