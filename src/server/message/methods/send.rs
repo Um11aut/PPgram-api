@@ -27,7 +27,13 @@ async fn handle_send_message(
 
     let users_db: UsersDB = handler.get_db();
 
-    let maybe_chat = users_db.get_associated_chat_id(&self_user_id, &msg.common.to.into()).await?;
+    // Is Positive? Retreive real Chat id by the given User Id
+    let maybe_chat = if msg.common.to.is_positive() {
+        users_db.get_associated_chat_id(&self_user_id, &msg.common.to.into()).await?
+    } else {if handler.get_db::<ChatsDB>().chat_exists(msg.common.to).await?{
+        Some(msg.common.to)
+    } else {return Err("No group found by the given chat id!".into())}};
+
     let associated_chat_id = match maybe_chat {
         Some(existing_chat_id) => {
             existing_chat_id

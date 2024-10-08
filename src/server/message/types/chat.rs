@@ -8,12 +8,12 @@ use super::user::{User, UserId};
 
 pub type ChatId = i32;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ChatDetails {
-    name: String,
+    pub name: String,
     pub chat_id: ChatId,
-    photo: Option<String>,
-    username: String,
+    pub photo: Option<String>,
+    pub username: Option<String>,
 }
 
 impl ChatDetails {
@@ -25,8 +25,8 @@ impl ChatDetails {
         self.photo.as_ref()
     }
 
-    pub fn username(&self) -> &str {
-        &self.username
+    pub fn username(&self) -> Option<&String> {
+        self.username.as_ref()
     }
 }
 
@@ -34,7 +34,8 @@ impl ChatDetails {
 pub struct Chat {
     chat_id: ChatId,
     is_group: bool,
-    participants: Vec<User>
+    participants: Vec<User>,
+    details: Option<ChatDetails>
 }
 
 impl Chat {
@@ -47,11 +48,12 @@ impl Chat {
         }
     }
 
-    pub fn construct(chat_id: i32, is_group: bool, participants: Vec<User>) -> Self {
+    pub fn construct(chat_id: i32, is_group: bool, participants: Vec<User>, details: Option<ChatDetails>) -> Self {
         Self {
             chat_id,
             is_group,
-            participants
+            participants,
+            details
         }
     }
 
@@ -81,14 +83,14 @@ impl Chat {
                         name: peer.name().into(),
                         chat_id: self.chat_id,
                         photo: peer.photo().cloned(),
-                        username: peer.username().to_owned()
+                        username: Some(peer.username().into())
                     }))
                     } else {
                         return Ok(None)
                     }
             }
             true => {
-                Ok(None)
+                Ok(self.details.clone())
             }
         }
     }

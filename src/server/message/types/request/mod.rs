@@ -9,6 +9,7 @@ pub mod check;
 pub mod fetch;
 pub mod edit;
 pub mod delete;
+pub mod new;
 
 #[derive(Serialize, Deserialize)]
 struct BaseWhatRequest {

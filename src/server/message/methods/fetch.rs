@@ -27,7 +27,10 @@ async fn handle_fetch_chats(handler: &Handler) -> PPResult<Vec<ChatDetails>> {
         if let Some(chat) = chat {
             let details = chat.details(&user_id).await?;
             if let Some(mut details) = details {
-                details.chat_id = chat_id;
+                if !chat.is_group() {
+                    // Fake the chat id by the user id
+                    details.chat_id = chat_id;
+                }
                 chats_details.push(details);
             }
         }
@@ -52,11 +55,15 @@ async fn handle_fetch_self(handler: &Handler) -> PPResult<User> {
 }
 
 async fn handle_fetch_messages(handler: &Handler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
-    let maybe_chat_id = {
+    // Groups have negative id
+    let maybe_chat_id = if msg.chat_id.is_positive() {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials().unwrap();
         handler.get_db::<UsersDB>().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
-    }?;
+    } else {match handler.get_db::<ChatsDB>().chat_exists(msg.chat_id).await {
+        Ok(res) => if res {Ok(Some(msg.chat_id))} else {Err("No group found by the given chat id!".into())},
+        Err(err) => Err(err)
+    }}?;
 
     match maybe_chat_id {
         Some(target_chat_id) => {

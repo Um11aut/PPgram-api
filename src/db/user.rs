@@ -100,7 +100,7 @@ impl UsersDB {
             return Err(PPError::from("Username already taken"));
         }
 
-        let user_id = rand::random::<i32>();
+        let user_id: i32 = rand::thread_rng().gen_range(1..i32::MAX);
         let query = r#"
             INSERT INTO users (id, name, username, password_hash, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?)
         "#;

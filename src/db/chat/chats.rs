@@ -3,6 +3,7 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::SetIterator;
+use rand::Rng;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
@@ -12,6 +13,7 @@ use crate::db;
 use crate::db::connection::DatabaseBucket;
 use crate::db::connection::DatabaseBuilder;
 use crate::db::db::Database;
+use crate::db::internal::error::PPResult;
 use crate::db::user::UsersDB;
 use crate::server::message::types::chat::Chat;
 use crate::server::message::types::chat::ChatDetails;
@@ -56,7 +58,7 @@ impl From<DatabaseBucket> for ChatsDB {
 
 impl ChatsDB {
     pub async fn create_private(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
-        let chat_id = rand::random::<i32>();
+        let chat_id = rand::thread_rng().gen_range(i32::MIN..-1);
         let insert_query = "INSERT INTO chats (id, is_group, participants) VALUES (?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
@@ -82,7 +84,7 @@ impl ChatsDB {
     }
 
     pub async fn create_group(&self, participants: Vec<UserId>, details: ChatDetails) -> Result<Chat, PPError> {
-        let chat_id = rand::random::<i32>();
+        let chat_id = rand::thread_rng().gen_range(i32::MIN..-1);
         let insert_query = "INSERT INTO chats (id, is_group, participants, name, avatar_hash, username) VALUES (?, ?, ?, ?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
@@ -103,9 +105,9 @@ impl ChatsDB {
         statement.bind_list(2, list)?;
         statement.bind_string(3, details.name())?;
         statement.bind_string(4, details.photo().map_or("", |v| v))?;
-        statement.bind_string(5, details.username())?;
+        statement.bind_string(5, details.username().map_or("", |v| v))?;
 
-        statement.execute().await.map_err(PPError::from)?;
+        statement.execute().await?;
 
         Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
     }
@@ -131,6 +133,16 @@ impl ChatsDB {
         Ok(())
     }
 
+    pub async fn chat_exists(&self, chat_id: ChatId) -> PPResult<bool> {
+        let query = "SELECT * FROM chats WHERE id = ?";
+
+        let mut statement = self.session.statement(&query);
+        statement.bind_int32(0, chat_id)?;
+        let res = statement.execute().await?;
+
+        Ok(res.first_row().is_some())
+    }
+
     pub async fn fetch_chat(&self, chat_id: ChatId) -> Result<Option<Chat>, PPError> {
         let select_query = "SELECT * FROM chats WHERE id = ?";
 
@@ -154,10 +166,30 @@ impl ChatsDB {
                         }
                     }
 
+                    if is_group {
+                        let name: String = row.get_by_name("name")?;
+                        let avatar_hash: String = row.get_by_name("avatar_hash")?;
+                        let username: String = row.get_by_name("username")?;
+
+                        let details: ChatDetails = ChatDetails {
+                            name,
+                            chat_id,
+                            photo: if !avatar_hash.is_empty(){Some(avatar_hash)}else{None},
+                            username: if !username.is_empty(){Some(username)}else{None}
+                        };
+                        return Ok(Some(Chat::construct(
+                            chat_id,
+                            is_group,
+                            participants,
+                            Some(details)
+                        )))
+                    }
+
                     return Ok(Some(Chat::construct(
                         chat_id,
                         is_group,
-                        participants
+                        participants,
+                        None
                     )))
                 }
                 return Ok(None)
