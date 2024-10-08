@@ -121,6 +121,11 @@ impl Session {
         None
     }
 
+    /// Should be used if authentification was required earlier in the code 
+    pub fn get_credentials_unchecked(&self) -> (UserId, String) {
+        return (self.user_id.unwrap().into(), self.session_id.clone().unwrap())
+    }
+
     pub fn is_authenticated(&self) -> bool {
         self.session_id.is_some() && self.user_id.is_some()
     }

@@ -16,7 +16,7 @@ async fn handle_new_group(
     handler: &Handler,
 ) -> Result<Chat, PPError> {
     let self_user_id: UserId = {
-        handler.session.read().await.get_credentials().unwrap().0.to_owned()
+        handler.session.read().await.get_credentials_unchecked().0.to_owned()
     };
     let group = handler.get_db::<ChatsDB>().create_group(vec![self_user_id], ChatDetails {
         name: msg.name,

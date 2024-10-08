@@ -13,7 +13,7 @@ use crate::{db::{chat::messages::MessagesDB, internal::error::PPResult, user::Us
 async fn handle_edit_message(handler: &mut Handler, msg: EditMessageRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
-        let (user_id, _) = session.get_credentials().unwrap();
+        let (user_id, _) = session.get_credentials_unchecked();
         user_id
     };
 
@@ -59,7 +59,7 @@ async fn handle_edit_message(handler: &mut Handler, msg: EditMessageRequest) -> 
 async fn handle_edit_self(handler: &mut Handler, msg: &EditSelfRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
-        let (user_id, _) = session.get_credentials().unwrap();
+        let (user_id, _) = session.get_credentials_unchecked();
         user_id
     };
 
@@ -97,7 +97,7 @@ async fn on_delete(handler: &mut Handler, content: &String) -> PPResult<DeleteMe
 
     let self_user_id = {
         let session = handler.session.read().await;
-        let (user_id, _) = session.get_credentials().unwrap();
+        let (user_id, _) = session.get_credentials_unchecked();
         user_id
     };
     

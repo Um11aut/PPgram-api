@@ -19,7 +19,7 @@ async fn handle_fetch_chats(handler: &Handler) -> PPResult<Vec<ChatDetails>> {
     let users_db: UsersDB = handler.get_db();
     let chats_db: ChatsDB = handler.get_db();
 
-    let (user_id, _) = handler.session.read().await.get_credentials().unwrap();
+    let (user_id, _) = handler.session.read().await.get_credentials_unchecked();
     let chat_ids = users_db.fetch_chats(&user_id).await?;
     let mut chats_details: Vec<ChatDetails> = vec![];
     for (chat_id, associated_chat_id) in chat_ids {
@@ -50,7 +50,7 @@ async fn fetch_user(
 
 async fn handle_fetch_self(handler: &Handler) -> PPResult<User> {
     // Can unwrap because we have checked the creds earlier
-    let (user_id, _) = handler.session.read().await.get_credentials().unwrap();
+    let (user_id, _) = handler.session.read().await.get_credentials_unchecked();
     fetch_user(&user_id, handler.get_db()).await
 }
 
@@ -58,7 +58,7 @@ async fn handle_fetch_messages(handler: &Handler, msg: FetchMessagesRequest) -> 
     // Groups have negative id
     let maybe_chat_id = if msg.chat_id.is_positive() {
         let session = handler.session.read().await;
-        let (user_id, _) = session.get_credentials().unwrap();
+        let (user_id, _) = session.get_credentials_unchecked();
         handler.get_db::<UsersDB>().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
     } else {match handler.get_db::<ChatsDB>().chat_exists(msg.chat_id).await {
         Ok(res) => if res {Ok(Some(msg.chat_id))} else {Err("No group found by the given chat id!".into())},

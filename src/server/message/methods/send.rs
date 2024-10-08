@@ -17,7 +17,7 @@ async fn handle_send_message(
     handler: &Handler,
 ) -> Result<(MessageId, ChatId), PPError> {
     let session = session.read().await;
-    let (self_user_id, _) = session.get_credentials().unwrap();
+    let (self_user_id, _) = session.get_credentials_unchecked();
     drop(session);
 
     // TODO: sending messages on yourself is "Saved Messages"

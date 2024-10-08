@@ -166,30 +166,24 @@ impl ChatsDB {
                         }
                     }
 
-                    if is_group {
+                    let details = if is_group {
                         let name: String = row.get_by_name("name")?;
                         let avatar_hash: String = row.get_by_name("avatar_hash")?;
                         let username: String = row.get_by_name("username")?;
 
-                        let details: ChatDetails = ChatDetails {
+                        Some(ChatDetails {
                             name,
                             chat_id,
                             photo: if !avatar_hash.is_empty(){Some(avatar_hash)}else{None},
                             username: if !username.is_empty(){Some(username)}else{None}
-                        };
-                        return Ok(Some(Chat::construct(
-                            chat_id,
-                            is_group,
-                            participants,
-                            Some(details)
-                        )))
-                    }
+                        })
+                    } else {None};
 
                     return Ok(Some(Chat::construct(
                         chat_id,
                         is_group,
                         participants,
-                        None
+                        details
                     )))
                 }
                 return Ok(None)
