@@ -11,8 +11,8 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::OnceCell;
 
-use crate::db::connection::DatabaseBucket;
-use crate::db::connection::DatabaseBuilder;
+use crate::db::bucket::DatabaseBucket;
+use crate::db::bucket::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;

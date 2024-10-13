@@ -8,13 +8,13 @@ use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpSt
 use super::message::builder::MessageBuilder;
 
 #[derive(Debug)]
-pub struct Connection {
+pub struct TCPConnection {
     sender: Mutex<mpsc::Sender<Value>>,
     writer: Arc<Mutex<OwnedWriteHalf>>,
     reader: Arc<Mutex<OwnedReadHalf>>,
 }
 
-impl Connection {
+impl TCPConnection {
     pub fn new(socket: TcpStream) -> Self {
         let (reader, writer) = {
             let (r, w) = socket.into_split();

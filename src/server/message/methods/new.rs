@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::{PPError, PPResult}, user::UsersDB}, server::{
         message::{
-            handler::{Handler, SesssionArcRwLock}, types::{chat::{Chat, ChatDetails, ChatId}, request::{extract_what_field, message::{MessageId, MessageRequest}, new::NewGroupRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}, user::UserId}
+            handlers::tcp_handler::TCPHandler, types::{chat::{Chat, ChatDetails, ChatId}, request::{extract_what_field, message::{MessageId, MessageRequest}, new::NewGroupRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}, user::UserId}
         },
         session::Session,
     }};
@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// Returns latest chat message id if sucessful
 async fn handle_new_group(
     msg: NewGroupRequest,
-    handler: &Handler,
+    handler: &TCPHandler,
 ) -> Result<Chat, PPError> {
     let self_user_id: UserId = {
         handler.session.read().await.get_credentials_unchecked().0.to_owned()
@@ -28,7 +28,7 @@ async fn handle_new_group(
     Ok(group)
 }
 
-async fn on_new(handler: &mut Handler) -> PPResult<Chat> {
+async fn on_new(handler: &mut TCPHandler) -> PPResult<Chat> {
     let content = handler.utf8_content_unchecked();
     let what_field = extract_what_field(content)?;
 
@@ -45,7 +45,7 @@ async fn on_new(handler: &mut Handler) -> PPResult<Chat> {
     }
 }
 
-pub async fn handle(handler: &mut Handler, method: &str) {
+pub async fn handle(handler: &mut TCPHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {

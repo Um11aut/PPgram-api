@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB}, server::{
         message::{
-            handler::Handler, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
+            handlers::tcp_handler::TCPHandler, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
         },
         session::Session,
     }};
@@ -14,7 +14,7 @@ use std::sync::Arc;
 async fn handle_send_message(
     session: Arc<RwLock<Session>>,
     msg: MessageRequest,
-    handler: &Handler,
+    handler: &TCPHandler,
 ) -> Result<(MessageId, ChatId), PPError> {
     let session = session.read().await;
     let (self_user_id, _) = session.get_credentials_unchecked();
@@ -79,7 +79,7 @@ async fn handle_send_message(
     Ok((message_id, msg.common.to))
 }
 
-pub async fn handle(handler: &mut Handler, method: &str) {
+pub async fn handle(handler: &mut TCPHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {

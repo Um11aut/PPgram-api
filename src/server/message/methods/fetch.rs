@@ -11,11 +11,11 @@ use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{FetchChatsResponse, FetchMessagesResponse, FetchSelfResponseMessage, FetchUserResponse};
 use crate::server::message::{
-        handler::Handler,
+        handlers::tcp_handler::TCPHandler,
         types::user::{User, UserId},
     };
 
-async fn handle_fetch_chats(handler: &Handler) -> PPResult<Vec<ChatDetails>> {
+async fn handle_fetch_chats(handler: &TCPHandler) -> PPResult<Vec<ChatDetails>> {
     let users_db: UsersDB = handler.get_db();
     let chats_db: ChatsDB = handler.get_db();
 
@@ -48,13 +48,13 @@ async fn fetch_user(
     }
 }
 
-async fn handle_fetch_self(handler: &Handler) -> PPResult<User> {
+async fn handle_fetch_self(handler: &TCPHandler) -> PPResult<User> {
     // Can unwrap because we have checked the creds earlier
     let (user_id, _) = handler.session.read().await.get_credentials_unchecked();
     fetch_user(&user_id, handler.get_db()).await
 }
 
-async fn handle_fetch_messages(handler: &Handler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
+async fn handle_fetch_messages(handler: &TCPHandler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
     // Groups have negative id
     let maybe_chat_id = if msg.chat_id.is_positive() {
         let session = handler.session.read().await;
@@ -76,7 +76,7 @@ async fn handle_fetch_messages(handler: &Handler, msg: FetchMessagesRequest) -> 
     }
 }
 
-async fn on_chats(handler: &Handler) -> PPResult<FetchChatsResponse> {
+async fn on_chats(handler: &TCPHandler) -> PPResult<FetchChatsResponse> {
     let chats = handle_fetch_chats(&handler).await?;
     Ok(FetchChatsResponse {
         ok: true,
@@ -85,7 +85,7 @@ async fn on_chats(handler: &Handler) -> PPResult<FetchChatsResponse> {
     })
 }
 
-async fn on_self(handler: &Handler) -> PPResult<FetchSelfResponseMessage> {
+async fn on_self(handler: &TCPHandler) -> PPResult<FetchSelfResponseMessage> {
     let self_info = handle_fetch_self(&handler).await?;
     Ok(FetchSelfResponseMessage {
         ok: true,
@@ -97,7 +97,7 @@ async fn on_self(handler: &Handler) -> PPResult<FetchSelfResponseMessage> {
     })
 }
 
-async fn on_user(handler: &mut Handler) -> PPResult<FetchUserResponse> {
+async fn on_user(handler: &mut TCPHandler) -> PPResult<FetchUserResponse> {
     let content = handler.utf8_content_unchecked();
     let msg: FetchUserRequest = serde_json::from_str(&content)?;
     
@@ -120,7 +120,7 @@ async fn on_user(handler: &mut Handler) -> PPResult<FetchUserResponse> {
     })
 }
 
-async fn on_messages(handler: &mut Handler) -> PPResult<FetchMessagesResponse> {
+async fn on_messages(handler: &mut TCPHandler) -> PPResult<FetchMessagesResponse> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchMessagesRequest>(&content)?;
     let fetched_msgs = handle_fetch_messages(&handler, msg).await?;
@@ -133,7 +133,7 @@ async fn on_messages(handler: &mut Handler) -> PPResult<FetchMessagesResponse> {
 } 
 
 /// Directly sends raw media
-async fn on_media(handler: &mut Handler) -> PPResult<()> {
+async fn on_media(handler: &mut TCPHandler) -> PPResult<()> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchMediaRequest>(&content)?;
 
@@ -144,7 +144,7 @@ async fn on_media(handler: &mut Handler) -> PPResult<()> {
 } 
 
 /// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
-async fn handle_json_message(handler: &mut Handler) -> PPResult<Option<Value>> {
+async fn handle_json_message(handler: &mut TCPHandler) -> PPResult<Option<Value>> {
     let content = handler.utf8_content_unchecked();
     let what = extract_what_field(&content)?;
 
@@ -173,7 +173,7 @@ async fn handle_json_message(handler: &mut Handler) -> PPResult<Option<Value>> {
     }
 }
 
-pub async fn handle(handler: &mut Handler, method: &str) {
+pub async fn handle(handler: &mut TCPHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {

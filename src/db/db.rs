@@ -4,7 +4,7 @@ use tokio::sync::OnceCell;
 
 use log::error;
 
-use super::{chat::{chats::ChatsDB, messages::MessagesDB}, connection::{DatabaseBuilder, DatabasePool}, internal::error::PPError, user::UsersDB};
+use super::{chat::{chats::ChatsDB, messages::MessagesDB}, bucket::{DatabaseBuilder, DatabasePool}, internal::error::PPError, user::UsersDB};
 
 pub trait Database {
     fn new(session: Arc<cassandra_cpp::Session>) -> Self; 

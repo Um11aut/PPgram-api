@@ -18,8 +18,8 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
-use super::connection::DatabaseBucket;
-use super::connection::DatabaseBuilder;
+use super::bucket::DatabaseBucket;
+use super::bucket::DatabaseBuilder;
 use super::db::Database;
 use super::internal::error::PPError;
 use super::internal::error::PPResult;
@@ -349,8 +349,8 @@ impl UsersDB {
         Ok(None)
     }
 
-    pub async fn add_chat(&self, user_id: &UserId, target_user_id: &UserId, target_chat_id: ChatId) -> PPResult<()> {
-        let query = match user_id {
+    pub async fn add_chat(&self, self_user_id: &UserId, target_user_id: &UserId, target_chat_id: ChatId) -> PPResult<()> {
+        let query = match self_user_id {
             UserId::UserId(_) => {
                 "UPDATE ksp.users SET chats = chats + ? WHERE id = ?"
             }
@@ -372,7 +372,7 @@ impl UsersDB {
 
         statement.bind_map(0, chat_list)?;
     
-        match user_id {
+        match self_user_id {
             UserId::UserId(user_id) => {
                 statement.bind_int32(1, *user_id)?;
             }

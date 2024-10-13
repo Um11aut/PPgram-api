@@ -10,8 +10,8 @@ use tokio::sync::OnceCell;
 use db::internal::error::PPError;
 
 use crate::db;
-use crate::db::connection::DatabaseBucket;
-use crate::db::connection::DatabaseBuilder;
+use crate::db::bucket::DatabaseBucket;
+use crate::db::bucket::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::internal::error::PPResult;
 use crate::db::user::UsersDB;
