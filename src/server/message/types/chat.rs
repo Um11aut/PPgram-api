@@ -12,6 +12,7 @@ pub type ChatId = i32;
 pub struct ChatDetails {
     pub name: String,
     pub chat_id: ChatId,
+    pub is_group: bool,
     pub photo: Option<String>,
     pub username: Option<String>,
 }
@@ -82,6 +83,7 @@ impl Chat {
                     return Ok(Some(ChatDetails{
                         name: peer.name().into(),
                         chat_id: self.chat_id,
+                        is_group: self.is_group,
                         photo: peer.photo().cloned(),
                         username: Some(peer.username().into())
                     }))

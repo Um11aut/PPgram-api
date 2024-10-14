@@ -97,15 +97,17 @@ impl Handler for TCPHandler {
 
 impl TCPHandler {
     pub async fn new(session: Arc<RwLock<Session>>, sessions: Sessions, bucket: DatabaseBucket) -> Self {
-        let session_locked = session.read().await;
-        let current_connection = Arc::clone(&session_locked.connections()[0]);
-        drop(session_locked);
+        let output_connection = {
+            let session_locked = session.read().await;
+            // Assume the first connection is the output connection
+            Arc::clone(&session_locked.connections()[0])
+        };
 
         TCPHandler {
             builder: None,
             session: Arc::clone(&session),
             sessions,
-            output_connection: current_connection,
+            output_connection,
             is_first: true,
             bucket 
         }
