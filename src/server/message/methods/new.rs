@@ -21,6 +21,7 @@ async fn handle_new_group(
     let group = handler.get_db::<ChatsDB>().create_group(vec![self_user_id], ChatDetails {
         name: msg.name,
         chat_id: Default::default(),
+        is_group: true,
         username: msg.username,
         photo: msg.avatar_hash
     }).await?;

@@ -174,6 +174,7 @@ impl ChatsDB {
                         Some(ChatDetails {
                             name,
                             chat_id,
+                            is_group: true,
                             photo: if !avatar_hash.is_empty(){Some(avatar_hash)}else{None},
                             username: if !username.is_empty(){Some(username)}else{None}
                         })
