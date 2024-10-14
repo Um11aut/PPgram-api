@@ -43,7 +43,6 @@ async fn handle_edit_message(handler: &mut TCPHandler, msg: EditMessageRequest) 
             .await?;
         debug!("Edited Message: {:?}", edited_msg);
         handler.send_msg_to_connection_detached(to_user_id, EditMessageEvent{
-            ok: true,
             event: "edit_message".into(),
             new_message: edited_msg
         });
@@ -113,7 +112,6 @@ async fn on_delete(handler: &mut TCPHandler, content: &String) -> PPResult<Delet
     {
         messages_db.delete_message(real_chat_id, msg.message_id).await?;
         handler.send_msg_to_connection_detached(msg.chat_id, DeleteMessageEvent{
-            ok: true,
             event: "delete_message".into(),
             chat_id: msg.chat_id,
             message_id: msg.message_id

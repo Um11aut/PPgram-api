@@ -319,8 +319,8 @@ impl UsersDB {
     /// 
     /// 
     /// This function gets associated private `chat_id` from by the public `user_id`(`chat_id`) key
-    pub async fn get_associated_chat_id(&self, user_id: &UserId, key_user_id: &UserId) -> PPResult<Option<ChatId>> {
-        let mut statement = match user_id {
+    pub async fn get_associated_chat_id(&self, self_user_id: &UserId, key_chat_id: &UserId) -> PPResult<Option<ChatId>> {
+        let mut statement = match self_user_id {
             UserId::UserId(user_id) => {
                 let query = "SELECT chats[?] FROM ksp.users WHERE id = ?";
                 let mut statement = self.session.statement(query);
@@ -334,7 +334,7 @@ impl UsersDB {
                 statement
             }
         };
-        statement.bind_int32(0, key_user_id.as_i32().unwrap())?;
+        statement.bind_int32(0, key_chat_id.as_i32().unwrap())?;
 
         let result = statement.execute().await?;
 
@@ -349,7 +349,12 @@ impl UsersDB {
         Ok(None)
     }
 
-    pub async fn add_chat(&self, self_user_id: &UserId, target_user_id: &UserId, target_chat_id: ChatId) -> PPResult<()> {
+    /// Adds to a `chats` map new `Key, Value`
+    /// 
+    /// Key is public chat id that is relative and visible to the self user
+    /// 
+    /// `private_chat_id` is the real chat id. 
+    pub async fn add_chat(&self, self_user_id: &UserId, public_chat_id: &UserId, private_chat_id: ChatId) -> PPResult<()> {
         let query = match self_user_id {
             UserId::UserId(_) => {
                 "UPDATE ksp.users SET chats = chats + ? WHERE id = ?"
@@ -359,7 +364,7 @@ impl UsersDB {
             }
         };
 
-        if let UserId::Username(_) = target_user_id {
+        if let UserId::Username(_) = public_chat_id {
             return Err(PPError::from("target_user_id must be integer, not string!"))
         }
     
@@ -367,8 +372,8 @@ impl UsersDB {
     
         // Create a list with a single chat_id to append to the chats list
         let mut chat_list = cassandra_cpp::Map::new();
-        chat_list.append_int32(target_user_id.as_i32().unwrap())?;
-        chat_list.append_int32(target_chat_id)?;
+        chat_list.append_int32(public_chat_id.as_i32().unwrap())?;
+        chat_list.append_int32(private_chat_id)?;
 
         statement.bind_map(0, chat_list)?;
     

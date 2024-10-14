@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 
-use crate::db::{chat::chats::ChatsDB, internal::error::PPError};
+use crate::db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}};
 
 use super::user::{User, UserId};
 
@@ -95,5 +95,12 @@ impl Chat {
                 Ok(self.details.clone())
             }
         }
+    }
+
+    /// Get chat details knowing that it is group
+    /// 
+    /// Panics if the chat isn't the group
+    pub fn group_details_unchecked(&self) -> ChatDetails {
+        self.details.clone().unwrap()
     }
 }

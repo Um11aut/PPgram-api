@@ -56,7 +56,6 @@ async fn handle_send_message(
             let mut chat_details = chat_id.details(&msg.common.to.into()).await?.unwrap();
             chat_details.chat_id = self_user_id.as_i32().unwrap();
             handler.send_msg_to_connection_detached(msg.common.to, NewChatEvent {
-                ok: true,
                 event: "new_chat".into(),
                 new_chat: chat_details
             });
@@ -71,7 +70,6 @@ async fn handle_send_message(
     let message_id = db_message.message_id;
 
     handler.send_msg_to_connection_detached(msg.common.to, NewMessageEvent {
-        ok: true,
         event: "new_message".into(),
         new_message: db_message
     });

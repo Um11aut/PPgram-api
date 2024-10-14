@@ -3,7 +3,9 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::SetIterator;
+use rand::distributions::Alphanumeric;
 use rand::Rng;
+use std::fmt::format;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
@@ -25,6 +27,9 @@ pub struct ChatsDB {
     session: Arc<cassandra_cpp::Session>,
 }
 
+// to avoid confusion
+pub type InvitationHash = String;
+
 impl Database for ChatsDB {
     fn new(session: Arc<cassandra_cpp::Session>) -> Self {
         Self {
@@ -40,7 +45,8 @@ impl Database for ChatsDB {
                 participants LIST<int>,
                 name TEXT,
                 avatar_hash TEXT,
-                username TEXT
+                username TEXT,
+                invitation_hash: TEXT
             );
         "#;
 
@@ -58,7 +64,7 @@ impl From<DatabaseBucket> for ChatsDB {
 
 impl ChatsDB {
     pub async fn create_private(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
-        let chat_id = rand::thread_rng().gen_range(i32::MIN..-1);
+        let chat_id = rand::thread_rng().gen_range(1..i32::MIN);
         let insert_query = "INSERT INTO ksp.chats (id, is_group, participants) VALUES (?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
@@ -81,6 +87,73 @@ impl ChatsDB {
         statement.execute().await.map_err(PPError::from)?;
 
         Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
+    }
+
+    /// Creates new unique invitation hash for a group
+    /// 
+    /// e.g. For others to join it
+    pub async fn create_invitation_hash(&self, group_chat_id: i32) -> PPResult<InvitationHash> {
+        let hash: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(9)
+            .map(char::from)
+            .collect();
+        let new_invitation_hash = format!("+{}", hash);
+
+        let update_query = "UPDATE ksp.chats SET invitation_hash = ? WHERE id = ?";
+
+        let mut statement = self.session.statement(update_query);
+        statement.bind_string(0, &new_invitation_hash)?;
+        statement.bind_int32(1, group_chat_id)?;
+    
+        statement.execute().await.map_err(PPError::from)?;
+    
+        Ok(new_invitation_hash)
+    }
+
+    pub async fn get_chat_by_invitation_hash(&self, invitation_hash: InvitationHash) -> PPResult<Option<Chat>> {
+        let select_query = "SELECT * FROM ksp.chats WHERE invitation_hash = ?";
+    
+        let mut statement = self.session.statement(select_query);
+        statement.bind_string(0, &invitation_hash)?;
+    
+        match statement.execute().await {
+            Ok(result) => {
+                if let Some(row) = result.first_row() {
+                    let chat_id: i32 = row.get_by_name("id")?;
+                    let is_group: bool = row.get_by_name("is_group")?;
+    
+                    let mut iter: SetIterator = row.get_by_name("participants")?;
+                    let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
+                    
+                    let mut participants: Vec<User> = vec![];
+                    while let Some(participant) = iter.next() {
+                        let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;
+                        if let Some(user) = user {
+                            participants.push(user)
+                        }
+                    }
+    
+                    let details = if is_group {
+                        let name: String = row.get_by_name("name")?;
+                        let avatar_hash: String = row.get_by_name("avatar_hash")?;
+                        let username: String = row.get_by_name("username")?;
+    
+                        Some(ChatDetails {
+                            name,
+                            chat_id,
+                            is_group: true,
+                            photo: if !avatar_hash.is_empty(){Some(avatar_hash)}else{None},
+                            username: if !username.is_empty(){Some(username)}else{None}
+                        })
+                    } else {None};
+    
+                    return Ok(Some(Chat::construct(chat_id, is_group, participants, details)));
+                }
+                Ok(None)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     pub async fn create_group(&self, participants: Vec<UserId>, details: ChatDetails) -> Result<Chat, PPError> {
@@ -112,14 +185,14 @@ impl ChatsDB {
         Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
     }
 
-    pub async fn add_participant(&self, chat_id: ChatId, participant: UserId) -> Result<(), PPError> {
+    pub async fn add_participant(&self, chat_id: ChatId, participant: &UserId) -> Result<(), PPError> {
         let update_query = "UPDATE ksp.chats SET participants = participants + ? WHERE id = ?;";
         
         let mut statement = self.session.statement(update_query);
         let mut list = cassandra_cpp::List::new();
         match participant {
             UserId::UserId(user_id) => {
-                list.append_int32(user_id)?;
+                list.append_int32(*user_id)?;
             }
             UserId::Username(_) => {
                 return Err(PPError::from("UserId must be integer!"))
