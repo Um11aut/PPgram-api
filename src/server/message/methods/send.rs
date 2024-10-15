@@ -26,6 +26,7 @@ async fn handle_send_message(
     }
 
     let users_db: UsersDB = handler.get_db();
+    let chats_db: ChatsDB = handler.get_db();
 
     // Is Positive? Retreive real Chat id by the given User Id
     let maybe_chat = if msg.common.to.is_positive() {
@@ -34,9 +35,9 @@ async fn handle_send_message(
         Some(msg.common.to)
     } else {return Err("No group found by the given chat id!".into())}};
 
-    let associated_chat_id = match maybe_chat {
+    let associated_chat = match maybe_chat {
         Some(existing_chat_id) => {
-            existing_chat_id
+            chats_db.fetch_chat(existing_chat_id).await?.ok_or(PPError::from("Failed to find Chat!"))
         }, 
         // Create chat id if doesn't exist
         None => {
@@ -46,33 +47,42 @@ async fn handle_send_message(
                 return Err(PPError::from("Target user_id doesn't exist!"));
             }
 
-            let chat_id = handler.get_db::<ChatsDB>()
+            let chat = handler.get_db::<ChatsDB>()
                 .create_private(vec![self_user_id.clone(), msg.common.to.into()])
                 .await
                 .unwrap();
-            users_db.add_chat(&self_user_id, msg.common.to, chat_id.chat_id()).await.unwrap();
-            users_db.add_chat(&msg.common.to.into(), self_user_id.as_i32_unchecked(), chat_id.chat_id()).await.unwrap();
+            users_db.add_chat(&self_user_id, msg.common.to, chat.chat_id()).await.unwrap();
+            users_db.add_chat(&msg.common.to.into(), self_user_id.as_i32_unchecked(), chat.chat_id()).await.unwrap();
 
-            let mut chat_details = chat_id.details(&msg.common.to.into()).await?.unwrap();
+            let mut chat_details = chat.details(&msg.common.to.into()).await?.unwrap();
             chat_details.chat_id = self_user_id.as_i32().unwrap();
             handler.send_msg_to_connection_detached(msg.common.to, NewChatEvent {
                 event: "new_chat".into(),
                 new_chat: chat_details
             });
 
-            chat_id.chat_id()
+            Ok(chat)
         }
-    };
+    }?;
     
     let messages_db: MessagesDB = handler.get_db();
-    let mut db_message = messages_db.add_message(&msg, &self_user_id, associated_chat_id).await?;
-    db_message.chat_id = msg.common.to;
+    let mut db_message = messages_db.add_message(&msg, &self_user_id, associated_chat.chat_id()).await?;
+    if !associated_chat.is_group() {
+        db_message.chat_id = msg.common.to;
+    }
     let message_id = db_message.message_id;
 
-    handler.send_msg_to_connection_detached(msg.common.to, NewMessageEvent {
-        event: "new_message".into(),
-        new_message: db_message
-    });
+    // Send every user in chat notification
+    for participant in associated_chat.participants() {
+        // Don't send it on yourself
+        if participant.user_id() == self_user_id.as_i32_unchecked() {continue;} 
+
+        handler.send_msg_to_connection_detached(msg.common.to, NewMessageEvent {
+            event: "new_message".into(),
+            new_message: db_message.clone()
+        });
+    }
+    
 
     Ok((message_id, msg.common.to))
 }
