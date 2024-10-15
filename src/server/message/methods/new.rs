@@ -45,10 +45,11 @@ async fn handle_new_group(msg: NewGroupRequest, handler: &TCPHandler) -> PPResul
             .0
             .to_owned()
     };
-    let group = handler
-        .get_db::<ChatsDB>()
-        .create_group(
-            vec![self_user_id],
+
+    let chats_db = handler.get_db::<ChatsDB>();
+    let group = 
+        chats_db.create_group(
+            vec![self_user_id.clone()],
             ChatDetails {
                 name: msg.name,
                 chat_id: Default::default(),
@@ -58,6 +59,7 @@ async fn handle_new_group(msg: NewGroupRequest, handler: &TCPHandler) -> PPResul
             },
         )
         .await?;
+    handler.get_db::<UsersDB>().add_chat(&self_user_id, group.chat_id(), group.chat_id()).await?;
 
     Ok(group)
 }

@@ -7,7 +7,6 @@ pub struct NewGroupRequest {
     pub name: String, // SomeName123
     pub avatar_hash: Option<String>,
     pub username: Option<String>,
-    pub participants: Vec<i32>
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -19,7 +19,7 @@ async fn on_join_group(msg: JoinGroupRequest, handler: &mut TCPHandler) -> PPRes
 
     match chat {
         Some(chat) => {
-            users_db.add_chat(&self_user_id, &chat.chat_id().into(), chat.chat_id()).await?;
+            users_db.add_chat(&self_user_id, chat.chat_id(), chat.chat_id()).await?;
             chats_db.add_participant(chat.chat_id(), &self_user_id).await?;
             // Send event that new participant joined
             let self_info = users_db.fetch_user(&self_user_id).await?.unwrap();

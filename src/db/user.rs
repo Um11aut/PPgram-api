@@ -354,7 +354,7 @@ impl UsersDB {
     /// Key is public chat id that is relative and visible to the self user
     /// 
     /// `private_chat_id` is the real chat id. 
-    pub async fn add_chat(&self, self_user_id: &UserId, public_chat_id: &UserId, private_chat_id: ChatId) -> PPResult<()> {
+    pub async fn add_chat(&self, self_user_id: &UserId, public_chat_id: ChatId, private_chat_id: ChatId) -> PPResult<()> {
         let query = match self_user_id {
             UserId::UserId(_) => {
                 "UPDATE ksp.users SET chats = chats + ? WHERE id = ?"
@@ -363,16 +363,12 @@ impl UsersDB {
                 "UPDATE ksp.users SET chats = chats + ? WHERE username = ?"
             }
         };
-
-        if let UserId::Username(_) = public_chat_id {
-            return Err(PPError::from("target_user_id must be integer, not string!"))
-        }
     
         let mut statement = self.session.statement(query);
     
         // Create a list with a single chat_id to append to the chats list
         let mut chat_list = cassandra_cpp::Map::new();
-        chat_list.append_int32(public_chat_id.as_i32().unwrap())?;
+        chat_list.append_int32(public_chat_id)?;
         chat_list.append_int32(private_chat_id)?;
 
         statement.bind_map(0, chat_list)?;

@@ -50,8 +50,8 @@ async fn handle_send_message(
                 .create_private(vec![self_user_id.clone(), msg.common.to.into()])
                 .await
                 .unwrap();
-            users_db.add_chat(&self_user_id, &msg.common.to.into(), chat_id.chat_id()).await.unwrap();
-            users_db.add_chat(&msg.common.to.into(), &self_user_id, chat_id.chat_id()).await.unwrap();
+            users_db.add_chat(&self_user_id, msg.common.to, chat_id.chat_id()).await.unwrap();
+            users_db.add_chat(&msg.common.to.into(), self_user_id.as_i32_unchecked(), chat_id.chat_id()).await.unwrap();
 
             let mut chat_details = chat_id.details(&msg.common.to.into()).await?.unwrap();
             chat_details.chat_id = self_user_id.as_i32().unwrap();

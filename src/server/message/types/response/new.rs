@@ -13,5 +13,5 @@ pub struct NewGroupResponse {
 pub struct NewInvitationLinkResponse {
     pub ok: bool, // true
     pub method: String, // new_invitation_link
-    pub link: String // pp.me/+SDJvnd
+    pub link: String // +SDJvnd
 }

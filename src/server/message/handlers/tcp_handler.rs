@@ -13,7 +13,7 @@ use crate::db::internal::error::PPError;
 use crate::fs::media::add_media;
 use crate::server::connection::TCPConnection;
 use crate::server::message::builder::MessageBuilder;
-use crate::server::message::methods::{auth, send, edit, fetch, check, bind};
+use crate::server::message::methods::{auth, bind, check, edit, fetch, join, new, send};
 use crate::server::message::Handler;
 use crate::server::server::Sessions;
 use crate::server::session::Session;
@@ -198,6 +198,8 @@ impl TCPHandler {
                             "fetch" => fetch::handle(self, method).await,
                             "check" => check::handle(self, method).await,
                             "bind" => bind::handle(self, method).await,
+                            "new" => new::handle(self, method).await,
+                            "join" => join::handle(self, method).await,
                             _ => self.send_error(method, "Unknown method given!".into()).await
                         }
                     },  

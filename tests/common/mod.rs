@@ -9,7 +9,7 @@ pub struct TestConnection {
 
 impl TestConnection {
     pub async fn new() -> io::Result<Self> {
-        let stream = TcpStream::connect("127.0.0.1:8080").await?;
+        let stream = TcpStream::connect("127.0.0.1:3000").await?;
         Ok(Self { stream })
     }
 

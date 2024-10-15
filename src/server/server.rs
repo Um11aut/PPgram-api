@@ -110,7 +110,7 @@ impl Server {
             });
 
             scope.spawn(async {
-                Self::poll_udt_events().await;
+                Self::poll_quic_events().await;
             });
         }).await;
     }
@@ -136,7 +136,7 @@ impl Server {
         }
     }
 
-    async fn poll_udt_events() {
+    async fn poll_quic_events() {
         
     }
 }

@@ -46,7 +46,7 @@ impl Database for ChatsDB {
                 name TEXT,
                 avatar_hash TEXT,
                 username TEXT,
-                invitation_hash: TEXT
+                invitation_hash TEXT
             );
         "#;
 
