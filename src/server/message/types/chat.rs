@@ -2,18 +2,19 @@
 use serde::{Deserialize, Serialize};
 
 
-use crate::db::{chat::chats::ChatsDB, internal::error::PPError};
+use crate::db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}};
 
 use super::user::{User, UserId};
 
 pub type ChatId = i32;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ChatDetails {
-    name: String,
+    pub name: String,
     pub chat_id: ChatId,
-    photo: Option<String>,
-    username: String,
+    pub is_group: bool,
+    pub photo: Option<String>,
+    pub username: Option<String>,
 }
 
 impl ChatDetails {
@@ -25,8 +26,8 @@ impl ChatDetails {
         self.photo.as_ref()
     }
 
-    pub fn username(&self) -> &str {
-        &self.username
+    pub fn username(&self) -> Option<&String> {
+        self.username.as_ref()
     }
 }
 
@@ -34,7 +35,8 @@ impl ChatDetails {
 pub struct Chat {
     chat_id: ChatId,
     is_group: bool,
-    participants: Vec<User>
+    participants: Vec<User>,
+    details: Option<ChatDetails>
 }
 
 impl Chat {
@@ -47,11 +49,12 @@ impl Chat {
         }
     }
 
-    pub fn construct(chat_id: i32, is_group: bool, participants: Vec<User>) -> Self {
+    pub fn construct(chat_id: i32, is_group: bool, participants: Vec<User>, details: Option<ChatDetails>) -> Self {
         Self {
             chat_id,
             is_group,
-            participants
+            participants,
+            details
         }
     }
 
@@ -74,22 +77,30 @@ impl Chat {
     /// If the chat is group, info must be present, it will fetch the chat info.
     pub async fn details(&self, relative_to: &UserId) -> Result<Option<ChatDetails>, PPError> {
         match self.is_group {
-            // if not is_group, just take the account of other participant
+            // if not is_group, just take the user info of other participant
             false => {
                 if let Some(peer) = self.participants.iter().find(|&participant| participant.user_id() != relative_to.as_i32().unwrap()) {
                     return Ok(Some(ChatDetails{
                         name: peer.name().into(),
                         chat_id: self.chat_id,
+                        is_group: self.is_group,
                         photo: peer.photo().cloned(),
-                        username: peer.username().to_owned()
+                        username: Some(peer.username().into())
                     }))
                     } else {
                         return Ok(None)
                     }
             }
             true => {
-                Ok(None)
+                Ok(self.details.clone())
             }
         }
+    }
+
+    /// Get chat details knowing that it is group
+    /// 
+    /// Panics if the chat isn't the group
+    pub fn group_details_unchecked(&self) -> ChatDetails {
+        self.details.clone().unwrap()
     }
 }

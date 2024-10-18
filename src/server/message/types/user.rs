@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 use crate::db::{internal::error::PPError, user::UsersDB};
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct User {
     name: String,
     user_id: i32,

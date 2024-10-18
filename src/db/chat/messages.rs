@@ -11,8 +11,8 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::OnceCell;
 
-use crate::db::connection::DatabaseBucket;
-use crate::db::connection::DatabaseBuilder;
+use crate::db::bucket::DatabaseBucket;
+use crate::db::bucket::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;
@@ -35,7 +35,7 @@ impl Database for MessagesDB {
 
     async fn create_table(&self) -> Result<(), PPError> {
         let create_table_query = r#"
-            CREATE TABLE IF NOT EXISTS messages (
+            CREATE TABLE IF NOT EXISTS ksp.messages (
                 id int, 
                 is_unread boolean,
                 from_id int,
@@ -74,7 +74,7 @@ impl MessagesDB {
         target_chat_id: ChatId,
     ) -> Result<Message, PPError> {
         let insert_query = r#"
-            INSERT INTO messages 
+            INSERT INTO ksp.messages 
                 (id, is_unread, from_id, chat_id, date, has_reply,
                 reply_to, has_content, content, 
                 has_media, media_hashes, media_names)
@@ -148,7 +148,7 @@ impl MessagesDB {
     }
 
     pub async fn get_latest(&self, chat_id: ChatId) -> Result<Option<MessageId>, PPError> {
-        let query = "SELECT id FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1";
+        let query = "SELECT id FROM ksp.messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1";
 
         let mut statement = self.session.statement(&query);
         statement.bind_int32(0, chat_id)?;
@@ -168,7 +168,7 @@ impl MessagesDB {
         chat_id: ChatId,
         message_id: MessageId,
     ) -> Result<bool, PPError> {
-        let query = "SELECT id FROM messages WHERE chat_id = ? AND id = ? LIMIT 1";
+        let query = "SELECT id FROM ksp.messages WHERE chat_id = ? AND id = ? LIMIT 1";
 
         let mut statement = self.session.statement(query);
         statement.bind_int32(0, chat_id)?;
@@ -204,7 +204,7 @@ impl MessagesDB {
         let statement = if end != 0 {
             let query = r#"
                 SELECT * 
-                    FROM messages 
+                    FROM ksp.messages 
                     WHERE chat_id = ? AND id >= ? AND id <= ? 
             "#;
             let mut statement = self.session.statement(query);
@@ -215,7 +215,7 @@ impl MessagesDB {
         } else {
             let query = r#"
                 SELECT * 
-                    FROM messages 
+                    FROM ksp.messages 
                     WHERE chat_id = ? AND id = ?;
             "#;
             let mut statement = self.session.statement(query);
@@ -268,7 +268,7 @@ impl MessagesDB {
         new_message: Message
     ) -> PPResult<()> {
         let update_query = r#"
-            UPDATE messages 
+            UPDATE ksp.messages 
             SET is_unread = ?, 
                 has_content = ?, 
                 content = ?, 
@@ -301,7 +301,7 @@ impl MessagesDB {
 
     pub async fn delete_message(&self, chat_id: ChatId, message_id: i32) -> PPResult<()> {
         let delete_query = r#"
-            DELETE FROM messages 
+            DELETE FROM ksp.messages 
             WHERE chat_id = ? AND id = ?
         "#;
     

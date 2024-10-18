@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use log::debug;
 
-use crate::server::message::{handler::Handler, types::{request::bind::BindRequest, response::bind::BindReponse}};
+use crate::server::message::{handlers::tcp_handler::TCPHandler, types::{request::bind::BindRequest, response::bind::BindReponse}};
 
-pub async fn handle(handler: &mut Handler, method: &str) {
+pub async fn handle(handler: &mut TCPHandler, method: &str) {
     let content = handler.utf8_content_unchecked();
     match serde_json::from_str::<BindRequest>(&content) {
         Ok(message) => {
@@ -19,8 +19,8 @@ pub async fn handle(handler: &mut Handler, method: &str) {
                 if bind_session.session_id().unwrap() == &message.session_id {
                     {
                         let mut self_session = handler.session.write().await;
-                        self_session.remove_connection(Arc::clone(&handler.connection));
-                        bind_session.add_connection(Arc::clone(&handler.connection));
+                        self_session.remove_connection(Arc::clone(&handler.output_connection));
+                        bind_session.add_connection(Arc::clone(&handler.output_connection));
                     }
                     handler.session = Arc::clone(&bind_session_arc);
                     debug!("Binding to session: {}", bind_session.session_id().unwrap());

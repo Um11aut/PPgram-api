@@ -1,13 +1,12 @@
 use std::{future::Future, sync::Arc};
 
 use crate::{
-    db::{internal::error::PPError, user::UsersDB},
+    db::{internal::error::{PPError, PPResult}, user::UsersDB},
     server::{
         message::{
-            handler::Handler,
-            types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}},
+            handlers::tcp_handler::TCPHandler, types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}, user::User}
         },
-        session::Session,
+        session::{AuthComponent, Session},
     },
 };
 
@@ -16,17 +15,16 @@ async fn handle_auth_message<'a, T, F, Fut>(
     buffer: &str,
     session: &'a mut Session,
     users_db: UsersDB,
-    handler: F,
+    from_func: F,
 ) -> Result<(), PPError>
 where
     T: serde::de::DeserializeOwned,
-    F: FnOnce(&'a mut Session, UsersDB, T) -> Fut + Send + 'a,
-    Fut: Future<Output = Result<(), PPError>> + Send,
+    F: FnOnce(UsersDB, T) -> Fut + Send + 'a,
+    Fut: Future<Output = PPResult<AuthComponent>> + Send,
 {
     match serde_json::from_str::<T>(buffer) {
-        Ok(auth_message) => match handler(session, users_db, auth_message).await {
-            Ok(()) => {}
-            Err(err) => return Err(err),
+        Ok(auth_message) => {
+            Session::authenticate(session, from_func(users_db, auth_message).await?);
         },
         Err(err) => return Err(err.into()),
     }
@@ -34,7 +32,7 @@ where
     Ok(())
 }
 
-pub async fn handle(handler: &mut Handler, method: &str) {
+pub async fn handle(handler: &mut TCPHandler, method: &str) {
     let buffer = handler.utf8_content_unchecked().clone();
 
     {
@@ -55,21 +53,21 @@ pub async fn handle(handler: &mut Handler, method: &str) {
                     buffer.as_str(),
                     &mut session,
                     users_db,
-                    Session::login,
+                    AuthComponent::from_login,
                 )
                 .await,
             "auth" =>  handle_auth_message::<AuthRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
                     users_db,
-                    Session::auth,
+                    AuthComponent::from_auth,
                 )
                 .await,
             "register" => handle_auth_message::<RegisterRequest, _, _>(
                     buffer.as_str(),
                     &mut session,
                     users_db,
-                    Session::register,
+                    AuthComponent::from_register,
                 )
                 .await,
             _ => Err("Invalid method provided!".into()),

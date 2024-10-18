@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB}, server::{
         message::{
-            handler::Handler, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
+            handlers::tcp_handler::TCPHandler, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
         },
         session::Session,
     }};
@@ -14,10 +14,10 @@ use std::sync::Arc;
 async fn handle_send_message(
     session: Arc<RwLock<Session>>,
     msg: MessageRequest,
-    handler: &Handler,
+    handler: &TCPHandler,
 ) -> Result<(MessageId, ChatId), PPError> {
     let session = session.read().await;
-    let (self_user_id, _) = session.get_credentials().unwrap();
+    let (self_user_id, _) = session.get_credentials_unchecked();
     drop(session);
 
     // TODO: sending messages on yourself is "Saved Messages"
@@ -26,11 +26,18 @@ async fn handle_send_message(
     }
 
     let users_db: UsersDB = handler.get_db();
+    let chats_db: ChatsDB = handler.get_db();
 
-    let maybe_chat = users_db.get_associated_chat_id(&self_user_id, &msg.common.to.into()).await?;
-    let associated_chat_id = match maybe_chat {
+    // Is Positive? Retreive real Chat id by the given User Id
+    let maybe_chat = if msg.common.to.is_positive() {
+        users_db.get_associated_chat_id(&self_user_id, &msg.common.to.into()).await?
+    } else {if handler.get_db::<ChatsDB>().chat_exists(msg.common.to).await?{
+        Some(msg.common.to)
+    } else {return Err("No group found by the given chat id!".into())}};
+
+    let associated_chat = match maybe_chat {
         Some(existing_chat_id) => {
-            existing_chat_id
+            chats_db.fetch_chat(existing_chat_id).await?.ok_or(PPError::from("Failed to find Chat!"))
         }, 
         // Create chat id if doesn't exist
         None => {
@@ -40,40 +47,47 @@ async fn handle_send_message(
                 return Err(PPError::from("Target user_id doesn't exist!"));
             }
 
-            let chat_id = handler.get_db::<ChatsDB>()
-                .create_chat(vec![self_user_id.clone(), msg.common.to.into()])
+            let chat = handler.get_db::<ChatsDB>()
+                .create_private(vec![self_user_id.clone(), msg.common.to.into()])
                 .await
                 .unwrap();
-            users_db.add_chat(&self_user_id, &msg.common.to.into(), chat_id.chat_id()).await.unwrap();
-            users_db.add_chat(&msg.common.to.into(), &self_user_id, chat_id.chat_id()).await.unwrap();
+            users_db.add_chat(&self_user_id, msg.common.to, chat.chat_id()).await.unwrap();
+            users_db.add_chat(&msg.common.to.into(), self_user_id.as_i32_unchecked(), chat.chat_id()).await.unwrap();
 
-            let mut chat_details = chat_id.details(&msg.common.to.into()).await?.unwrap();
+            let mut chat_details = chat.details(&msg.common.to.into()).await?.unwrap();
             chat_details.chat_id = self_user_id.as_i32().unwrap();
             handler.send_msg_to_connection_detached(msg.common.to, NewChatEvent {
-                ok: true,
                 event: "new_chat".into(),
                 new_chat: chat_details
             });
 
-            chat_id.chat_id()
+            Ok(chat)
         }
-    };
+    }?;
     
     let messages_db: MessagesDB = handler.get_db();
-    let mut db_message = messages_db.add_message(&msg, &self_user_id, associated_chat_id).await?;
-    db_message.chat_id = msg.common.to;
+    let mut db_message = messages_db.add_message(&msg, &self_user_id, associated_chat.chat_id()).await?;
+    if !associated_chat.is_group() {
+        db_message.chat_id = msg.common.to;
+    }
     let message_id = db_message.message_id;
 
-    handler.send_msg_to_connection_detached(msg.common.to, NewMessageEvent {
-        ok: true,
-        event: "new_message".into(),
-        new_message: db_message
-    });
+    // Send every user in chat notification
+    for participant in associated_chat.participants() {
+        // Don't send it on yourself
+        if participant.user_id() == self_user_id.as_i32_unchecked() {continue;} 
+
+        handler.send_msg_to_connection_detached(msg.common.to, NewMessageEvent {
+            event: "new_message".into(),
+            new_message: db_message.clone()
+        });
+    }
+    
 
     Ok((message_id, msg.common.to))
 }
 
-pub async fn handle(handler: &mut Handler, method: &str) {
+pub async fn handle(handler: &mut TCPHandler, method: &str) {
     {
         let session = handler.session.read().await;
         if !session.is_authenticated() {

@@ -6,3 +6,5 @@ pub mod events;
 pub mod auth;
 pub mod edit;
 pub mod delete;
+pub mod join;
+pub mod new;
