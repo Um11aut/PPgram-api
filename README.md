@@ -8,7 +8,7 @@ $ cargo run --release
 ```
 Wait until the database is fully started.
 
-The server is accessible via tcp for simple message by the adress `0.0.0.0:3000`. And via QUIC `0.0.0.0:8000` 
+The server is accessible via tcp for basic messages by the adress `0.0.0.0:3000`. And via QUIC for files `0.0.0.0:8000` 
 
 ## Basics
 ### Protocol
