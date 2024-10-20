@@ -1,4 +1,4 @@
-use std::{error::Error, io};
+use std::{error::Error, fmt::format, io};
 use serde_json::Value;
 use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
 use serde::Serialize;
@@ -55,4 +55,17 @@ pub fn nok(resp: String) -> Result<(), Box<dyn Error>> {
     assert!(ok.as_bool().unwrap() == false);
 
     Ok(())
+}
+
+use rand::{distributions::Alphanumeric, seq::SliceRandom, Rng};
+use rand::distributions::Uniform;
+
+pub fn gen_random_username() -> String {
+    // Define the character set: lowercase, uppercase, and underscore
+    let allowed_chars: Vec<char> = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_".chars().collect();
+    let mut rng = rand::thread_rng();
+    let username: String = (0..10)
+        .map(|_| *allowed_chars.choose(&mut rng).unwrap()) // Randomly select from the allowed characters
+        .collect();
+    format!("@{}", username)
 }

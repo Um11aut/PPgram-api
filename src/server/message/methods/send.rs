@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB}, server::{
         message::{
-            handlers::tcp_handler::TCPHandler, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
+            handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
         },
         session::Session,
     }};
@@ -30,7 +30,7 @@ async fn handle_send_message(
 
     // Is Positive? Retreive real Chat id by the given User Id
     let maybe_chat = if msg.common.to.is_positive() {
-        users_db.get_associated_chat_id(&self_user_id, &msg.common.to.into()).await?
+        users_db.get_associated_chat_id(&self_user_id, msg.common.to).await?
     } else {if handler.get_db::<ChatsDB>().chat_exists(msg.common.to).await?{
         Some(msg.common.to)
     } else {return Err("No group found by the given chat id!".into())}};
@@ -88,13 +88,7 @@ async fn handle_send_message(
 }
 
 pub async fn handle(handler: &mut TCPHandler, method: &str) {
-    {
-        let session = handler.session.read().await;
-        if !session.is_authenticated() {
-            handler.send_error(method, "You aren't authenticated!".into()).await;
-            return;
-        }
-    }
+    auth_macros::require_auth!(handler, method);
 
     let content = handler.utf8_content_unchecked();
     match serde_json::from_str::<MessageRequest>(&content) {

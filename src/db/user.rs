@@ -319,7 +319,7 @@ impl UsersDB {
     /// 
     /// 
     /// This function gets associated private `chat_id` from by the public `user_id`(`chat_id`) key
-    pub async fn get_associated_chat_id(&self, self_user_id: &UserId, key_chat_id: &UserId) -> PPResult<Option<ChatId>> {
+    pub async fn get_associated_chat_id(&self, self_user_id: &UserId, key_chat_id: ChatId) -> PPResult<Option<ChatId>> {
         let mut statement = match self_user_id {
             UserId::UserId(user_id) => {
                 let query = "SELECT chats[?] FROM ksp.users WHERE id = ?";
@@ -334,7 +334,7 @@ impl UsersDB {
                 statement
             }
         };
-        statement.bind_int32(0, key_chat_id.as_i32().unwrap())?;
+        statement.bind_int32(0, key_chat_id)?;
 
         let result = statement.execute().await?;
 

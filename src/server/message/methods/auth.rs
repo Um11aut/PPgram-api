@@ -94,3 +94,4 @@ pub async fn handle(handler: &mut TCPHandler, method: &str) {
         handler.send_message(&data).await;
     };
 }
+

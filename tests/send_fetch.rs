@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use common::{nok, ok, TestConnection};
+use common::{gen_random_username, nok, ok, TestConnection};
 use log::info;
 use serde_json::{json, Value};
 
@@ -13,7 +13,7 @@ async fn send_message() -> Result<(), Box<dyn Error>> {
     c.send_message(&json!({
         "method": "register",
         "name": "a",
-        "username": "@msg_receiver",
+        "username": gen_random_username(),
         "password": "pwd"
     })).await?;
     let r = c.receive_response().await?;
@@ -27,7 +27,7 @@ async fn send_message() -> Result<(), Box<dyn Error>> {
     c.send_message(&json!({
         "method": "register",
         "name": "a",
-        "username": "@msg_sender",
+        "username": gen_random_username(),
         "password": "pwd"
     })).await?;
     ok(c.receive_response().await?)?;
@@ -48,7 +48,7 @@ async fn send_message() -> Result<(), Box<dyn Error>> {
     let mut c = TestConnection::new().await?;
     c.send_message(&json!({
         "method": "login",
-        "username": "@msg_receiver",
+        "username": gen_random_username(),
         "password": "pwd"
     })).await?;
     ok(c.receive_response().await?)?;

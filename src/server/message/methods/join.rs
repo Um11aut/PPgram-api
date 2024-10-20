@@ -1,6 +1,11 @@
-use crate::{db::{chat::chats::ChatsDB, internal::error::PPResult, user::UsersDB}, server::message::{handlers::tcp_handler::TCPHandler, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
+use crate::{db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}, user::UsersDB}, server::message::{handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
 
-async fn on_join_group(msg: JoinGroupRequest, handler: &mut TCPHandler) -> PPResult<()> {
+enum JoinGroupResult {
+    JoinGroupResponse(JoinGroupResponse),
+    JoinLinkNotFoundResponse(JoinLinkNotFoundResponse)
+}
+
+async fn on_join_group(msg: JoinGroupRequest, handler: &mut TCPHandler) -> PPResult<JoinGroupResult> {
     let self_user_id: UserId = {
         handler
             .session
@@ -19,11 +24,15 @@ async fn on_join_group(msg: JoinGroupRequest, handler: &mut TCPHandler) -> PPRes
 
     match chat {
         Some(chat) => {
+            if users_db.get_associated_chat_id(&self_user_id, chat.chat_id()).await?.is_some() {
+                return Err(PPError::from("You have already joined this chat!"))
+            }
             users_db.add_chat(&self_user_id, chat.chat_id(), chat.chat_id()).await?;
             chats_db.add_participant(chat.chat_id(), &self_user_id).await?;
-            // Send event that new participant joined
             let self_info = users_db.fetch_user(&self_user_id).await?.unwrap();
-
+            
+            // Send event to every user in the chat 
+            // that new participant joined
             for other in chat.participants() {
                 let self_info = self_info.clone();
                 let chat_id = chat.chat_id().clone();
@@ -35,34 +44,39 @@ async fn on_join_group(msg: JoinGroupRequest, handler: &mut TCPHandler) -> PPRes
                 });
             }
 
-            handler.send_message(&JoinGroupResponse{
+            Ok(JoinGroupResult::JoinGroupResponse(JoinGroupResponse{
                 ok: true,
                 method: "join_group".into(),
                 chat: chat.group_details_unchecked()
-            }).await;
+            }))
         }
         None => {
-            handler.send_message(&JoinLinkNotFoundResponse{
+            Ok(JoinGroupResult::JoinLinkNotFoundResponse(JoinLinkNotFoundResponse{
                 ok: true,
                 method: "join_invitation_link".into(),
                 code: 404
-            }).await;
+            }))
         }
     }
+}
 
-    Ok(())
+async fn on_join(handler: &mut TCPHandler) -> PPResult<JoinGroupResult> {
+    match serde_json::from_str::<JoinGroupRequest>(&handler.utf8_content_unchecked()) {
+        Ok(msg) => {
+            Ok(on_join_group(msg, handler).await?)
+        },
+        Err(err) => Err(PPError::from(err))
+    }
 }
 
 pub async fn handle(handler: &mut TCPHandler, method: &str) {
-    {
-        let session = handler.session.read().await;
-        if !session.is_authenticated() {
-            handler
-                .send_error(method, "You aren't authenticated!".into())
-                .await;
-            return;
-        }
-    }
+    auth_macros::require_auth!(handler, method);
 
-    
+    match on_join(handler).await {
+        Ok(msg) => match msg {
+            JoinGroupResult::JoinGroupResponse(msg) => handler.send_message(&msg).await,
+            JoinGroupResult::JoinLinkNotFoundResponse(msg) => handler.send_message(&msg).await,
+        },
+        Err(err) => {handler.send_error(method, err.into()).await}
+    }
 }

@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use common::{nok, ok, TestConnection};
+use common::{gen_random_username, nok, ok, TestConnection};
 use log::info;
 use serde_json::{json, Value};
 
@@ -13,7 +13,7 @@ async fn join() -> Result<(), Box<dyn Error>> {
     c.send_message(&json!({
         "method": "register",
         "name": "a",
-        "username": "@vcgvsdfddf",
+        "username": gen_random_username(),
         "password": "pwd"
     })).await?;
     let r = c.receive_response().await?;
@@ -46,10 +46,10 @@ async fn join() -> Result<(), Box<dyn Error>> {
     m.send_message(&json!({
         "method": "register",
         "name": "a",
-        "username": "@sdsdsd",
+        "username": gen_random_username(),
         "password": "pwd"
     })).await?;
-    let r = c.receive_response().await?;
+    let r = m.receive_response().await?;
     println!("{}", r);
     ok(r.clone())?;
 
@@ -57,9 +57,17 @@ async fn join() -> Result<(), Box<dyn Error>> {
         "method": "join",
         "link": link
     })).await?;
-    let r = c.receive_response().await?;
+    let r = m.receive_response().await?;
     println!("{}", r);
     ok(r.clone())?;
+
+    m.send_message(&json!({
+        "method": "join",
+        "link": link
+    })).await?;
+    let r = m.receive_response().await?;
+    println!("{}", r);
+    nok(r.clone())?;
 
     Ok(())
 }

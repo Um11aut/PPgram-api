@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use common::{nok, ok, TestConnection};
+use common::{gen_random_username, nok, ok, TestConnection};
 use log::info;
 use serde_json::{json, Value};
 
@@ -113,7 +113,7 @@ async fn auth() -> Result<(), Box<dyn Error>> {
 
     con.send_message(&json!({
         "method": "register",
-        "username": "@aaa",
+        "username": gen_random_username(),
         "name": "I am gay",
         "password": "asd"
     })).await?;

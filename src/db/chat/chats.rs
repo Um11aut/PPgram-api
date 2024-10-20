@@ -51,6 +51,7 @@ impl Database for ChatsDB {
         "#;
 
         self.session.execute(create_table_query).await?;
+        self.session.execute("CREATE INDEX IF NOT EXISTS chats_invitation_hash_idx ON ksp.chats (invitation_hash)").await?;
     
         Ok(())
     }
@@ -95,7 +96,7 @@ impl ChatsDB {
     pub async fn create_invitation_hash(&self, group_chat_id: i32) -> PPResult<InvitationHash> {
         let hash: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
-            .take(9)
+            .take(14)
             .map(char::from)
             .collect();
         let new_invitation_hash = format!("+{}", hash);
