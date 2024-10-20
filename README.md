@@ -8,7 +8,7 @@ $ cargo run --release
 ```
 Wait until the database is fully started.
 
-The server is accessible via tcp by the adress `127.0.0.1:8080`. 
+The server is accessible via tcp for simple message by the adress `0.0.0.0:3000`. And via QUIC `0.0.0.0:8000` 
 
 ## Basics
 ### Protocol
@@ -16,9 +16,9 @@ PPgram-api doesn't use any extern TCP Protocol. The messages transmitting is ver
 
 Simple examle:
 
-| Byte index   |      | 0  | 1  | 2  | 3  | ... |
-|---------|------|----|----|----|----|----------|
-| Value |      | 0  | 0  | 0  | 255| [content] |
+| Byte index   | 0  | 1  | 2  | 3  | ... |
+|---------|----|----|----|----|----------|
+| Value | 0  | 0  | 0  | 255| [content with length of 255] |
 
 
 ## Usage
