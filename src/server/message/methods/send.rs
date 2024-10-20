@@ -1,10 +1,10 @@
-use log::debug;
+use log::{debug, info};
 use serde_json::json;
 use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB}, server::{
         message::{
-            handlers::tcp_handler::TCPHandler, types::{chat::ChatId, request::message::{MessageId, MessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
+            handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{chat::ChatId, request::send::{MessageId, SendMessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
         },
         session::Session,
     }};
@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// Returns latest chat message id if sucessful
 async fn handle_send_message(
     session: Arc<RwLock<Session>>,
-    msg: MessageRequest,
+    msg: SendMessageRequest,
     handler: &TCPHandler,
 ) -> Result<(MessageId, ChatId), PPError> {
     let session = session.read().await;
@@ -30,7 +30,7 @@ async fn handle_send_message(
 
     // Is Positive? Retreive real Chat id by the given User Id
     let maybe_chat = if msg.common.to.is_positive() {
-        users_db.get_associated_chat_id(&self_user_id, &msg.common.to.into()).await?
+        users_db.get_associated_chat_id(&self_user_id, msg.common.to).await?
     } else {if handler.get_db::<ChatsDB>().chat_exists(msg.common.to).await?{
         Some(msg.common.to)
     } else {return Err("No group found by the given chat id!".into())}};
@@ -49,8 +49,7 @@ async fn handle_send_message(
 
             let chat = handler.get_db::<ChatsDB>()
                 .create_private(vec![self_user_id.clone(), msg.common.to.into()])
-                .await
-                .unwrap();
+                .await?;
             users_db.add_chat(&self_user_id, msg.common.to, chat.chat_id()).await.unwrap();
             users_db.add_chat(&msg.common.to.into(), self_user_id.as_i32_unchecked(), chat.chat_id()).await.unwrap();
 
@@ -88,16 +87,10 @@ async fn handle_send_message(
 }
 
 pub async fn handle(handler: &mut TCPHandler, method: &str) {
-    {
-        let session = handler.session.read().await;
-        if !session.is_authenticated() {
-            handler.send_error(method, "You aren't authenticated!".into()).await;
-            return;
-        }
-    }
+    auth_macros::require_auth!(handler, method);
 
     let content = handler.utf8_content_unchecked();
-    match serde_json::from_str::<MessageRequest>(&content) {
+    match serde_json::from_str::<SendMessageRequest>(&content) {
         Ok(msg) => match msg.common.method.as_str() {
             "send_message" => {
                 match handle_send_message(Arc::clone(&handler.session), msg, &handler).await {

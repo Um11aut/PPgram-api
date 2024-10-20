@@ -58,6 +58,14 @@ async fn send_message() -> Result<(), Box<dyn Error>> {
     })).await?;
     ok(c.receive_response().await?)?;
 
-    
+    c.send_message(&json!({
+        "method": "fetch",
+        "what": "users",
+        "query": "@msg"
+    })).await?;
+    let resp = c.receive_response().await?;
+    println!("{}", resp);
+    ok(resp)?;
+
     Ok(())
 }

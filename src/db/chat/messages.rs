@@ -19,7 +19,7 @@ use crate::db::internal::error::PPResult;
 use crate::db::internal::validate::validate_range;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::message::Message;
-use crate::server::message::types::request::message::*;
+use crate::server::message::types::request::send::*;
 use crate::server::message::types::user::UserId;
 
 pub struct MessagesDB {
@@ -69,7 +69,7 @@ impl From<DatabaseBuilder> for MessagesDB {
 impl MessagesDB {
     pub async fn add_message(
         &self,
-        msg: &MessageRequest,
+        msg: &SendMessageRequest,
         sender_id: &UserId,
         target_chat_id: ChatId,
     ) -> Result<Message, PPError> {

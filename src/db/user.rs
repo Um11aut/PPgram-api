@@ -59,8 +59,19 @@ impl Database for UsersDB {
             CREATE INDEX IF NOT EXISTS username_idx ON ksp.users (username)
         "#;
 
+        let create_custom_index_query = r#"
+            CREATE CUSTOM INDEX IF NOT EXISTS username_sasi_idx ON ksp.users (username)
+            USING 'org.apache.cassandra.index.sasi.SASIIndex'
+            WITH OPTIONS = {
+                'mode': 'CONTAINS',
+                'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.NonTokenizingAnalyzer',
+                'case_sensitive': 'false'
+            };
+        "#;
+
         self.session.execute(create_table_query).await?;
         self.session.execute(create_index_query).await?;
+        self.session.execute(create_custom_index_query).await?;
 
         Ok(())
     }
@@ -120,6 +131,28 @@ impl UsersDB {
             Ok(session_id) => Ok((user_id, session_id)),
             Err(err) => Err(err),
         }
+    }
+
+    pub async fn fetch_users_by_search_query(&self, query: impl Into<Cow<'static, str>>) -> PPResult<Vec<User>> {
+        let search_query: String = format!("{}%", query.into().to_string());
+        let cassandra_query = "SELECT * FROM ksp.users WHERE username LIKE ?;";
+        let mut statement = self.session.statement(cassandra_query);
+        statement.bind_string(0, &search_query)?;
+
+        let result = statement.execute().await?;
+        
+        let mut o = vec![];
+        let mut iter = result.iter();
+        while let Some(row) = iter.next() {
+            let username: String = row.get_by_name("username")?;
+            let user_id: i32 = row.get_by_name("id")?;
+            let photo: String = row.get_by_name("photo")?;
+            let name: String = row.get_by_name("name")?;
+
+            o.push(User::construct(name, user_id, username, if photo.is_empty() {None} else {Some(photo)}));
+        }
+
+        Ok(o)
     }
 
     pub async fn login(
@@ -319,7 +352,7 @@ impl UsersDB {
     /// 
     /// 
     /// This function gets associated private `chat_id` from by the public `user_id`(`chat_id`) key
-    pub async fn get_associated_chat_id(&self, self_user_id: &UserId, key_chat_id: &UserId) -> PPResult<Option<ChatId>> {
+    pub async fn get_associated_chat_id(&self, self_user_id: &UserId, key_chat_id: ChatId) -> PPResult<Option<ChatId>> {
         let mut statement = match self_user_id {
             UserId::UserId(user_id) => {
                 let query = "SELECT chats[?] FROM ksp.users WHERE id = ?";
@@ -334,7 +367,7 @@ impl UsersDB {
                 statement
             }
         };
-        statement.bind_int32(0, key_chat_id.as_i32().unwrap())?;
+        statement.bind_int32(0, key_chat_id)?;
 
         let result = statement.execute().await?;
 

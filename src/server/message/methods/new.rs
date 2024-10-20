@@ -13,13 +13,10 @@ use crate::{
     },
     server::{
         message::{
-            handlers::tcp_handler::TCPHandler,
-            types::{
+            handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{
                 chat::{Chat, ChatDetails, ChatId},
                 request::{
-                    extract_what_field,
-                    message::{MessageId, MessageRequest},
-                    new::{NewGroupRequest, NewInvitationLinkRequest},
+                    extract_what_field, new::{NewGroupRequest, NewInvitationLinkRequest}, send::{MessageId, SendMessageRequest}
                 },
                 response::{
                     events::{NewChatEvent, NewMessageEvent},
@@ -27,7 +24,7 @@ use crate::{
                     send::SendMessageResponse,
                 },
                 user::UserId,
-            },
+            }
         },
         session::Session,
     },
@@ -81,7 +78,7 @@ async fn handle_new_invitation_link(
     let users_db: UsersDB = handler.get_db();
     if msg.chat_id
         != users_db
-            .get_associated_chat_id(&self_user_id, &msg.chat_id.into())
+            .get_associated_chat_id(&self_user_id, msg.chat_id)
             .await?
             .ok_or(PPError::from("No group with the given chat_id was found!"))?
     {
@@ -135,15 +132,7 @@ async fn on_new(handler: &mut TCPHandler) -> PPResult<()> {
 }
 
 pub async fn handle(handler: &mut TCPHandler, method: &str) {
-    {
-        let session = handler.session.read().await;
-        if !session.is_authenticated() {
-            handler
-                .send_error(method, "You aren't authenticated!".into())
-                .await;
-            return;
-        }
-    }
+    auth_macros::require_auth!(handler, method);
 
     if let Err(err) = on_new(handler).await {
         handler.send_error(method, err).await

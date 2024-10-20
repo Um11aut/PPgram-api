@@ -51,6 +51,7 @@ impl Database for ChatsDB {
         "#;
 
         self.session.execute(create_table_query).await?;
+        self.session.execute("CREATE INDEX IF NOT EXISTS chats_invitation_hash_idx ON ksp.chats (invitation_hash)").await?;
     
         Ok(())
     }
@@ -64,7 +65,7 @@ impl From<DatabaseBucket> for ChatsDB {
 
 impl ChatsDB {
     pub async fn create_private(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
-        let chat_id = rand::thread_rng().gen_range(1..i32::MIN);
+        let chat_id = rand::thread_rng().gen_range(1..i32::MAX);
         let insert_query = "INSERT INTO ksp.chats (id, is_group, participants) VALUES (?, ?, ?)";
 
         let mut statement = self.session.statement(insert_query);
@@ -84,9 +85,9 @@ impl ChatsDB {
         }
         statement.bind_list(2, list)?;
 
-        statement.execute().await.map_err(PPError::from)?;
+        statement.execute().await?;
 
-        Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
+        Ok(self.fetch_chat(chat_id).await?.unwrap())
     }
 
     /// Creates new unique invitation hash for a group
@@ -95,7 +96,7 @@ impl ChatsDB {
     pub async fn create_invitation_hash(&self, group_chat_id: i32) -> PPResult<InvitationHash> {
         let hash: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
-            .take(9)
+            .take(14)
             .map(char::from)
             .collect();
         let new_invitation_hash = format!("+{}", hash);

@@ -28,3 +28,11 @@ pub struct FetchMediaRequest {
     pub what: String,
     pub media_hash: String
 }
+
+/// Fetches users using indirect search by part of the username
+#[derive(Deserialize, Serialize)]
+pub struct FetchUsersRequest {
+    pub method: String, // fetch
+    pub what: String, // users
+    pub query: String // @pep or pep or whatever
+}

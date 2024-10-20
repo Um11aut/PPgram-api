@@ -41,7 +41,7 @@ pub enum MessageContent {
 
 /// a struct to represent the complete message
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MessageRequest {
+pub struct SendMessageRequest {
     #[serde(flatten)]
     pub common: CommonFields,
     pub content: MessageContent,

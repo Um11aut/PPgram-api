@@ -14,6 +14,7 @@ services:
       CASSANDRA_START_RPC: 'true'
     volumes:
       - cassandra_data:/var/lib/cassandra
+      - ./conf/cassandra.yaml:/etc/cassandra/cassandra.yaml
 
   rust-app:
     build:

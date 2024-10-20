@@ -1,5 +1,6 @@
 use super::{message::Message, request::edit::EditMessageRequest};
 
+/// Helper struct to build what exactly user wants to change
 pub struct EditedMessageBuilder {
     pub is_unread: Option<bool>,
     pub reply_to: Option<i32>,

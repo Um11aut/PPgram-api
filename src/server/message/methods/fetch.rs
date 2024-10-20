@@ -6,10 +6,11 @@ use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
 use crate::fs::media::get_media;
+use crate::server::message::methods::auth_macros;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
-use crate::server::message::types::response::fetch::{FetchChatsResponse, FetchMessagesResponse, FetchSelfResponseMessage, FetchUserResponse};
+use crate::server::message::types::response::fetch::{FetchChatsResponse, FetchMessagesResponse, FetchSelfResponseMessage, FetchUserResponse, FetchUsersResponse};
 use crate::server::message::{
         handlers::tcp_handler::TCPHandler,
         types::user::{User, UserId},
@@ -38,6 +39,22 @@ async fn handle_fetch_chats(handler: &TCPHandler) -> PPResult<Vec<ChatDetails>> 
     Ok(chats_details)
 }
 
+/// Fetches Users by the given search query
+async fn on_users(handler: &mut TCPHandler) -> PPResult<FetchUsersResponse> {
+    let content = handler.utf8_content_unchecked();
+    let msg = serde_json::from_str::<FetchUsersRequest>(&content)?;
+    let query = msg.query;
+
+    let users_db: UsersDB = handler.get_db();
+    let search_result = users_db.fetch_users_by_search_query(query).await?;
+
+    Ok(FetchUsersResponse{
+        ok: true,
+        method: "fetch_users".into(),
+        users: search_result
+    })
+}
+
 async fn fetch_user(
     identifier: &UserId,
     db: UsersDB
@@ -59,7 +76,7 @@ async fn handle_fetch_messages(handler: &TCPHandler, msg: FetchMessagesRequest) 
     let maybe_chat_id = if msg.chat_id.is_positive() {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials_unchecked();
-        handler.get_db::<UsersDB>().get_associated_chat_id(&user_id, &msg.chat_id.into()).await
+        handler.get_db::<UsersDB>().get_associated_chat_id(&user_id, msg.chat_id).await
     } else {match handler.get_db::<ChatsDB>().chat_exists(msg.chat_id).await {
         Ok(res) => if res {Ok(Some(msg.chat_id))} else {Err("No group found by the given chat id!".into())},
         Err(err) => Err(err)
@@ -169,18 +186,16 @@ async fn handle_json_message(handler: &mut TCPHandler) -> PPResult<Option<Value>
             Ok(()) => Ok(None),
             Err(err) => Err(err)
         }
+        "users" => match on_users(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
+            Ok(v) => Ok(Some(v)),
+            Err(err) => Err(err)
+        }
         _ => return Err(PPError::from("Unknown 'what' field provided!"))
     }
 }
 
 pub async fn handle(handler: &mut TCPHandler, method: &str) {
-    {
-        let session = handler.session.read().await;
-        if !session.is_authenticated() {
-            handler.send_error(method, "You aren't authenticated!".into()).await;
-            return;
-        }
-    }
+    auth_macros::require_auth!(handler, method);
 
     match handle_json_message(handler).await {
         Ok(message) => if let Some(msg) = message {handler.send_message(&msg).await},

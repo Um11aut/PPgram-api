@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::internal::error::PPResult;
 
 pub mod auth;
-pub mod message;
+pub mod send;
 pub mod bind;
 pub mod check;
 pub mod fetch;

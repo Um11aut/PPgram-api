@@ -49,7 +49,7 @@ async fn join() -> Result<(), Box<dyn Error>> {
         "username": "@sdsdsd",
         "password": "pwd"
     })).await?;
-    let r = c.receive_response().await?;
+    let r = m.receive_response().await?;
     println!("{}", r);
     ok(r.clone())?;
 
@@ -57,7 +57,7 @@ async fn join() -> Result<(), Box<dyn Error>> {
         "method": "join",
         "link": link
     })).await?;
-    let r = c.receive_response().await?;
+    let r = m.receive_response().await?;
     println!("{}", r);
     ok(r.clone())?;
 

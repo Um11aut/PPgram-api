@@ -9,6 +9,8 @@ use crate::{db::{chat::messages::MessagesDB, internal::error::PPResult, user::Us
             }
         }};
 
+use super::auth_macros;
+
 async fn handle_edit_message(handler: &mut TCPHandler, msg: EditMessageRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
@@ -20,7 +22,7 @@ async fn handle_edit_message(handler: &mut TCPHandler, msg: EditMessageRequest) 
     let messages_db: MessagesDB = handler.get_db();
 
     let real_chat_id = users_db
-        .get_associated_chat_id(&self_user_id, &msg.chat_id.into())
+        .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?
         .ok_or("Chat with the given chat_id doesn't exist!")?;
     if messages_db
@@ -103,7 +105,7 @@ async fn on_delete(handler: &mut TCPHandler, content: &String) -> PPResult<Delet
     let messages_db: MessagesDB = handler.get_db();
 
     let real_chat_id = users_db
-        .get_associated_chat_id(&self_user_id, &msg.chat_id.into())
+        .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?
         .ok_or("Chat with the given chat_id doesn't exist!")?;
     if messages_db
@@ -136,15 +138,7 @@ async fn handle_messages(handler: &mut TCPHandler, method: &str) -> PPResult<Val
 }
 
 pub async fn handle(handler: &mut TCPHandler, method: &str) {
-    {
-        let session = handler.session.read().await;
-        if !session.is_authenticated() {
-            handler
-                .send_error(method, "You aren't authenticated!".into())
-                .await;
-            return;
-        }
-    }
+    auth_macros::require_auth!(handler, method);
 
     match handle_messages(handler, method).await {
         Ok(val) => {
