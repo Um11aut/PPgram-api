@@ -27,7 +27,7 @@ impl MessageBuilder {
         }
     }
 
-    pub fn build_from_vec(message: &[u8]) -> Self {
+    pub fn build_from_slice(message: &[u8]) -> Self {
         let size = message.len() as u32;
 
         Self {

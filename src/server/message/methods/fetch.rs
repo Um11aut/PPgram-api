@@ -5,7 +5,6 @@ use crate::db::chat::chats::ChatsDB;
 use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
-use crate::fs::media::get_media;
 use crate::server::message::methods::auth_macros;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::message::Message;
@@ -149,16 +148,6 @@ async fn on_messages(handler: &mut TCPHandler) -> PPResult<FetchMessagesResponse
     })
 } 
 
-/// Directly sends raw media
-async fn on_media(handler: &mut TCPHandler) -> PPResult<()> {
-    let content = handler.utf8_content_unchecked();
-    let msg = serde_json::from_str::<FetchMediaRequest>(&content)?;
-
-    let maybe_media = get_media(&msg.media_hash).await?;
-    handler.send_raw(&maybe_media).await;
-
-    Ok(())
-} 
 
 /// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
 async fn handle_json_message(handler: &mut TCPHandler) -> PPResult<Option<Value>> {
@@ -180,10 +169,6 @@ async fn handle_json_message(handler: &mut TCPHandler) -> PPResult<Option<Value>
         }
         "messages" => match on_messages(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
             Ok(v) => Ok(Some(v)),
-            Err(err) => Err(err)
-        }
-        "media" => match on_media(handler).await {
-            Ok(()) => Ok(None),
             Err(err) => Err(err)
         }
         "users" => match on_users(handler).await.map(|v| serde_json::to_value(v).unwrap()) {

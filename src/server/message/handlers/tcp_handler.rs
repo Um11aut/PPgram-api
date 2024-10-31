@@ -10,7 +10,6 @@ use tokio::sync::{Mutex, RwLock};
 use crate::db::bucket::{DatabaseBucket, DatabaseBuilder};
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
-use crate::fs::media::add_media;
 use crate::server::connection::TCPConnection;
 use crate::server::message::builder::MessageBuilder;
 use crate::server::message::methods::{auth, bind, check, edit, fetch, join, new, send};
@@ -135,14 +134,14 @@ impl TCPHandler {
             let data = Arc::clone(&data);
             info!("Sending media back: {}", data.len());
             async move {
-                connection.write(&MessageBuilder::build_from_vec(&data).packed()).await
+                connection.write(&MessageBuilder::build_from_slice(&data).packed()).await
             }
         });
     }
 
     /// Instead of json, sends raw buffer directly to the connection
     pub async fn send_raw(&self, data: &[u8]) {
-        self.output_connection.write(&MessageBuilder::build_from_vec(&data).packed()).await;
+        self.output_connection.write(&MessageBuilder::build_from_slice(&data).packed()).await;
     }
 
     pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {

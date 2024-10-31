@@ -1,104 +1,124 @@
-use core::error;
-use std::borrow::Cow;
-use std::cell::OnceCell;
-use std::fmt::format;
-use std::io::ErrorKind;
-use std::path::PathBuf;
+use std::{borrow::Cow, path::{Path, PathBuf}};
 
-use log::{info, error};
-use tokio::fs as filesystem;
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use log::{info, warn};
+use rand::{distributions::Alphanumeric, Rng};
+use tokio::{fs::{File, OpenOptions}, io::AsyncWriteExt};
 
-use crate::db::internal::error::PPError;
+use crate::db::internal::error::{PPError, PPResult};
 
-use super::hasher::BinaryHasher;
+use super::{hasher::BinaryHasher, FileUploader, FS_BASE};
 
-fn get_target_media_dir(sha256_encoded_hash: &String) -> Result<PathBuf, PPError> {
-    let path = std::env::current_dir().map_err(|err| PPError::from(err.to_string()))?;
-    Ok(path.join(sha256_encoded_hash))
+pub enum MediaVideoType {
+    Mp4,
+    Mov,
+    WebM,
+    FLV
 }
 
-async fn put_media(media_name: &String, sha256_encoded_hash: &String, binary: &Vec<u8>) -> Result<(), PPError> {
-    let mut path = get_target_media_dir(sha256_encoded_hash)?;
+pub enum MediaPhotoType {
+    Jpeg,
+    JPG,
+    PNG,
+    Heic,
+}
 
-    match filesystem::create_dir(&path).await {
-        Ok(_) => {
-            path = path.join(media_name);
-            let maybe_file = filesystem::File::create(path).await;
+pub enum MediaType {
+    MediaVideoType(MediaVideoType),
+    MediaPhotoType(MediaPhotoType)
+}
 
-            match maybe_file {
-                Ok(mut file) => {
-                    file.write_all(&binary).await.unwrap();
-                }
-                Err(err) => {
-                    info!("{}", err);
-                    return Err(PPError::from("This file already exists!"));
-                }
-            }
-        }
-        Err(err) => {
-            if err.kind() == ErrorKind::AlreadyExists {
-                info!("This media: {} already exists!", path.display());
-                return Err(PPError::from("This media already exists!"));
-            }
-            error!("{}", err);
-            return Err(PPError::from("Internal Filesystem error."))
+impl TryFrom<String> for MediaType {
+    type Error = PPError;
+
+    fn try_from(file_name: String) -> Result<Self, Self::Error> {
+        let file_name = file_name.to_lowercase();
+        let fmt = file_name.rsplit('.').next().ok_or(PPError::from("name must contain the file type!"))?;
+
+        match fmt {
+            "mp4" => Ok(Self::MediaVideoType(MediaVideoType::Mp4)),
+            "mov" => Ok(Self::MediaVideoType(MediaVideoType::Mov)),
+            "webm" => Ok(Self::MediaVideoType(MediaVideoType::WebM)),
+            "flv" => Ok(Self::MediaVideoType(MediaVideoType::FLV)),
+            "jpeg" => Ok(Self::MediaPhotoType(MediaPhotoType::Jpeg)),
+            "jpg" => Ok(Self::MediaPhotoType(MediaPhotoType::JPG)),
+            "png" => Ok(Self::MediaPhotoType(MediaPhotoType::PNG)),
+            "heic" => Ok(Self::MediaPhotoType(MediaPhotoType::Heic)),
+            _ => Err(PPError::from("Media type not supported!"))
         }
     }
-
-    Ok(())
 }
 
-pub async fn media_exists(binary: &Vec<u8>) -> Result<bool, PPError> {
-    let mut hasher = BinaryHasher::new();
-    hasher.hash_part(&binary);
-    let sha256_encoded_hash = hasher.finalize();
-
-    let exists = filesystem::try_exists(get_target_media_dir(&sha256_encoded_hash)?).await.map_err(|err| {
-        error!("{}", err);
-        PPError::from(err.to_string())
-    })?;
-
-    Ok(exists)
+/// Struct for framed uploading of media
+/// 
+/// Uploads a binary frame to a random temp_file in TEMPDIR, while generating a SHA256 hash
+/// 
+/// Then taking that hash and putting it into according Folder that is named after the hash
+pub struct MediaUploader {
+    hasher: BinaryHasher,
+    temp_file: File,
+    temp_file_path: PathBuf,
+    doc_name: String
 }
 
-pub async fn media_hash_exists(media_hash: &String) -> Result<bool, PPError> {
-    let exists = filesystem::try_exists(get_target_media_dir(&media_hash)?).await.map_err(|err| {
-        error!("{}", err);
-        PPError::from(err.to_string())
-    })?;
+impl MediaUploader {
+    pub async fn new(document_name: impl Into<Cow<'static, str>>) -> PPResult<MediaUploader> {
+        let document_name = document_name.into().to_string();
 
-    Ok(exists)
+        // TODO: Dependending on the media type create compression support
+        let media_type = MediaType::try_from(document_name.clone())?;
+
+        // Generating a random temp file where all the framed binary will be put
+        let temp_file: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(15)
+            .map(char::from)
+            .collect();
+        let temp_path = std::env::temp_dir().join(temp_file).canonicalize()?;
+        info!("Creating new temp file for media uploading: {}", temp_path.display());
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .append(true)
+            .open(&temp_path)
+            .await?;
+
+        Ok(MediaUploader {
+            hasher: BinaryHasher::new(),
+            temp_file: file,
+            temp_file_path: temp_path,
+            doc_name: document_name
+        })
+    }
 }
 
-pub async fn get_media(media_hash: &String) -> Result<Vec<u8>, PPError> {
-    let path = get_target_media_dir(media_hash)?;
+#[async_trait::async_trait]
+impl FileUploader for MediaUploader {
+    async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
+        self.temp_file.write_all(&part).await?;
+        self.hasher.hash_part(&part);
 
-    if !media_hash_exists(media_hash).await? {
-        return Err(PPError::from("Media with the given hash doesn't exist"));
+        Ok(())
     }
 
-    let mut file = filesystem::File::open(path.join("file")).await.map_err(|err| {
-        error!("{}", err);
-        PPError::from("Internal Filesystem error.")
-    })?;
+    async fn finalize(self: Box<Self>) {
+        let buf = PathBuf::from(FS_BASE);
+        if !buf.exists() {
+            tokio::fs::create_dir(buf.canonicalize().unwrap()).await.unwrap();
+        }
 
-    let mut file_data: Vec<u8> = vec![];
-    file.read_to_end(&mut file_data).await.map_err(|err| {
-        error!("{}", err);
-        PPError::from("Internal Filesystem error.")
-    })?;
+        // Getting full sha256 hash
+        let sha256_hash = self.hasher.finalize();
+        let target_doc_directory = buf.join(&sha256_hash);
 
-    Ok(file_data)
-}
+        // If document already exists, delete the temporary file.
+        if target_doc_directory.exists() {
+            warn!("The media hash {} already exists... Deleting temporary file. Path: {}", sha256_hash, self.temp_file_path.display());
+            tokio::fs::remove_file(self.temp_file_path).await.unwrap();
+            return;
+        }
 
-// Pass in encoded base64 binary.
-pub async fn add_media(binary: &Vec<u8>) -> Result<String, PPError> {
-    let mut hasher = BinaryHasher::new();
-    hasher.hash_part(&binary);
-    let sha256_encoded_hash = hasher.finalize();
-
-    put_media(&"file".into(), &sha256_encoded_hash, binary).await?;
-
-    Ok(sha256_encoded_hash)
+        tokio::fs::create_dir(&target_doc_directory).await.unwrap();
+        tokio::fs::rename(self.temp_file_path, target_doc_directory.join(self.doc_name)).await.unwrap();
+    }
 }

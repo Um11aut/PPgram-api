@@ -1,6 +1,7 @@
-use std::{borrow::Cow, fmt::{self}};
+use std::{borrow::Cow, error::Error, fmt::{self}};
 
 use log::error;
+use quinn::crypto::rustls::NoInitialCipherSuite;
 use serde_json::json;
 
 use crate::server::{connection::TCPConnection, message::builder::MessageBuilder};
@@ -93,6 +94,18 @@ impl PPError {
             }
         };
         send_str_as_err(method, err, output_connection).await;
+    }
+}
+
+impl From<quinn::rustls::Error> for PPError {
+    fn from(err: quinn::rustls::Error) -> Self {
+        Self::Server(err.into())
+    }
+}
+
+impl From<NoInitialCipherSuite> for PPError {
+    fn from(err: NoInitialCipherSuite) -> Self {
+        Self::Server(Box::new(err))
     }
 }
 

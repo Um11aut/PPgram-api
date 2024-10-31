@@ -8,7 +8,7 @@ use crate::db::internal::error::PPResult;
 
 use super::{hasher::BinaryHasher, FileUploader, FS_BASE};
 
-/// Struct for framed uploading of files
+/// Struct for framed uploading of documents
 /// 
 /// Uploads a binary frame to a random temp_file in TEMPDIR, while generating a SHA256 hash
 /// 
@@ -49,14 +49,14 @@ impl DocumentUploader {
 
 #[async_trait::async_trait]
 impl FileUploader for DocumentUploader {
-    async fn upload_part(&mut self, part: Vec<u8>) -> PPResult<()> {
+    async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
         self.temp_file.write_all(&part).await?;
         self.hasher.hash_part(&part);
 
         Ok(())
     }
 
-    async fn finalize(self) {
+    async fn finalize(self: Box<Self>) {
         let buf = PathBuf::from(FS_BASE);
         if !buf.exists() {
             tokio::fs::create_dir(buf.canonicalize().unwrap()).await.unwrap();
@@ -69,11 +69,11 @@ impl FileUploader for DocumentUploader {
         // If document already exists, delete the temporary file.
         if target_doc_directory.exists() {
             warn!("The media hash {} already exists... Deleting temporary file. Path: {}", sha256_hash, self.temp_file_path.display());
-            tokio::fs::remove_file(self.temp_file_path).await.unwrap();
+            tokio::fs::remove_file(&self.temp_file_path).await.unwrap();
             return;
         }
 
         tokio::fs::create_dir(&target_doc_directory).await.unwrap();
-        tokio::fs::rename(self.temp_file_path, target_doc_directory.join(self.doc_name)).await.unwrap();
+        tokio::fs::rename(&self.temp_file_path, target_doc_directory.join(&self.doc_name)).await.unwrap();
     }
 }

@@ -26,11 +26,11 @@ services:
     networks: 
       - cassandra 
     ports:
-      - "8080:8080"
-      - "3000:3000"
-    expose:
-      - 8080
-      - 3000
+      - target: 8080
+        published: 8080
+        protocol: udp
+        mode: host
+      - "3000:3000/tcp"
     environment:
       CASSANDRA_HOST: cassandra
     stdin_open: true
