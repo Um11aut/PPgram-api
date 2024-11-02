@@ -13,7 +13,7 @@ use crate::{
     },
     server::{
         message::{
-            handlers::json_handler::TCPHandler, methods::auth_macros, types::{
+            handlers::json_handler::JsonHandler, methods::auth_macros, types::{
                 chat::{Chat, ChatDetails, ChatId},
                 request::{
                     extract_what_field, new::{NewGroupRequest, NewInvitationLinkRequest}, send::{MessageId, SendMessageRequest}
@@ -32,7 +32,7 @@ use crate::{
 use std::sync::Arc;
 
 /// Returns latest chat message id if sucessful
-async fn handle_new_group(msg: NewGroupRequest, handler: &TCPHandler) -> PPResult<Chat> {
+async fn handle_new_group(msg: NewGroupRequest, handler: &JsonHandler) -> PPResult<Chat> {
     let self_user_id: UserId = {
         handler
             .session
@@ -63,7 +63,7 @@ async fn handle_new_group(msg: NewGroupRequest, handler: &TCPHandler) -> PPResul
 
 async fn handle_new_invitation_link(
     msg: NewInvitationLinkRequest,
-    handler: &TCPHandler,
+    handler: &JsonHandler,
 ) -> PPResult<InvitationHash> {
     let self_user_id: UserId = {
         handler
@@ -96,7 +96,7 @@ async fn handle_new_invitation_link(
     db.create_invitation_hash(msg.chat_id).await
 }
 
-async fn on_new(handler: &mut TCPHandler) -> PPResult<()> {
+async fn on_new(handler: &mut JsonHandler) -> PPResult<()> {
     let content = handler.utf8_content_unchecked();
     let what_field = extract_what_field(content)?;
 
@@ -131,7 +131,7 @@ async fn on_new(handler: &mut TCPHandler) -> PPResult<()> {
     Ok(())
 }
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) {
+pub async fn handle(handler: &mut JsonHandler, method: &str) {
     auth_macros::require_auth!(handler, method);
 
     if let Err(err) = on_new(handler).await {

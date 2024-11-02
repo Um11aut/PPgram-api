@@ -15,7 +15,7 @@ use crate::db::internal::error::PPResult;
 use crate::server::connection::TCPConnection;
 use crate::server::message::handlers::files_handler::FilesHandler;
 use crate::server::message::Handler;
-use crate::server::{message::handlers::json_handler::TCPHandler, session::Session};
+use crate::server::{message::handlers::json_handler::JsonHandler, session::Session};
 
 const MESSAGE_ALLOCATION_SIZE: usize = 1024;
 
@@ -80,7 +80,7 @@ impl Server {
         let session = Arc::new(RwLock::new(Session::new(socket)));
 
         let mut handler =
-            TCPHandler::new(Arc::clone(&session), Arc::clone(&sessions), bucket).await;
+            JsonHandler::new(Arc::clone(&session), Arc::clone(&sessions), bucket).await;
 
         let reader = handler.reader();
 

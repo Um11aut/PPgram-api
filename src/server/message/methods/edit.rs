@@ -2,7 +2,7 @@ use log::debug;
 use serde_json::Value;
 
 use crate::{db::{chat::messages::MessagesDB, internal::error::PPResult, user::UsersDB}, server::message::{
-            handlers::json_handler::TCPHandler, types::{
+            handlers::json_handler::JsonHandler, types::{
                 edit::EditedMessageBuilder, request::{
                     delete::DeleteMessageRequest, edit::{EditMessageRequest, EditSelfRequest}, extract_what_field
                 }, response::{delete::DeleteMessageResponse, edit::EditMessageResponse, events::{DeleteMessageEvent, EditMessageEvent}}
@@ -11,7 +11,7 @@ use crate::{db::{chat::messages::MessagesDB, internal::error::PPResult, user::Us
 
 use super::auth_macros;
 
-async fn handle_edit_message(handler: &mut TCPHandler, msg: EditMessageRequest) -> PPResult<()> {
+async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials_unchecked();
@@ -56,7 +56,7 @@ async fn handle_edit_message(handler: &mut TCPHandler, msg: EditMessageRequest) 
 }
 
 // TODO: Add self editing(do not travers all subscribtions)
-async fn handle_edit_self(handler: &mut TCPHandler, msg: &EditSelfRequest) -> PPResult<()> {
+async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials_unchecked();
@@ -68,7 +68,7 @@ async fn handle_edit_self(handler: &mut TCPHandler, msg: &EditSelfRequest) -> PP
     todo!()
 }
 
-async fn on_edit(handler: &mut TCPHandler, content: &String) -> PPResult<EditMessageResponse> {
+async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<EditMessageResponse> {
     let what_field = extract_what_field(&content)?;
 
     match what_field.as_str() {
@@ -92,7 +92,7 @@ async fn on_edit(handler: &mut TCPHandler, content: &String) -> PPResult<EditMes
     }
 }
 
-async fn on_delete(handler: &mut TCPHandler, content: &String) -> PPResult<DeleteMessageResponse> {
+async fn on_delete(handler: &mut JsonHandler, content: &String) -> PPResult<DeleteMessageResponse> {
     let msg: DeleteMessageRequest = serde_json::from_str(&content)?;
 
     let self_user_id = {
@@ -128,7 +128,7 @@ async fn on_delete(handler: &mut TCPHandler, content: &String) -> PPResult<Delet
     }
 }
 
-async fn handle_messages(handler: &mut TCPHandler, method: &str) -> PPResult<Value> {
+async fn handle_messages(handler: &mut JsonHandler, method: &str) -> PPResult<Value> {
     let content = handler.utf8_content_unchecked().to_owned();
     match method {
         "edit" => Ok(serde_json::to_value(on_edit(handler, &content).await?).unwrap()),
@@ -137,7 +137,7 @@ async fn handle_messages(handler: &mut TCPHandler, method: &str) -> PPResult<Val
     }
 }
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) {
+pub async fn handle(handler: &mut JsonHandler, method: &str) {
     auth_macros::require_auth!(handler, method);
 
     match handle_messages(handler, method).await {

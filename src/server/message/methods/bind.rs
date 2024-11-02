@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use log::debug;
 
-use crate::server::message::{handlers::json_handler::TCPHandler, types::{request::bind::BindRequest, response::bind::BindResponse}};
+use crate::server::message::{handlers::json_handler::JsonHandler, types::{request::bind::BindRequest, response::bind::BindResponse}};
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) {
+pub async fn handle(handler: &mut JsonHandler, method: &str) {
     let content = handler.utf8_content_unchecked();
     match serde_json::from_str::<BindRequest>(&content) {
         Ok(message) => {

@@ -1,7 +1,7 @@
 
-use crate::{db::user::UsersDB, server::message::{handlers::json_handler::TCPHandler, types::{request::check::*, response::check::CheckResponse}}};
+use crate::{db::user::UsersDB, server::message::{handlers::json_handler::JsonHandler, types::{request::check::*, response::check::CheckResponse}}};
 
-async fn check_username(handler: &mut TCPHandler, username: &str) {
+async fn check_username(handler: &mut JsonHandler, username: &str) {
     let users_db: UsersDB = handler.get_db();
 
     match users_db.exists(&username.into()).await {
@@ -26,7 +26,7 @@ async fn check_username(handler: &mut TCPHandler, username: &str) {
     }
 }
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) 
+pub async fn handle(handler: &mut JsonHandler, method: &str) 
 {
     match serde_json::from_str::<CheckUsernameRequest>(&handler.utf8_content_unchecked()) {
         Ok(msg) => {

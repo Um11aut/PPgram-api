@@ -23,7 +23,7 @@ const MAX_MSG_SIZE: u32 = 100_000_000 /* 100Mb */;
 
 /// TCP Message handler struct that has everything it needs to have to be able
 /// to handle any JSON message type
-pub struct TCPHandler {
+pub struct JsonHandler {
     builder: Option<MessageBuilder>,
     is_first: bool,
     pub session: SessionArcRwLock,
@@ -34,7 +34,7 @@ pub struct TCPHandler {
 }
 
 #[async_trait::async_trait]
-impl Handler for TCPHandler {
+impl Handler for JsonHandler {
     async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
         if self.is_first {
             self.builder = MessageBuilder::parse(buffer);
@@ -94,7 +94,7 @@ impl Handler for TCPHandler {
     }
 }
 
-impl TCPHandler {
+impl JsonHandler {
     pub async fn new(session: Arc<RwLock<Session>>, sessions: Sessions, bucket: DatabaseBucket) -> Self {
         let output_connection = {
             let session_locked = session.read().await;
@@ -103,7 +103,7 @@ impl TCPHandler {
             Arc::clone(&session_locked.connections().last().unwrap())
         };
 
-        TCPHandler {
+        JsonHandler {
             builder: None,
             session: Arc::clone(&session),
             sessions,
@@ -227,7 +227,7 @@ impl TCPHandler {
     // }
 }
 
-impl Drop for TCPHandler {
+impl Drop for JsonHandler {
     fn drop(&mut self) {
         self.bucket.decrement_rc(); 
 
