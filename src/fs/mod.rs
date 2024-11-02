@@ -12,7 +12,8 @@ pub trait FileUploader {
 
     /// Must finalize the upload, giving the binary according full SHA256 hash
     /// and removing it from %TEMP%
-    async fn finalize(self: Box<Self>);
+    /// Returns SHA256 Hash encoded in hex
+    async fn finalize(self: Box<Self>) -> String;
 }
 
 const FS_BASE: &str = "/server_data/";

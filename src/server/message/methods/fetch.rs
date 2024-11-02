@@ -11,7 +11,7 @@ use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{FetchChatsResponse, FetchMessagesResponse, FetchSelfResponseMessage, FetchUserResponse, FetchUsersResponse};
 use crate::server::message::{
-        handlers::tcp_handler::TCPHandler,
+        handlers::json_handler::TCPHandler,
         types::user::{User, UserId},
     };
 

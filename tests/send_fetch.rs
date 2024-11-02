@@ -1,7 +1,6 @@
 use std::error::Error;
 
-use common::{nok, ok, TestConnection};
-use log::info;
+use common::{ok, TestConnection};
 use serde_json::{json, Value};
 
 mod common;

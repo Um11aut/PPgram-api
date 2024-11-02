@@ -2,7 +2,7 @@ use log::debug;
 use serde_json::Value;
 
 use crate::{db::{chat::messages::MessagesDB, internal::error::PPResult, user::UsersDB}, server::message::{
-            handlers::tcp_handler::TCPHandler, types::{
+            handlers::json_handler::TCPHandler, types::{
                 edit::EditedMessageBuilder, request::{
                     delete::DeleteMessageRequest, edit::{EditMessageRequest, EditSelfRequest}, extract_what_field
                 }, response::{delete::DeleteMessageResponse, edit::EditMessageResponse, events::{DeleteMessageEvent, EditMessageEvent}}

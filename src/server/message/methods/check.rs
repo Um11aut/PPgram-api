@@ -1,5 +1,5 @@
 
-use crate::{db::user::UsersDB, server::message::{handlers::tcp_handler::TCPHandler, types::{request::check::*, response::check::CheckResponse}}};
+use crate::{db::user::UsersDB, server::message::{handlers::json_handler::TCPHandler, types::{request::check::*, response::check::CheckResponse}}};
 
 async fn check_username(handler: &mut TCPHandler, username: &str) {
     let users_db: UsersDB = handler.get_db();

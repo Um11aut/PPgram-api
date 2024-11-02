@@ -17,7 +17,7 @@ use crate::server::message::Handler;
 use crate::server::server::Sessions;
 use crate::server::session::Session;
 
-pub type SesssionArcRwLock = Arc<RwLock<Session>>;
+pub type SessionArcRwLock = Arc<RwLock<Session>>;
 
 const MAX_MSG_SIZE: u32 = 100_000_000 /* 100Mb */;
 
@@ -26,7 +26,7 @@ const MAX_MSG_SIZE: u32 = 100_000_000 /* 100Mb */;
 pub struct TCPHandler {
     builder: Option<MessageBuilder>,
     is_first: bool,
-    pub session: SesssionArcRwLock,
+    pub session: SessionArcRwLock,
     pub sessions: Sessions,
     // Output TCP connection on which all the responses/messages are sent
     pub output_connection: Arc<TCPConnection>,
@@ -98,8 +98,9 @@ impl TCPHandler {
     pub async fn new(session: Arc<RwLock<Session>>, sessions: Sessions, bucket: DatabaseBucket) -> Self {
         let output_connection = {
             let session_locked = session.read().await;
-            // Assume the first connection is the output connection
-            Arc::clone(&session_locked.connections()[0])
+            // Assume the last connection is the output connection
+            // TODO: User must decide on which connection he wants the output
+            Arc::clone(&session_locked.connections().last().unwrap())
         };
 
         TCPHandler {
@@ -127,7 +128,7 @@ impl TCPHandler {
     }
 
     /// Sending message with tokio::spawn. 
-    /// Necessary for large media, so the read operation won't be stopped
+    /// Necessary for large objects, so the read operations won't be stopped
     pub fn send_raw_detached(&self, data: Arc<[u8]>) {
         tokio::spawn({
             let connection = Arc::clone(&self.output_connection);

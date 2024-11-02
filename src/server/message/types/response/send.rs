@@ -9,8 +9,8 @@ pub struct SendMessageResponse {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct UploadMediaResponse {
+pub struct UploadFileResponse {
     pub ok: bool,
     pub method: String,
-    pub media_hash: String
+    pub sha256_hash: String
 }

@@ -1,4 +1,4 @@
-use crate::{db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}, user::UsersDB}, server::message::{handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
+use crate::{db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}, user::UsersDB}, server::message::{handlers::json_handler::TCPHandler, methods::auth_macros, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
 
 enum JoinGroupResult {
     JoinGroupResponse(JoinGroupResponse),

@@ -13,7 +13,7 @@ use crate::{
     },
     server::{
         message::{
-            handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{
+            handlers::json_handler::TCPHandler, methods::auth_macros, types::{
                 chat::{Chat, ChatDetails, ChatId},
                 request::{
                     extract_what_field, new::{NewGroupRequest, NewInvitationLinkRequest}, send::{MessageId, SendMessageRequest}

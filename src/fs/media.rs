@@ -101,7 +101,7 @@ impl FileUploader for MediaUploader {
         Ok(())
     }
 
-    async fn finalize(self: Box<Self>) {
+    async fn finalize(self: Box<Self>) -> String {
         let buf = PathBuf::from(FS_BASE);
         if !buf.exists() {
             tokio::fs::create_dir(buf.canonicalize().unwrap()).await.unwrap();
@@ -115,10 +115,12 @@ impl FileUploader for MediaUploader {
         if target_doc_directory.exists() {
             warn!("The media hash {} already exists... Deleting temporary file. Path: {}", sha256_hash, self.temp_file_path.display());
             tokio::fs::remove_file(self.temp_file_path).await.unwrap();
-            return;
+            return sha256_hash;
         }
 
         tokio::fs::create_dir(&target_doc_directory).await.unwrap();
         tokio::fs::rename(self.temp_file_path, target_doc_directory.join(self.doc_name)).await.unwrap();
+
+        sha256_hash
     }
 }

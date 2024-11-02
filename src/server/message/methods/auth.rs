@@ -4,7 +4,7 @@ use crate::{
     db::{internal::error::{PPError, PPResult}, user::UsersDB},
     server::{
         message::{
-            handlers::tcp_handler::TCPHandler, types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}, user::User}
+            handlers::json_handler::TCPHandler, types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}, user::User}
         },
         session::{AuthComponent, Session},
     },

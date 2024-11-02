@@ -5,22 +5,23 @@ use std::{
     sync::Arc,
 };
 
-use quinn::{
-    crypto::rustls::QuicServerConfig,
-    rustls::{self, pki_types::PrivatePkcs8KeyDer},
-};
+
+use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
 
 use crate::{
-    db::internal::error::PPResult,
+    db::internal::error::{PPError, PPResult},
     fs::{document::DocumentUploader, media::MediaUploader, FileUploader},
-    server::message::{
+    server::{connection::TCPConnection, message::{
         builder::MessageBuilder,
-        types::metadata::{self, FilesMetadataMessage},
+        types::{metadata::{self, FilesMetadataMessage}, response::send::UploadFileResponse},
         Handler,
-    },
+    }},
 };
 
-const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */; // Max message size that can be transmitted
+use super::json_handler::SessionArcRwLock;
+
+/// 4Gib - Max message size that can be transmitted
+const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */;
 
 /// Quic Handler to handle QUIC messages, meaning documents or media.
 ///
@@ -28,8 +29,8 @@ const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */; // Max mess
 /// ```
 /// [4 bytes metadata message size] [{"name": "Test123", "compress": true}] [8 bytes file message size] [message bytes]
 /// ```
-pub struct QuicHandler {
-    // to put the file: Media or Document will be decided at runtime
+pub struct FilesHandler {
+    // to put the file frame on fs: Media or Document will be decided at runtime
     fs_handler: Option<Box<dyn FileUploader + Send>>,
     is_first: bool,
     // MessageBuilder for metadata
@@ -37,13 +38,15 @@ pub struct QuicHandler {
     // For file itself
     file_size: u64,
     file_bytes_uploaded: u64,
+    output_connection: Arc<TCPConnection>
 }
 
 #[async_trait::async_trait]
-impl Handler for QuicHandler {
+impl Handler for FilesHandler {
     async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
+        assert!(buffer.len() > 20);
         // For start message, it's not 0
-        // needed to determine when file actually starts
+        // needed to determine when the binary actually starts
         let mut content_start_offset: usize = 0;
 
         if self.is_first {
@@ -58,7 +61,6 @@ impl Handler for QuicHandler {
                     let metadata = metadata_builder.content_utf8().map(|v| {
                         serde_json::from_str::<FilesMetadataMessage>(v)
                             .ok()
-                            .unwrap()
                     });
 
                     // The offset of metadata message to separate metadata and content
@@ -78,7 +80,13 @@ impl Handler for QuicHandler {
                         content_start[7],
                     ]);
 
-                    if let Some(metadata) = metadata {
+                    if self.file_size > MAX_MSG_SIZE {
+                        PPError::from("File too big! Max allowed file size: 4Gib").safe_send("upload_file", &self.output_connection).await;
+                        self.reset();
+                        return;
+                    }
+
+                    if let Some(Some(metadata)) = metadata {
                         match metadata.is_media {
                             true => {
                                 self.fs_handler =
@@ -90,6 +98,10 @@ impl Handler for QuicHandler {
                                 ))
                             }
                         }
+                    } else {
+                        PPError::from("Failed to parse metadata info!").safe_send("upload_file", &self.output_connection).await;
+                        self.reset();
+                        return;
                     }
 
                     metadata_builder.clear();
@@ -104,28 +116,55 @@ impl Handler for QuicHandler {
         if self.file_size != self.file_bytes_uploaded {
             if let Some(fs_handler) = self.fs_handler.as_mut() {
                 let res = fs_handler.upload_part(content_fragment).await;
-                self.file_bytes_uploaded += content_fragment.len() as u64;
+                match res {
+                    Ok(_) => self.file_bytes_uploaded += content_fragment.len() as u64,
+                    Err(err) => {
+                        err.safe_send("upload_file", &self.output_connection).await;
+                        self.reset();
+                    }
+                }
             }
-        }
-
-        // If it's final segment, then finalize the FileUploader
-        if self.file_size == self.file_bytes_uploaded {
+        } else {
+            // If it's final segment, then finalize the FileUploader
             if let Some(fs_handler) = self.fs_handler.take() {
-                fs_handler.finalize().await;
+                let sha256_hash = fs_handler.finalize().await;
+                // reset self
+                self.reset();
+
+                // Send ok
+                self.output_connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&
+                    UploadFileResponse{
+                        ok: true,
+                        method: "upload_file".into(),
+                        sha256_hash
+                    }).unwrap()).packed()).await;
             }
         }
     }
 }
 
-impl QuicHandler {
-    pub async fn new() -> QuicHandler {
+impl FilesHandler {
+    /// Resets everything besides `output_connection`
+    pub fn reset(&mut self) {
+        self.fs_handler = None;
+        self.is_first = true;
+        self.metadata_builder = None;
+        self.file_bytes_uploaded = 0;
+        self.file_size = 0;
+    }
 
-        QuicHandler {
+    pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {
+        Arc::clone(&self.output_connection.reader())
+    }
+
+    pub async fn new(connection: Arc<TCPConnection>) -> FilesHandler {
+        FilesHandler {
             fs_handler: None,
             is_first: true,
             metadata_builder: None,
             file_size: 0,
             file_bytes_uploaded: 0,
+            output_connection: connection
         }
     }
 }
