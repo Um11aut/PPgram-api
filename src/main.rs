@@ -16,7 +16,7 @@ async fn main() {
     env_logger::init();
     // 1: QUIC Port
     // 2: TCP Port
-    let server = Server::new(8080, 3000).await;
+    let server = Server::new(3000, 8080).await;
 
     match server {
         Ok(server) => server.poll_events().await,

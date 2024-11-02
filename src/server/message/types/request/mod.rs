@@ -12,6 +12,7 @@ pub mod delete;
 pub mod new;
 pub mod join;
 
+/// Needed for every possible request, that has "what" field
 #[derive(Serialize, Deserialize)]
 struct BaseWhatRequest {
     pub what: String

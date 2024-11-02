@@ -17,7 +17,11 @@ use crate::server::message::handlers::files_handler::FilesHandler;
 use crate::server::message::Handler;
 use crate::server::{message::handlers::json_handler::JsonHandler, session::Session};
 
-const MESSAGE_ALLOCATION_SIZE: usize = 1024;
+/// 1024 bytes
+const JSON_MESSAGE_ALLOCATION_SIZE: usize = 1024;
+
+/// 1 Mib
+const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1 * (1024 * 1024 * 1024);
 
 pub(super) type Sessions = Arc<RwLock<HashMap<i32, Arc<RwLock<Session>>>>>;
 
@@ -85,7 +89,7 @@ impl Server {
         let reader = handler.reader();
 
         loop {
-            let mut buffer = [0; MESSAGE_ALLOCATION_SIZE];
+            let mut buffer = [0; JSON_MESSAGE_ALLOCATION_SIZE];
 
             match reader.lock().await.read(&mut buffer).await {
                 Ok(0) => break,
@@ -103,7 +107,7 @@ impl Server {
         socket: TcpStream,
         addr: SocketAddr,
         sessions: Sessions,
-        bucket: DatabaseBucket,
+        // bucket: DatabaseBucket,
     ) {
         debug!("[Files] Connection established: {}", addr);
         let mut handler =
@@ -112,7 +116,9 @@ impl Server {
         let reader = handler.reader();
 
         loop {
-            let mut buffer = [0; MESSAGE_ALLOCATION_SIZE];
+            // Store buffer on the heap to avoid StackOverflow
+            let mut buffer = Vec::new();
+            buffer.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
 
             match reader.lock().await.read(&mut buffer).await {
                 Ok(0) => break,
@@ -190,16 +196,16 @@ impl Server {
             loop {
                 match listener.accept().await {
                     Ok((socket, addr)) => {
-                        let available_bucket = {
-                            let mut db_pool = pool.lock().await;
-                            db_pool.get_available_bucket().await
-                        };
+                        // let available_bucket = {
+                        //     let mut db_pool = pool.lock().await;
+                        //     db_pool.get_available_bucket().await
+                        // };
 
                         scope.spawn(Self::files_event_handler(
                             socket,
                             addr,
                             Arc::clone(&connections),
-                            available_bucket,
+                            // available_bucket,
                         ));
                     }
                     Err(err) => {

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, path::{Path, PathBuf}};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::{fs::{File, OpenOptions}, io::AsyncWriteExt};
 
@@ -28,7 +28,7 @@ impl DocumentUploader {
             .take(15)
             .map(char::from)
             .collect();
-        let temp_path = std::env::temp_dir().join(temp_file).canonicalize()?;
+        let temp_path = std::env::temp_dir().join(temp_file);
         info!("Creating new temp file for document uploading: {}", temp_path.display());
 
         let file = OpenOptions::new()
@@ -59,7 +59,7 @@ impl FileUploader for DocumentUploader {
     async fn finalize(self: Box<Self>) -> String {
         let buf = PathBuf::from(FS_BASE);
         if !buf.exists() {
-            tokio::fs::create_dir(buf.canonicalize().unwrap()).await.unwrap();
+            tokio::fs::create_dir(&buf).await.unwrap();
         }
 
         // Getting full sha256 hash
