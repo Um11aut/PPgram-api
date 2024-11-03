@@ -5,18 +5,17 @@ use crate::db::chat::chats::ChatsDB;
 use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
-use crate::fs::media::get_media;
 use crate::server::message::methods::auth_macros;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{FetchChatsResponse, FetchMessagesResponse, FetchSelfResponseMessage, FetchUserResponse, FetchUsersResponse};
 use crate::server::message::{
-        handlers::tcp_handler::TCPHandler,
+        handlers::json_handler::JsonHandler,
         types::user::{User, UserId},
     };
 
-async fn handle_fetch_chats(handler: &TCPHandler) -> PPResult<Vec<ChatDetails>> {
+async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetails>> {
     let users_db: UsersDB = handler.get_db();
     let chats_db: ChatsDB = handler.get_db();
 
@@ -40,7 +39,7 @@ async fn handle_fetch_chats(handler: &TCPHandler) -> PPResult<Vec<ChatDetails>> 
 }
 
 /// Fetches Users by the given search query
-async fn on_users(handler: &mut TCPHandler) -> PPResult<FetchUsersResponse> {
+async fn on_users(handler: &mut JsonHandler) -> PPResult<FetchUsersResponse> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchUsersRequest>(&content)?;
     let query = msg.query;
@@ -65,13 +64,13 @@ async fn fetch_user(
     }
 }
 
-async fn handle_fetch_self(handler: &TCPHandler) -> PPResult<User> {
+async fn handle_fetch_self(handler: &JsonHandler) -> PPResult<User> {
     // Can unwrap because we have checked the creds earlier
     let (user_id, _) = handler.session.read().await.get_credentials_unchecked();
     fetch_user(&user_id, handler.get_db()).await
 }
 
-async fn handle_fetch_messages(handler: &TCPHandler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
+async fn handle_fetch_messages(handler: &JsonHandler, msg: FetchMessagesRequest) -> PPResult<Vec<Message>> {
     // Groups have negative id
     let maybe_chat_id = if msg.chat_id.is_positive() {
         let session = handler.session.read().await;
@@ -93,7 +92,7 @@ async fn handle_fetch_messages(handler: &TCPHandler, msg: FetchMessagesRequest) 
     }
 }
 
-async fn on_chats(handler: &TCPHandler) -> PPResult<FetchChatsResponse> {
+async fn on_chats(handler: &JsonHandler) -> PPResult<FetchChatsResponse> {
     let chats = handle_fetch_chats(&handler).await?;
     Ok(FetchChatsResponse {
         ok: true,
@@ -102,7 +101,7 @@ async fn on_chats(handler: &TCPHandler) -> PPResult<FetchChatsResponse> {
     })
 }
 
-async fn on_self(handler: &TCPHandler) -> PPResult<FetchSelfResponseMessage> {
+async fn on_self(handler: &JsonHandler) -> PPResult<FetchSelfResponseMessage> {
     let self_info = handle_fetch_self(&handler).await?;
     Ok(FetchSelfResponseMessage {
         ok: true,
@@ -114,7 +113,7 @@ async fn on_self(handler: &TCPHandler) -> PPResult<FetchSelfResponseMessage> {
     })
 }
 
-async fn on_user(handler: &mut TCPHandler) -> PPResult<FetchUserResponse> {
+async fn on_user(handler: &mut JsonHandler) -> PPResult<FetchUserResponse> {
     let content = handler.utf8_content_unchecked();
     let msg: FetchUserRequest = serde_json::from_str(&content)?;
     
@@ -137,7 +136,7 @@ async fn on_user(handler: &mut TCPHandler) -> PPResult<FetchUserResponse> {
     })
 }
 
-async fn on_messages(handler: &mut TCPHandler) -> PPResult<FetchMessagesResponse> {
+async fn on_messages(handler: &mut JsonHandler) -> PPResult<FetchMessagesResponse> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchMessagesRequest>(&content)?;
     let fetched_msgs = handle_fetch_messages(&handler, msg).await?;
@@ -149,19 +148,9 @@ async fn on_messages(handler: &mut TCPHandler) -> PPResult<FetchMessagesResponse
     })
 } 
 
-/// Directly sends raw media
-async fn on_media(handler: &mut TCPHandler) -> PPResult<()> {
-    let content = handler.utf8_content_unchecked();
-    let msg = serde_json::from_str::<FetchMediaRequest>(&content)?;
-
-    let maybe_media = get_media(&msg.media_hash).await?;
-    handler.send_raw(&maybe_media).await;
-
-    Ok(())
-} 
 
 /// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
-async fn handle_json_message(handler: &mut TCPHandler) -> PPResult<Option<Value>> {
+async fn handle_json_message(handler: &mut JsonHandler) -> PPResult<Option<Value>> {
     let content = handler.utf8_content_unchecked();
     let what = extract_what_field(&content)?;
 
@@ -182,10 +171,6 @@ async fn handle_json_message(handler: &mut TCPHandler) -> PPResult<Option<Value>
             Ok(v) => Ok(Some(v)),
             Err(err) => Err(err)
         }
-        "media" => match on_media(handler).await {
-            Ok(()) => Ok(None),
-            Err(err) => Err(err)
-        }
         "users" => match on_users(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
             Ok(v) => Ok(Some(v)),
             Err(err) => Err(err)
@@ -194,7 +179,7 @@ async fn handle_json_message(handler: &mut TCPHandler) -> PPResult<Option<Value>
     }
 }
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) {
+pub async fn handle(handler: &mut JsonHandler, method: &str) {
     auth_macros::require_auth!(handler, method);
 
     match handle_json_message(handler).await {

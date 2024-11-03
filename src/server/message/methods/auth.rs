@@ -4,7 +4,7 @@ use crate::{
     db::{internal::error::{PPError, PPResult}, user::UsersDB},
     server::{
         message::{
-            handlers::tcp_handler::TCPHandler, types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}, user::User}
+            handlers::json_handler::JsonHandler, types::{request::auth::*, response::auth::{AuthResponse, RegisterResponse}, user::User}
         },
         session::{AuthComponent, Session},
     },
@@ -32,7 +32,7 @@ where
     Ok(())
 }
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) {
+pub async fn handle(handler: &mut JsonHandler, method: &str) {
     let buffer = handler.utf8_content_unchecked().clone();
 
     {

@@ -8,11 +8,12 @@ pub mod document;
 #[async_trait::async_trait]
 pub trait FileUploader {
     /// Uploads only part of the file to fs
-    async fn upload_part(&mut self, part: Vec<u8>) -> PPResult<()>;
+    async fn upload_part(&mut self, part: &[u8]) -> PPResult<()>;
 
     /// Must finalize the upload, giving the binary according full SHA256 hash
     /// and removing it from %TEMP%
-    async fn finalize(self);
+    /// Returns SHA256 Hash encoded in hex
+    async fn finalize(self: Box<Self>) -> String;
 }
 
-const FS_BASE: &str = "~/server_data/";
+const FS_BASE: &str = "/server_data/";

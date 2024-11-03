@@ -100,7 +100,7 @@ impl Session {
     /// 
     /// Needed for live events, sending messages etc.
     pub async fn mpsc_send(&mut self, message: impl Serialize, con_idx: usize) {
-        self.connections[con_idx].send(message).await;
+        self.connections[con_idx].mpsc_send(message).await;
     }
 
     /// `(UserId, String)` -> user_id, session_id 

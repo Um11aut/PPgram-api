@@ -4,17 +4,17 @@ use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB}, server::{
         message::{
-            handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{chat::ChatId, request::send::{MessageId, SendMessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
+            handlers::json_handler::JsonHandler, methods::auth_macros, types::{chat::ChatId, request::send::{MessageId, SendMessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
         },
         session::Session,
     }};
 use std::sync::Arc;
 
-/// Returns latest chat message id if sucessful
+/// Returns latest chat message id if successful
 async fn handle_send_message(
     session: Arc<RwLock<Session>>,
     msg: SendMessageRequest,
-    handler: &TCPHandler,
+    handler: &JsonHandler,
 ) -> Result<(MessageId, ChatId), PPError> {
     let session = session.read().await;
     let (self_user_id, _) = session.get_credentials_unchecked();
@@ -28,7 +28,7 @@ async fn handle_send_message(
     let users_db: UsersDB = handler.get_db();
     let chats_db: ChatsDB = handler.get_db();
 
-    // Is Positive? Retreive real Chat id by the given User Id
+    // Is Positive? Retrieve real Chat id by the given User Id
     let maybe_chat = if msg.common.to.is_positive() {
         users_db.get_associated_chat_id(&self_user_id, msg.common.to).await?
     } else {if handler.get_db::<ChatsDB>().chat_exists(msg.common.to).await?{
@@ -86,7 +86,7 @@ async fn handle_send_message(
     Ok((message_id, msg.common.to))
 }
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) {
+pub async fn handle(handler: &mut JsonHandler, method: &str) {
     auth_macros::require_auth!(handler, method);
 
     let content = handler.utf8_content_unchecked();

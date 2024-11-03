@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::{self}};
+use std::{borrow::Cow, error::Error, fmt::{self}};
 
 use log::error;
 use serde_json::json;
@@ -96,4 +96,9 @@ impl PPError {
     }
 }
 
+impl From<webrtc::Error> for PPError {
+    fn from(err: webrtc::Error) -> Self {
+        Self::Server(err.into())
+    }
+}
 pub type PPResult<T> = Result<T, PPError>;

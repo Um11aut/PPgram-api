@@ -109,7 +109,7 @@ impl DatabasePool {
     }
 
     pub async fn get_available_bucket(&mut self) -> DatabaseBucket {
-        info!("Getting available db bucket...\nBuckets: {:?}", self.buckets);
+        info!("Getting available db bucket...\n Buckets: {:?}", self.buckets);
         for bucket in self.buckets.iter_mut() {
             if !bucket.is_full() {
                 return bucket.clone_increment_rc();

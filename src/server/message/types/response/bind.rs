@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
-pub struct BindReponse {
+pub struct BindResponse {
     pub ok: bool,
     pub method: String,
 }

@@ -1,11 +1,11 @@
-use crate::{db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}, user::UsersDB}, server::message::{handlers::tcp_handler::TCPHandler, methods::auth_macros, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
+use crate::{db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}, user::UsersDB}, server::message::{handlers::json_handler::JsonHandler, methods::auth_macros, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
 
 enum JoinGroupResult {
     JoinGroupResponse(JoinGroupResponse),
     JoinLinkNotFoundResponse(JoinLinkNotFoundResponse)
 }
 
-async fn on_join_group(msg: JoinGroupRequest, handler: &mut TCPHandler) -> PPResult<JoinGroupResult> {
+async fn on_join_group(msg: JoinGroupRequest, handler: &mut JsonHandler) -> PPResult<JoinGroupResult> {
     let self_user_id: UserId = {
         handler
             .session
@@ -60,7 +60,7 @@ async fn on_join_group(msg: JoinGroupRequest, handler: &mut TCPHandler) -> PPRes
     }
 }
 
-async fn on_join(handler: &mut TCPHandler) -> PPResult<JoinGroupResult> {
+async fn on_join(handler: &mut JsonHandler) -> PPResult<JoinGroupResult> {
     match serde_json::from_str::<JoinGroupRequest>(&handler.utf8_content_unchecked()) {
         Ok(msg) => {
             Ok(on_join_group(msg, handler).await?)
@@ -69,7 +69,7 @@ async fn on_join(handler: &mut TCPHandler) -> PPResult<JoinGroupResult> {
     }
 }
 
-pub async fn handle(handler: &mut TCPHandler, method: &str) {
+pub async fn handle(handler: &mut JsonHandler, method: &str) {
     auth_macros::require_auth!(handler, method);
 
     match on_join(handler).await {

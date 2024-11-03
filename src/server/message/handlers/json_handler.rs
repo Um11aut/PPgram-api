@@ -10,7 +10,6 @@ use tokio::sync::{Mutex, RwLock};
 use crate::db::bucket::{DatabaseBucket, DatabaseBuilder};
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
-use crate::fs::media::add_media;
 use crate::server::connection::TCPConnection;
 use crate::server::message::builder::MessageBuilder;
 use crate::server::message::methods::{auth, bind, check, edit, fetch, join, new, send};
@@ -18,16 +17,16 @@ use crate::server::message::Handler;
 use crate::server::server::Sessions;
 use crate::server::session::Session;
 
-pub type SesssionArcRwLock = Arc<RwLock<Session>>;
+pub type SessionArcRwLock = Arc<RwLock<Session>>;
 
 const MAX_MSG_SIZE: u32 = 100_000_000 /* 100Mb */;
 
 /// TCP Message handler struct that has everything it needs to have to be able
 /// to handle any JSON message type
-pub struct TCPHandler {
+pub struct JsonHandler {
     builder: Option<MessageBuilder>,
     is_first: bool,
-    pub session: SesssionArcRwLock,
+    pub session: SessionArcRwLock,
     pub sessions: Sessions,
     // Output TCP connection on which all the responses/messages are sent
     pub output_connection: Arc<TCPConnection>,
@@ -35,7 +34,7 @@ pub struct TCPHandler {
 }
 
 #[async_trait::async_trait]
-impl Handler for TCPHandler {
+impl Handler for JsonHandler {
     async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
         if self.is_first {
             self.builder = MessageBuilder::parse(buffer);
@@ -95,15 +94,16 @@ impl Handler for TCPHandler {
     }
 }
 
-impl TCPHandler {
+impl JsonHandler {
     pub async fn new(session: Arc<RwLock<Session>>, sessions: Sessions, bucket: DatabaseBucket) -> Self {
         let output_connection = {
             let session_locked = session.read().await;
-            // Assume the first connection is the output connection
-            Arc::clone(&session_locked.connections()[0])
+            // Assume the last connection is the output connection
+            // TODO: User must decide on which connection he wants the output
+            Arc::clone(&session_locked.connections().last().unwrap())
         };
 
-        TCPHandler {
+        JsonHandler {
             builder: None,
             session: Arc::clone(&session),
             sessions,
@@ -128,21 +128,21 @@ impl TCPHandler {
     }
 
     /// Sending message with tokio::spawn. 
-    /// Necessary for large media, so the read operation won't be stopped
+    /// Necessary for large objects, so the read operations won't be stopped
     pub fn send_raw_detached(&self, data: Arc<[u8]>) {
         tokio::spawn({
             let connection = Arc::clone(&self.output_connection);
             let data = Arc::clone(&data);
             info!("Sending media back: {}", data.len());
             async move {
-                connection.write(&MessageBuilder::build_from_vec(&data).packed()).await
+                connection.write(&MessageBuilder::build_from_slice(&data).packed()).await
             }
         });
     }
 
     /// Instead of json, sends raw buffer directly to the connection
     pub async fn send_raw(&self, data: &[u8]) {
-        self.output_connection.write(&MessageBuilder::build_from_vec(&data).packed()).await;
+        self.output_connection.write(&MessageBuilder::build_from_slice(&data).packed()).await;
     }
 
     pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {
@@ -227,7 +227,7 @@ impl TCPHandler {
     // }
 }
 
-impl Drop for TCPHandler {
+impl Drop for JsonHandler {
     fn drop(&mut self) {
         self.bucket.decrement_rc(); 
 
