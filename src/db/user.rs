@@ -7,6 +7,7 @@ use cassandra_cpp::LendingIterator;
 use cassandra_cpp::MapIterator;
 use cassandra_cpp::SetIterator;
 use log::error;
+use log::info;
 use rand::rngs::OsRng;
 use rand::{distributions::Alphanumeric, Rng};
 use std::borrow::Cow;
@@ -59,8 +60,18 @@ impl Database for UsersDB {
             CREATE INDEX IF NOT EXISTS username_idx ON ksp.users (username)
         "#;
 
-        let create_custom_index_query = r#"
+        let username_custom_index_query = r#"
             CREATE CUSTOM INDEX IF NOT EXISTS username_sasi_idx ON ksp.users (username)
+            USING 'org.apache.cassandra.index.sasi.SASIIndex'
+            WITH OPTIONS = {
+                'mode': 'CONTAINS',
+                'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.NonTokenizingAnalyzer',
+                'case_sensitive': 'false'
+            };
+        "#;
+
+        let name_custom_index_query = r#"
+            CREATE CUSTOM INDEX IF NOT EXISTS name_sasi_idx ON ksp.users (name)
             USING 'org.apache.cassandra.index.sasi.SASIIndex'
             WITH OPTIONS = {
                 'mode': 'CONTAINS',
@@ -71,7 +82,8 @@ impl Database for UsersDB {
 
         self.session.execute(create_table_query).await?;
         self.session.execute(create_index_query).await?;
-        self.session.execute(create_custom_index_query).await?;
+        self.session.execute(username_custom_index_query).await?;
+        self.session.execute(name_custom_index_query).await?;
 
         Ok(())
     }
@@ -133,11 +145,28 @@ impl UsersDB {
         }
     }
 
+    /// Fetches all users by the given search query
+    /// 
+    /// Restricts the search by max. of 50 users.
+    /// 
+    /// When given str starts with '@', will search by username,
+    /// or else by name
     pub async fn fetch_users_by_search_query(&self, query: impl Into<Cow<'static, str>>) -> PPResult<Vec<User>> {
-        let search_query: String = format!("{}%", query.into().to_string());
-        let cassandra_query = "SELECT * FROM ksp.users WHERE username LIKE ?;";
+        let search_query: String = query.into().to_string();
+        if search_query.len() == 0 {return Ok(vec![])}
+        let mut cassandra_search_query: String = format!("%{}%", search_query);
+
+        let cassandra_query = match cassandra_search_query.contains("@") {
+            true => {
+                if search_query.len() < 2 {return Ok(vec![])}
+                // Drain '@' symbol
+                cassandra_search_query.remove(1);
+                "SELECT * FROM ksp.users WHERE username LIKE ? LIMIT 50;"
+            },
+            false => "SELECT * FROM ksp.users WHERE name LIKE ? LIMIT 50;"
+        };
         let mut statement = self.session.statement(cassandra_query);
-        statement.bind_string(0, &search_query)?;
+        statement.bind_string(0, &cassandra_search_query)?;
 
         let result = statement.execute().await?;
         
