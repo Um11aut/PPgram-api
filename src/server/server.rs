@@ -21,7 +21,7 @@ use crate::server::{message::handlers::json_handler::JsonHandler, session::Sessi
 const JSON_MESSAGE_ALLOCATION_SIZE: usize = 1024;
 
 /// 1 Mib
-const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1 * (1024 * 1024 * 1024);
+pub const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1 * (1024 * 1024 * 1024);
 
 pub(super) type Sessions = Arc<RwLock<HashMap<i32, Arc<RwLock<Session>>>>>;
 

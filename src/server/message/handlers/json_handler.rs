@@ -211,20 +211,6 @@ impl JsonHandler {
             }
         }
     }
-
-    // async fn try_handle_media_message(&mut self) {
-    //     let message = self.builder.as_ref().unwrap().content_bytes();
-    //     match add_media(message).await {
-    //         Ok(sha256_hash) => {
-    //             self.send_message(&UploadMediaResponse{
-    //                 ok: true,
-    //                 method: "send_media".into(),
-    //                 media_hash: sha256_hash
-    //             }).await;
-    //         },
-    //         Err(err) => self.send_error("send_media", err).await,
-    //     }
-    // }
 }
 
 impl Drop for JsonHandler {

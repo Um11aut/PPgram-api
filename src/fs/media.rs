@@ -2,20 +2,20 @@ use std::{borrow::Cow, path::{Path, PathBuf}};
 
 use log::{info, warn};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::{fs::{File, OpenOptions}, io::AsyncWriteExt};
+use tokio::{fs::{File, OpenOptions, ReadDir}, io::{AsyncReadExt, AsyncWriteExt}};
 
-use crate::db::internal::error::{PPError, PPResult};
+use crate::{db::internal::error::{PPError, PPResult}, server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE}};
 
-use super::{hasher::BinaryHasher, FileUploader, FS_BASE};
+use super::{hash_exists, hasher::BinaryHasher, FsFetcher, FsUploader, FS_BASE};
 
-pub enum MediaVideoType {
+pub enum VideoType {
     Mp4,
     Mov,
     WebM,
     FLV
 }
 
-pub enum MediaPhotoType {
+pub enum PhotoType {
     Jpeg,
     JPG,
     PNG,
@@ -23,8 +23,8 @@ pub enum MediaPhotoType {
 }
 
 pub enum MediaType {
-    MediaVideoType(MediaVideoType),
-    MediaPhotoType(MediaPhotoType)
+    Video(VideoType),
+    Photo(PhotoType)
 }
 
 impl TryFrom<String> for MediaType {
@@ -35,14 +35,14 @@ impl TryFrom<String> for MediaType {
         let fmt = file_name.rsplit('.').next().ok_or(PPError::from("name must contain the file type!"))?;
 
         match fmt {
-            "mp4" => Ok(Self::MediaVideoType(MediaVideoType::Mp4)),
-            "mov" => Ok(Self::MediaVideoType(MediaVideoType::Mov)),
-            "webm" => Ok(Self::MediaVideoType(MediaVideoType::WebM)),
-            "flv" => Ok(Self::MediaVideoType(MediaVideoType::FLV)),
-            "jpeg" => Ok(Self::MediaPhotoType(MediaPhotoType::Jpeg)),
-            "jpg" => Ok(Self::MediaPhotoType(MediaPhotoType::JPG)),
-            "png" => Ok(Self::MediaPhotoType(MediaPhotoType::PNG)),
-            "heic" => Ok(Self::MediaPhotoType(MediaPhotoType::Heic)),
+            "mp4" => Ok(Self::Video(VideoType::Mp4)),
+            "mov" => Ok(Self::Video(VideoType::Mov)),
+            "webm" => Ok(Self::Video(VideoType::WebM)),
+            "flv" => Ok(Self::Video(VideoType::FLV)),
+            "jpeg" => Ok(Self::Photo(PhotoType::Jpeg)),
+            "jpg" => Ok(Self::Photo(PhotoType::JPG)),
+            "png" => Ok(Self::Photo(PhotoType::PNG)),
+            "heic" => Ok(Self::Photo(PhotoType::Heic)),
             _ => Err(PPError::from("Media type not supported!"))
         }
     }
@@ -53,18 +53,18 @@ impl TryFrom<String> for MediaType {
 /// Uploads a binary frame to a random temp_file in TEMPDIR, while generating a SHA256 hash
 /// 
 /// Then taking that hash and putting it into according Folder that is named after the hash
-pub struct MediaUploader {
+pub struct MediaHandler {
     hasher: BinaryHasher,
     temp_file: File,
     temp_file_path: PathBuf,
     doc_name: String
 }
 
-impl MediaUploader {
-    pub async fn new(document_name: impl Into<Cow<'static, str>>) -> PPResult<MediaUploader> {
+impl MediaHandler {
+    pub async fn new_uploader(document_name: impl Into<Cow<'static, str>>) -> PPResult<MediaHandler> {
         let document_name = document_name.into().to_string();
 
-        // TODO: Dependending on the media type create compression support
+        // TODO: Depending on the media type make compression support
         let media_type = MediaType::try_from(document_name.clone())?;
 
         // Generating a random temp file where all the framed binary will be put
@@ -83,7 +83,7 @@ impl MediaUploader {
             .open(&temp_path)
             .await?;
 
-        Ok(MediaUploader {
+        Ok(MediaHandler {
             hasher: BinaryHasher::new(),
             temp_file: file,
             temp_file_path: temp_path,
@@ -93,7 +93,7 @@ impl MediaUploader {
 }
 
 #[async_trait::async_trait]
-impl FileUploader for MediaUploader {
+impl FsUploader for MediaHandler {
     async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
         self.temp_file.write_all(&part).await?;
         self.hasher.hash_part(&part);
@@ -123,4 +123,108 @@ impl FileUploader for MediaUploader {
 
         sha256_hash
     }
+}
+
+pub struct MediaFetcher {
+    sha256_hash: String,
+    metadatas: Vec<Metadata>,
+    bytes_read: u64,
+    current_file: Option<File>,
+}
+
+unsafe impl Send for MediaFetcher {}
+unsafe impl Sync for MediaFetcher {}
+
+impl MediaFetcher {
+    pub fn new(sha256_hash: &str) -> Self { 
+        Self {
+            sha256_hash: sha256_hash.to_string(),
+            metadatas: vec![],
+            bytes_read: 0,
+            current_file: None,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl FsFetcher for MediaFetcher {
+    async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
+        let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&self.sha256_hash)).await?;
+        
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path().canonicalize()?;
+            let name = entry.file_name().into_string().unwrap();
+            let metadata = entry.metadata().await?;
+
+            self.metadatas.push(Metadata{
+                file_name: name,
+                file_path: path.to_string_lossy().to_string(),
+                file_size: metadata.len()
+            })
+        }
+
+        self.metadatas.sort_by(|a,b| a.file_size.cmp(&b.file_size));
+ 
+        Ok(self.metadatas.clone())
+    }
+
+    /// Allocates some constant Value on the heap
+    async fn fetch_part(&mut self) -> PPResult<Vec<u8>> {
+        if self.metadatas.is_empty() {
+            warn!("Cannot fetch anything more from metadata...");
+            return Ok(vec![])
+        }
+        
+        let mut buf: Vec<u8> = Vec::new();
+        buf.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
+
+        if let Some(current_file) = self.current_file.as_mut() {
+            let read = current_file.read(&mut buf).await?;
+            
+            self.bytes_read += read as u64;
+            
+            // Then file is finished reading
+            // Open the next one
+            if read == 0 {
+                self.metadatas.drain(..1);
+
+                if self.metadatas.is_empty() {return Ok(vec![])}
+
+                if let Some(metadata) = self.metadatas.iter().next() {
+                    info!("Opening new file: {}!", metadata.file_path);
+                    self.current_file = Some(File::open(&metadata.file_path).await?);
+                    self.bytes_read = 0;
+                }
+            }
+        } else {
+            return Err(PPError::from("File isn't opened!"))
+        }
+
+        Ok(buf)
+    }
+
+    fn is_part_ready(&self) -> bool {
+        if let Some(current) = self.metadatas.first() {
+            return self.bytes_read == current.file_size;
+        } else {
+            return true;
+        }
+    }
+}
+
+/// If has more than 2 files - is media
+pub async fn is_media(sha256_hash: &str) -> PPResult<bool> {
+    if !hash_exists(sha256_hash).await? {return Err("Given SHA256 Hash doesn't exist!".into())};
+    let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(sha256_hash)).await?;
+    
+    let mut count = 0;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if entry.file_type().await?.is_file() {
+            count += 1;
+        }
+
+        if count > 1 {return Ok(true);}
+    }
+
+    Ok(false)
 }

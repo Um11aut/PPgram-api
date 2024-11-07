@@ -2,26 +2,26 @@ use std::{borrow::Cow, path::{Path, PathBuf}};
 
 use log::{debug, info, warn};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::{fs::{File, OpenOptions}, io::AsyncWriteExt};
+use tokio::{fs::{File, OpenOptions, ReadDir}, io::{AsyncReadExt, AsyncWriteExt}};
 
-use crate::db::internal::error::PPResult;
+use crate::{db::internal::error::{PPError, PPResult}, server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE}};
 
-use super::{hasher::BinaryHasher, FileUploader, FS_BASE};
+use super::{hasher::BinaryHasher, FsFetcher, FsUploader, FS_BASE};
 
 /// Struct for framed uploading of documents
 /// 
 /// Uploads a binary frame to a random temp_file in TEMPDIR, while generating a SHA256 hash
 /// 
 /// Then taking that hash and putting it into according Folder that is named after the hash
-pub struct DocumentUploader {
+pub struct DocumentHandler {
     hasher: BinaryHasher,
     temp_file: File,
     temp_file_path: PathBuf,
     doc_name: String
 }
 
-impl DocumentUploader {
-    pub async fn new(document_name: impl Into<Cow<'static, str>>) -> PPResult<DocumentUploader> {
+impl DocumentHandler {
+    pub async fn new_uploader(document_name: impl Into<Cow<'static, str>>) -> PPResult<DocumentHandler> {
         // Generating a random temp file where all the framed binary will be put
         let temp_file: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
@@ -38,7 +38,7 @@ impl DocumentUploader {
             .open(&temp_path)
             .await?;
 
-        Ok(DocumentUploader {
+        Ok(DocumentHandler {
             hasher: BinaryHasher::new(),
             temp_file: file,
             temp_file_path: temp_path,
@@ -48,7 +48,7 @@ impl DocumentUploader {
 }
 
 #[async_trait::async_trait]
-impl FileUploader for DocumentUploader {
+impl FsUploader for DocumentHandler {
     async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
         self.temp_file.write_all(&part).await?;
         self.hasher.hash_part(&part);
@@ -77,5 +77,93 @@ impl FileUploader for DocumentUploader {
         tokio::fs::rename(&self.temp_file_path, target_doc_directory.join(&self.doc_name)).await.unwrap();
         
         sha256_hash
+    }
+}
+
+pub struct DocumentFetcher {
+    sha256_hash: String,
+    metadatas: Vec<Metadata>,
+    bytes_read: u64,
+    current_file: Option<File>,
+}
+
+unsafe impl Send for DocumentFetcher {}
+unsafe impl Sync for DocumentFetcher {}
+
+impl DocumentFetcher {
+    pub fn new(sha256_hash: &str) -> Self { 
+        Self {
+            sha256_hash: sha256_hash.to_string(),
+            metadatas: vec![],
+            bytes_read: 0,
+            current_file: None,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl FsFetcher for DocumentFetcher {
+    async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
+        let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&self.sha256_hash)).await?;
+        
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path().canonicalize()?;
+            let name = entry.file_name().into_string().unwrap();
+            let metadata = entry.metadata().await?;
+
+            self.metadatas.push(Metadata{
+                file_name: name,
+                file_path: path.to_string_lossy().to_string(),
+                file_size: metadata.len()
+            })
+        }
+
+        // Sort from smallest to biggest file size
+        self.metadatas.sort_by(|a,b| a.file_size.cmp(&b.file_size));
+ 
+        Ok(self.metadatas.clone())
+    }
+
+    /// Allocates some constant Value on the heap
+    async fn fetch_part(&mut self) -> PPResult<Vec<u8>> {
+        if self.metadatas.is_empty() {
+            warn!("Cannot fetch anything more from metadata...");
+            return Ok(vec![])
+        }
+        
+        let mut buf: Vec<u8> = Vec::new();
+        buf.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
+
+        if let Some(current_file) = self.current_file.as_mut() {
+            let read = current_file.read(&mut buf).await?;
+            
+            self.bytes_read += read as u64;
+            
+            // Then file is finished reading
+            // Open the next one
+            if read == 0 {
+                self.metadatas.drain(..1);
+
+                if self.metadatas.is_empty() {return Ok(buf)}
+
+                if let Some(metadata) = self.metadatas.iter().next() {
+                    info!("Opening new file: {}!", metadata.file_path);
+                    self.current_file = Some(File::open(&metadata.file_path).await?);
+                    self.bytes_read = 0;
+                }
+            }
+        } else {
+            return Err(PPError::from("File isn't opened!"))
+        }
+
+        Ok(buf)
+    }
+
+    fn is_part_ready(&self) -> bool {
+        if let Some(current) = self.metadatas.first() {
+            return self.bytes_read == current.file_size;
+        } else {
+            return true;
+        }
     }
 }

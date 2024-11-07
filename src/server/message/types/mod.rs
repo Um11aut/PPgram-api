@@ -4,4 +4,4 @@ pub mod request;
 pub mod response;
 pub mod message;
 pub mod edit;
-pub mod metadata;
+pub mod files;
