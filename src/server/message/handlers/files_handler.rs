@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use log::{debug, info};
+use log::{debug, error, info};
 use serde::Serialize;
 use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
 use webrtc::{sdp::MediaDescription, turn::server::request};
@@ -24,7 +24,7 @@ use crate::{
             builder::MessageBuilder,
             types::{
                 files::{
-                    self, extract_media_method, DownloadFileMetadataResponse, DownloadFileRequest,
+                    self, extract_file_method, DownloadFileMetadataResponse, DownloadFileRequest,
                     FileMetadataRequest, Metadata,
                 },
                 response::send::UploadFileResponse,
@@ -65,6 +65,9 @@ impl FileFetcher {
 
     /// Fetch bytes part
     pub async fn fetch_data_frame(&mut self) -> PPResult<Vec<u8>> {
+        if self.fs_handler.is_part_ready() {
+            self.metadata.drain(..1);
+        }
         Ok(self.fs_handler.fetch_part().await?)
     }
 
@@ -173,7 +176,8 @@ impl Handler for FilesHandler {
         match self.handle(buffer).await {
             Ok(_) => {}
             Err(err) => {
-                err.safe_send("upload", &self.output_connection).await;
+                error!("[Files] Error while performing file operation:\n {}", err);
+                err.safe_send("file_operation", &self.output_connection).await;
                 self.reset();
             }
         }
@@ -193,11 +197,6 @@ impl FilesHandler {
     }
 
     async fn handle(&mut self, buffer: &[u8]) -> PPResult<()> {
-        info!("Sending data frame. Frame size: {}", buffer.len());
-        // For start message, it's not 0
-        // needed to determine when the binary actually starts
-        let mut content_start_offset: usize = 0;
-
         if self.is_first {
             self.request_builder = MessageBuilder::parse(&buffer);
         }
@@ -212,20 +211,21 @@ impl FilesHandler {
                     } else {
                         0
                     }; // 4 bytes for metadata message size
-                    let content_start = &buffer[metadata_offset..];
-                    if content_start.len() < 8 {
-                        self.is_first = false;
-                        return Ok(());
-                    }
 
                     let request_content = request_builder
                         .content_utf8()
                         .ok_or(PPError::from("Invalid UTF8 sequence transmitted!"))?;
-                    info!("{}", request_content);
 
-                    let method = extract_media_method(&request_content)?;
+                    debug!("[Files] Got File Message!\n Message Size: {}\n Message Content: {}", request_content.len(), request_content);
+
+                    let method = extract_file_method(&request_content)?;
                     match method.as_str() {
                         "upload_file" => {
+                            let content_start = &buffer[metadata_offset..];
+                            if content_start.len() < 8 {
+                                self.is_first = false;
+                                return Ok(());
+                            }
                             let req =
                                 serde_json::from_str::<FileMetadataRequest>(&request_content)?;
 
@@ -258,6 +258,13 @@ impl FilesHandler {
                             self.file_actor = Some(FileActor::Uploader(
                                 FileUploader::new(req, file_size).await?,
                             ));
+
+                            request_builder.clear();
+                            self.request_builder = None;
+        
+                            self.is_first = false;
+
+                            return Ok(())
                         }
                         "download_file" => {
                             info!("Downloading file chosen!");
@@ -273,7 +280,6 @@ impl FilesHandler {
                     self.request_builder = None;
 
                     self.is_first = false;
-                    return Ok(());
                 }
             }
         }
@@ -283,6 +289,8 @@ impl FilesHandler {
         if let Some(file_actor) = self.file_actor.as_mut() {
             match file_actor {
                 FileActor::Uploader(file_uploader) => {
+                    info!("Uploading data frame to fs. Frame size: {}", self.content_buf.len());
+
                     let content_fragment = &self.content_buf;
                     if content_fragment.is_empty() {
                         return Ok(());
@@ -310,10 +318,17 @@ impl FilesHandler {
                     }
                 }
                 FileActor::Fetcher(file_fetcher) => {
+                    info!("Sending metadata: {}", serde_json::to_string(&DownloadFileMetadataResponse {
+                        ok: true,
+                        method: "download_file".into(),
+                        metadatas: file_fetcher.get_metadata(),
+                    })
+                    .unwrap());
                     self.output_connection
                         .write(
                             &MessageBuilder::build_from_str(
                                 serde_json::to_string(&DownloadFileMetadataResponse {
+                                    ok: true,
                                     method: "download_file".into(),
                                     metadatas: file_fetcher.get_metadata(),
                                 })
@@ -324,7 +339,9 @@ impl FilesHandler {
                         .await;
 
                     loop {
-                        let data_frame = file_fetcher.get_built_response().await?;
+                        // As we have an Vector of Metadatas, we may not include the size of the next binary frame
+                        let data_frame = file_fetcher.fetch_data_frame().await?;
+                        info!("[Download] Sending data frame back! Data Frame size: {}", data_frame.len());
                         self.output_connection.write(&data_frame).await;
 
                         if file_fetcher.is_finished() {

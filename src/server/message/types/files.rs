@@ -19,11 +19,12 @@ pub struct DownloadFileRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DownloadFileMetadataResponse {
+    pub ok: bool,
     pub method: String, // download_file
     pub metadatas: Vec<Metadata>
 }
 
-pub fn extract_media_method(content: &String) -> PPResult<String> {
+pub fn extract_file_method(content: &String) -> PPResult<String> {
     let val = serde_json::from_str::<Value>(&content)?;
 
     Ok(val.get("method").ok_or(PPError::from("Failed to get method!"))?.as_str().ok_or("method must be 'str'!")?.to_owned())

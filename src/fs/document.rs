@@ -120,6 +120,9 @@ impl FsFetcher for DocumentFetcher {
 
         // Sort from smallest to biggest file size
         self.metadatas.sort_by(|a,b| a.file_size.cmp(&b.file_size));
+
+        debug!("Opening first file: {}", self.metadatas[0].file_path);
+        self.current_file = Some(File::open(&self.metadatas[0].file_path).await?);
  
         Ok(self.metadatas.clone())
     }
@@ -127,15 +130,15 @@ impl FsFetcher for DocumentFetcher {
     /// Allocates some constant Value on the heap
     async fn fetch_part(&mut self) -> PPResult<Vec<u8>> {
         if self.metadatas.is_empty() {
-            warn!("Cannot fetch anything more from metadata...");
+            warn!("Cannot fetch anything more...");
             return Ok(vec![])
         }
         
-        let mut buf: Vec<u8> = Vec::new();
-        buf.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
+        // Move buffer to the heap
+        let mut buf = Box::new([0; FILES_MESSAGE_ALLOCATION_SIZE]);
 
         if let Some(current_file) = self.current_file.as_mut() {
-            let read = current_file.read(&mut buf).await?;
+            let read = current_file.read(&mut buf[..]).await?;
             
             self.bytes_read += read as u64;
             
@@ -144,7 +147,7 @@ impl FsFetcher for DocumentFetcher {
             if read == 0 {
                 self.metadatas.drain(..1);
 
-                if self.metadatas.is_empty() {return Ok(buf)}
+                if self.metadatas.is_empty() {return Ok(buf[..read].to_vec())}
 
                 if let Some(metadata) = self.metadatas.iter().next() {
                     info!("Opening new file: {}!", metadata.file_path);
@@ -152,11 +155,11 @@ impl FsFetcher for DocumentFetcher {
                     self.bytes_read = 0;
                 }
             }
+
+            return Ok(buf[..read].to_vec())
         } else {
             return Err(PPError::from("File isn't opened!"))
         }
-
-        Ok(buf)
     }
 
     fn is_part_ready(&self) -> bool {

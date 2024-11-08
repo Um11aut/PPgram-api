@@ -5,7 +5,7 @@ use log::info;
 
 // The default message contains the size of it (u32 4 bytes)
 // and the content(the rest of it)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MessageBuilder {
     size: u32,
     content: Vec<u8>,
