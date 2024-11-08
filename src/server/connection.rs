@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::error;
+use log::{debug, error};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}};
@@ -40,6 +40,9 @@ impl TCPConnection {
 
     /// Writes the data to the buffer
     pub async fn write(&self, buf: &[u8]) {
+        if buf.len() < 1000 {
+            debug!("Sending response!\n {}", String::from_utf8_lossy(&buf[4..]));
+        }
         let mut writer = self.writer.lock().await;
         if let Err(err) = writer.write_all(buf).await {
             error!("Failed to write to the buffer: {}", err);

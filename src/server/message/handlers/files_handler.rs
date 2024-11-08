@@ -187,9 +187,11 @@ impl Handler for FilesHandler {
 impl FilesHandler {
     /// Resets everything besides `output_connection`
     pub fn reset(&mut self) {
+        self.file_actor = None;
         self.is_first = true;
         self.request_builder = None;
         self.content_buf = vec![];
+        self.accumulated_binary_start = vec![];
     }
 
     pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {
@@ -312,18 +314,14 @@ impl FilesHandler {
                                     sha256_hash,
                                 })
                                 .await;
+                                self.reset();
                             }
                             FileActor::Fetcher(_) => unimplemented!(),
                         }
                     }
                 }
                 FileActor::Fetcher(file_fetcher) => {
-                    info!("Sending metadata: {}", serde_json::to_string(&DownloadFileMetadataResponse {
-                        ok: true,
-                        method: "download_file".into(),
-                        metadatas: file_fetcher.get_metadata(),
-                    })
-                    .unwrap());
+                    info!("Sending metadata: {:?}", file_fetcher.get_metadata());
                     self.output_connection
                         .write(
                             &MessageBuilder::build_from_str(
@@ -341,6 +339,7 @@ impl FilesHandler {
                     loop {
                         // As we have an Vector of Metadatas, we may not include the size of the next binary frame
                         let data_frame = file_fetcher.fetch_data_frame().await?;
+                        if data_frame.len() == 0 {self.reset(); return Ok(())}
                         info!("[Download] Sending data frame back! Data Frame size: {}", data_frame.len());
                         self.output_connection.write(&data_frame).await;
 
@@ -352,8 +351,6 @@ impl FilesHandler {
                 }
             }
         }
-
-        self.is_first = false;
 
         Ok(())
     }
