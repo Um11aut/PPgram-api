@@ -21,7 +21,7 @@ use crate::server::{message::handlers::json_handler::JsonHandler, session::Sessi
 const JSON_MESSAGE_ALLOCATION_SIZE: usize = 1024;
 
 /// 1 Mib
-pub const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1 * (1024 * 1024 * 1024);
+pub const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1 * (1024 * 1024);
 
 pub(super) type Sessions = Arc<RwLock<HashMap<i32, Arc<RwLock<Session>>>>>;
 
@@ -121,11 +121,11 @@ impl Server {
             buffer.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
 
             match reader.lock().await.read(&mut buffer).await {
-                Ok(0) => break,
+                Ok(0) => {drop(buffer); break;},
                 Ok(n) => {
                     handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
-                Err(_) => break,
+                Err(_) => {drop(buffer); break;},
             }
         }
 

@@ -22,7 +22,7 @@ impl TCPConnection {
             (Arc::new(Mutex::new(r)), Arc::new(Mutex::new(w)))
         };
 
-        let (sender, receiver) = mpsc::channel::<Value>(1);
+        let (sender, receiver) = mpsc::channel::<Value>(10);
 
         tokio::spawn(Self::launch_receiver_handler(Arc::clone(&writer), receiver));
         
@@ -41,7 +41,9 @@ impl TCPConnection {
     /// Writes the data to the buffer
     pub async fn write(&self, buf: &[u8]) {
         let mut writer = self.writer.lock().await;
-        writer.write_all(buf).await.unwrap();
+        if let Err(err) = writer.write_all(buf).await {
+            error!("Failed to write to the buffer: {}", err);
+        }
     }
 
     pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {

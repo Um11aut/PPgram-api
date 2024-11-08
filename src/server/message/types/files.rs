@@ -30,9 +30,12 @@ pub fn extract_media_method(content: &String) -> PPResult<String> {
 }
 
 /// Struct to fetch the info about file
+/// 
+/// File Path isn't serialized in Json!
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Metadata {
     pub file_name: String,
+    #[serde(skip)]
     pub file_path: String,
     pub file_size: u64,
 }
