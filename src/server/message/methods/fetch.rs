@@ -1,3 +1,4 @@
+use log::debug;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -40,12 +41,19 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetails>>
 
 /// Fetches Users by the given search query
 async fn on_users(handler: &mut JsonHandler) -> PPResult<FetchUsersResponse> {
+    let self_user_id = {
+        let session = handler.session.read().await;
+        session.get_credentials_unchecked().0.as_i32_unchecked()
+    };
+
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchUsersRequest>(&content)?;
     let query = msg.query;
 
     let users_db: UsersDB = handler.get_db();
-    let search_result = users_db.fetch_users_by_search_query(query).await?;
+    let mut search_result = users_db.fetch_users_by_search_query(query).await?;
+    // filter yourself
+    search_result.retain(|x| x.user_id() != self_user_id);
 
     Ok(FetchUsersResponse{
         ok: true,
