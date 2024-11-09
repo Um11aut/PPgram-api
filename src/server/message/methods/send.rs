@@ -67,7 +67,7 @@ async fn handle_send_message(
     let messages_db: MessagesDB = handler.get_db();
     let mut db_message = messages_db.add_message(&msg, &self_user_id, associated_chat.chat_id()).await?;
     if !associated_chat.is_group() {
-        db_message.chat_id = msg.common.to;
+        db_message.chat_id = self_user_id.as_i32_unchecked();
     }
     let message_id = db_message.message_id;
 

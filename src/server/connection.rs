@@ -1,9 +1,11 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use log::{debug, error};
+use log::{debug, error, warn};
 use serde::Serialize;
 use serde_json::Value;
-use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}};
+use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}, time::sleep};
+
+use crate::db::internal::error::PPResult;
 
 use super::message::builder::MessageBuilder;
 
@@ -63,4 +65,13 @@ impl TCPConnection {
             }
         }
     }
+
+//     async fn attempt_reconnect(writer: &Arc<Mutex<OwnedWriteHalf>>, attempts: u32) -> PPResult<()> {
+//         let backoff = Duration::from_secs(5);
+//     
+//         warn!("Waiting for reconnect: {}", backoff);
+//         sleep(backoff).await;
+// 
+// 
+//     }
 }

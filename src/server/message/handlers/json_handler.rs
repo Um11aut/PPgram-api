@@ -215,6 +215,7 @@ impl JsonHandler {
 
 impl Drop for JsonHandler {
     fn drop(&mut self) {
+        // Basically drops the reference count
         self.bucket.decrement_rc(); 
 
         tokio::spawn({
@@ -223,6 +224,7 @@ impl Drop for JsonHandler {
             let connection = Arc::clone(&self.output_connection);
 
             async move {
+                // Try to find this connection in a global hashmap, delete if authenticated 
                 let mut connections = connections.write().await;
                 let mut session = session.write().await;
 

@@ -158,31 +158,16 @@ async fn on_messages(handler: &mut JsonHandler) -> PPResult<FetchMessagesRespons
 
 
 /// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
-async fn handle_json_message(handler: &mut JsonHandler) -> PPResult<Option<Value>> {
+async fn handle_json_message(handler: &mut JsonHandler) -> PPResult<Value> {
     let content = handler.utf8_content_unchecked();
     let what = extract_what_field(&content)?;
 
     match what.as_str() {
-        "chats" => match on_chats(&handler).await.map(|v| serde_json::to_value(v).unwrap()) {
-            Ok(v) => Ok(Some(v)),
-            Err(err) => Err(err)
-        },
-        "self" => match on_self(&handler).await.map(|v| serde_json::to_value(v).unwrap()){
-            Ok(v) => Ok(Some(v)),
-            Err(err) => Err(err)
-        },
-        "user" => match on_user(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
-            Ok(v) => Ok(Some(v)),
-            Err(err) => Err(err)
-        }
-        "messages" => match on_messages(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
-            Ok(v) => Ok(Some(v)),
-            Err(err) => Err(err)
-        }
-        "users" => match on_users(handler).await.map(|v| serde_json::to_value(v).unwrap()) {
-            Ok(v) => Ok(Some(v)),
-            Err(err) => Err(err)
-        }
+        "chats" => on_chats(&handler).await.map(|v| serde_json::to_value(v).unwrap()),
+        "self" => on_self(&handler).await.map(|v| serde_json::to_value(v).unwrap()),
+        "user" => on_user(handler).await.map(|v| serde_json::to_value(v).unwrap()),
+        "messages" => on_messages(handler).await.map(|v| serde_json::to_value(v).unwrap()),
+        "users" => on_users(handler).await.map(|v| serde_json::to_value(v).unwrap()),
         _ => return Err(PPError::from("Unknown 'what' field provided!"))
     }
 }
@@ -191,7 +176,7 @@ pub async fn handle(handler: &mut JsonHandler, method: &str) {
     auth_macros::require_auth!(handler, method);
 
     match handle_json_message(handler).await {
-        Ok(message) => if let Some(msg) = message {handler.send_message(&msg).await},
+        Ok(message) => handler.send_message(&message).await,
         Err(err) => {handler.send_error("fetch", err).await;}
     };
 }

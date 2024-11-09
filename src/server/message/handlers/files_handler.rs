@@ -269,7 +269,6 @@ impl FilesHandler {
                             return Ok(())
                         }
                         "download_file" => {
-                            info!("Downloading file chosen!");
                             let req =
                                 serde_json::from_str::<DownloadFileRequest>(&request_content)?;
                             self.file_actor =
@@ -304,19 +303,16 @@ impl FilesHandler {
 
                     if file_uploader.is_ready() {
                         let actor = self.file_actor.take().unwrap();
-                        match actor {
-                            FileActor::Uploader(file_uploader) => {
-                                let sha256_hash = file_uploader.finalize().await;
+                        if let FileActor::Uploader(file_uploader) = actor {
+                            let sha256_hash = file_uploader.finalize().await;
 
-                                self.write_json(UploadFileResponse {
-                                    ok: true,
-                                    method: "upload_file".into(),
-                                    sha256_hash,
-                                })
-                                .await;
-                                self.reset();
-                            }
-                            FileActor::Fetcher(_) => unimplemented!(),
+                            self.write_json(UploadFileResponse {
+                                ok: true,
+                                method: "upload_file".into(),
+                                sha256_hash,
+                            })
+                            .await;
+                            self.reset();
                         }
                     }
                 }
