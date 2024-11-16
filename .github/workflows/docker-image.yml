@@ -15,4 +15,5 @@ jobs:
         with:
           file: docker-compose.yml
           service: rust-app
-          command: cargo test
+          entrypoint: cargo
+          command: test
