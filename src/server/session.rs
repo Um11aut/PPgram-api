@@ -24,7 +24,7 @@ impl AuthComponent {
             Err(err) => Err(err)
         }
     }
-    
+
     pub async fn from_login(db: UsersDB, req: LoginRequest) -> PPResult<Self> {
         match db.login(&req.username, &req.password).await {
             Ok((user_id, session_id)) => Ok(Self{
@@ -60,7 +60,7 @@ pub struct Session {
 impl Session {
     pub fn new(socket: TcpStream) -> Session {
         let main_connection = TCPConnection::new(socket);
-        
+
         Session {
             session_id: None,
             user_id: None,
@@ -69,7 +69,7 @@ impl Session {
     }
 
     /// Session can be authenticated for basic functionality
-    /// 
+    ///
     /// e.g. sending messages, fetching
     pub fn authenticate(&mut self, auth_component: AuthComponent)
     {
@@ -97,13 +97,13 @@ impl Session {
     }
 
     /// Sends json message to some existing connection (with connection index as server can handle multiple connections per session)
-    /// 
+    ///
     /// Needed for live events, sending messages etc.
     pub async fn mpsc_send(&mut self, message: impl Serialize, con_idx: usize) {
         self.connections[con_idx].mpsc_send(message).await;
     }
 
-    /// `(UserId, String)` -> user_id, session_id 
+    /// `(UserId, String)` -> user_id, session_id
     pub fn get_credentials(&self) -> Option<(UserId, String)> {
         if self.is_authenticated() {
             return Some((self.user_id.unwrap().into(), self.session_id.clone().unwrap()))
@@ -112,8 +112,8 @@ impl Session {
         None
     }
 
-    /// Should be used if authentification was required earlier in the code 
-    /// 
+    /// Should be used if authentification was required earlier in the code
+    ///
     /// Because we know that user is already authenticated
     pub fn get_credentials_unchecked(&self) -> (UserId, String) {
         return (self.user_id.unwrap().into(), self.session_id.clone().unwrap())

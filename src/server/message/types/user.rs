@@ -15,7 +15,7 @@ pub struct User {
 impl User {
     pub async fn new(users_db: UsersDB, id: UserId) -> Result<User, PPError> {
         let user = users_db.fetch_user(&id).await?;
-        
+
         match user {
             Some(user) => Ok(user),
             None => Err(PPError::from("Failed to find chat id!"))
@@ -43,8 +43,12 @@ impl User {
         &self.username
     }
 
+    pub fn photo_cloned(&self) -> Option<String> {
+        self.photo.clone()
+    }
+
     pub fn photo(&self) -> Option<&String> {
-        self.photo.as_ref() 
+        self.photo.as_ref()
     }
 
     pub fn photo_moved(self) -> Option<String> {

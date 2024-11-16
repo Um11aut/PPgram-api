@@ -1,4 +1,4 @@
-use crate::{db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}, user::UsersDB}, server::message::{handlers::json_handler::JsonHandler, methods::auth_macros, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
+use crate::{db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}, user::UsersDB}, server::message::{handlers::json_handler::JsonHandler, methods::macros, types::{request::join::JoinGroupRequest, response::{events::NewParticipantEvent, join::{JoinGroupResponse, JoinLinkNotFoundResponse}}, user::UserId}}};
 
 enum JoinGroupResult {
     JoinGroupResponse(JoinGroupResponse),
@@ -17,7 +17,7 @@ async fn on_join_group(msg: JoinGroupRequest, handler: &mut JsonHandler) -> PPRe
     };
 
     if !msg.link.starts_with("+") {return Err("Invitation link must start with '+'".into())}
-    
+
     let chats_db: ChatsDB = handler.get_db();
     let users_db: UsersDB = handler.get_db();
     let chat = chats_db.get_chat_by_invitation_hash(msg.link).await?;
@@ -30,14 +30,14 @@ async fn on_join_group(msg: JoinGroupRequest, handler: &mut JsonHandler) -> PPRe
             users_db.add_chat(&self_user_id, chat.chat_id(), chat.chat_id()).await?;
             chats_db.add_participant(chat.chat_id(), &self_user_id).await?;
             let self_info = users_db.fetch_user(&self_user_id).await?.unwrap();
-            
-            // Send event to every user in the chat 
+
+            // Send event to every user in the chat
             // that new participant joined
             for other in chat.participants() {
                 let self_info = self_info.clone();
                 let chat_id = chat.chat_id().clone();
 
-                handler.send_msg_to_connection_detached(other.user_id(), NewParticipantEvent{
+                handler.send_event_to_con_detached(other.user_id(), NewParticipantEvent{
                     event: "new_participant".into(),
                     chat_id,
                     new_user: self_info
@@ -70,7 +70,7 @@ async fn on_join(handler: &mut JsonHandler) -> PPResult<JoinGroupResult> {
 }
 
 pub async fn handle(handler: &mut JsonHandler, method: &str) {
-    auth_macros::require_auth!(handler, method);
+    macros::require_auth!(handler, method);
 
     match on_join(handler).await {
         Ok(msg) => match msg {

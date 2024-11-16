@@ -68,13 +68,13 @@ impl Handler for JsonHandler {
                 }
             }
         }
-        
+
         let mut do_handle = false;
         if let Some(ref mut message) = self.builder {
             if !message.ready() {
                 message.extend(buffer);
             }
-            
+
             if message.ready() {
                 do_handle = true;
             }
@@ -84,7 +84,7 @@ impl Handler for JsonHandler {
             if self.builder.is_some() {
                 self.try_handle_json_message().await;
             }
-    
+
             if let Some(ref mut message) = self.builder {
                 message.clear();
             }
@@ -109,7 +109,7 @@ impl JsonHandler {
             sessions,
             output_connection,
             is_first: true,
-            bucket 
+            bucket
         }
     }
 
@@ -119,7 +119,7 @@ impl JsonHandler {
     }
 
     /// Sends standartized json error:
-    /// 
+    ///
     /// ok: false,
     /// method as `str`,
     /// err as `str`
@@ -127,7 +127,7 @@ impl JsonHandler {
         err.safe_send(method, &self.output_connection).await;
     }
 
-    /// Sending message with tokio::spawn. 
+    /// Sending message with tokio::spawn.
     /// Necessary for large objects, so the read operations won't be stopped
     pub fn send_raw_detached(&self, data: Arc<[u8]>) {
         tokio::spawn({
@@ -153,16 +153,16 @@ impl JsonHandler {
         self.output_connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await;
     }
 
-    /// Sends message to other connection(e.g. new chat, new message, or any other event that must be handled in realtime)
-    /// 
+    /// Sends message to other user, meaning connection(e.g. new chat, new message, or any other event that must be handled in realtime)
+    ///
     /// If user isn't connected to the server, nothing happens
-    pub fn send_msg_to_connection_detached(&self, to: i32, msg: impl Serialize + Send + 'static) {
+    pub fn send_event_to_con_detached(&self, to: i32, msg: impl Serialize + Send + 'static) {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
             async move {
                 if let Some(receiver_session) = connections.read().await.get(&to) {
                     let mut target_connection = receiver_session.write().await;
-                    
+
                     target_connection.mpsc_send(msg, 0).await;
                 }
             }
@@ -202,7 +202,7 @@ impl JsonHandler {
                             "join" => join::handle(self, method).await,
                             _ => self.send_error(method, "Unknown method given!".into()).await
                         }
-                    },  
+                    },
                     None => self.send_error("none", "Failed to get the method from the json message!".into()).await
                 }
             },
@@ -216,15 +216,15 @@ impl JsonHandler {
 impl Drop for JsonHandler {
     fn drop(&mut self) {
         // Basically drops the reference count
-        self.bucket.decrement_rc(); 
+        self.bucket.decrement_rc();
 
         tokio::spawn({
-            let connections: Sessions = Arc::clone(&self.sessions);    
+            let connections: Sessions = Arc::clone(&self.sessions);
             let session = Arc::clone(&self.session);
             let connection = Arc::clone(&self.output_connection);
 
             async move {
-                // Try to find this connection in a global hashmap, delete if authenticated 
+                // Try to find this connection in a global hashmap, delete if authenticated
                 let mut connections = connections.write().await;
                 let mut session = session.write().await;
 

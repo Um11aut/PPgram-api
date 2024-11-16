@@ -8,7 +8,7 @@ pub mod new;
 pub mod join;
 
 #[macro_use] // This will allow macros to be imported into the scope
-pub mod auth_macros {
+pub mod macros {
     /// Require authentification
     macro_rules! require_auth {
         ($handler:ident, $method:ident) => {

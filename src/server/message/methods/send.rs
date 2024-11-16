@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB}, server::{
         message::{
-            handlers::json_handler::JsonHandler, methods::auth_macros, types::{chat::ChatId, request::send::{MessageId, SendMessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
+            handlers::json_handler::JsonHandler, methods::macros, types::{chat::ChatId, request::send::{MessageId, SendMessageRequest}, response::{events::{NewChatEvent, NewMessageEvent}, send::SendMessageResponse}}
         },
         session::Session,
     }};
@@ -38,7 +38,7 @@ async fn handle_send_message(
     let associated_chat = match maybe_chat {
         Some(existing_chat_id) => {
             chats_db.fetch_chat(existing_chat_id).await?.ok_or(PPError::from("Failed to find Chat!"))
-        }, 
+        },
         // Create chat id if doesn't exist
         None => {
             debug!("Message was sent to: {}. Chat with this user wasn't found. Creating chat.", msg.common.to);
@@ -55,7 +55,7 @@ async fn handle_send_message(
 
             let mut chat_details = chat.details(&msg.common.to.into()).await?.unwrap();
             chat_details.chat_id = self_user_id.as_i32().unwrap();
-            handler.send_msg_to_connection_detached(msg.common.to, NewChatEvent {
+            handler.send_event_to_con_detached(msg.common.to, NewChatEvent {
                 event: "new_chat".into(),
                 new_chat: chat_details
             });
@@ -63,7 +63,7 @@ async fn handle_send_message(
             Ok(chat)
         }
     }?;
-    
+
     let messages_db: MessagesDB = handler.get_db();
     let mut db_message = messages_db.add_message(&msg, &self_user_id, associated_chat.chat_id()).await?;
     if !associated_chat.is_group() {
@@ -74,20 +74,20 @@ async fn handle_send_message(
     // Send every user in chat notification
     for participant in associated_chat.participants() {
         // Don't send it on yourself
-        if participant.user_id() == self_user_id.as_i32_unchecked() {continue;} 
+        if participant.user_id() == self_user_id.as_i32_unchecked() {continue;}
 
-        handler.send_msg_to_connection_detached(msg.common.to, NewMessageEvent {
+        handler.send_event_to_con_detached(msg.common.to, NewMessageEvent {
             event: "new_message".into(),
             new_message: db_message.clone()
         });
     }
-    
+
 
     Ok((message_id, msg.common.to))
 }
 
 pub async fn handle(handler: &mut JsonHandler, method: &str) {
-    auth_macros::require_auth!(handler, method);
+    macros::require_auth!(handler, method);
 
     let content = handler.utf8_content_unchecked();
     match serde_json::from_str::<SendMessageRequest>(&content) {
@@ -99,7 +99,7 @@ pub async fn handle(handler: &mut JsonHandler, method: &str) {
                             ok: true,
                             method: "send_message".into(),
                             message_id: latest_msg_id,
-                            chat_id: target_chat_id 
+                            chat_id: target_chat_id
                         };
                         handler.send_message(&data).await;
                     }

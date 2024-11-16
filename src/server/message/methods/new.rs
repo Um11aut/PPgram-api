@@ -13,7 +13,7 @@ use crate::{
     },
     server::{
         message::{
-            handlers::json_handler::JsonHandler, methods::auth_macros, types::{
+            handlers::json_handler::JsonHandler, methods::macros, types::{
                 chat::{Chat, ChatDetails, ChatId},
                 request::{
                     extract_what_field, new::{NewGroupRequest, NewInvitationLinkRequest}, send::{MessageId, SendMessageRequest}
@@ -44,7 +44,7 @@ async fn handle_new_group(msg: NewGroupRequest, handler: &JsonHandler) -> PPResu
     };
 
     let chats_db = handler.get_db::<ChatsDB>();
-    let group = 
+    let group =
         chats_db.create_group(
             vec![self_user_id.clone()],
             ChatDetails {
@@ -132,7 +132,7 @@ async fn on_new(handler: &mut JsonHandler) -> PPResult<()> {
 }
 
 pub async fn handle(handler: &mut JsonHandler, method: &str) {
-    auth_macros::require_auth!(handler, method);
+    macros::require_auth!(handler, method);
 
     if let Err(err) = on_new(handler).await {
         handler.send_error(method, err).await

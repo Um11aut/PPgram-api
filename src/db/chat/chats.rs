@@ -52,7 +52,7 @@ impl Database for ChatsDB {
 
         self.session.execute(create_table_query).await?;
         self.session.execute("CREATE INDEX IF NOT EXISTS chats_invitation_hash_idx ON ksp.chats (invitation_hash)").await?;
-    
+
         Ok(())
     }
 }
@@ -71,7 +71,7 @@ impl ChatsDB {
         let mut statement = self.session.statement(insert_query);
         statement.bind_int32(0, chat_id)?;
         statement.bind_bool(1, false)?;
-        
+
         let mut list = cassandra_cpp::List::new();
         for participant in participants {
             match participant {
@@ -91,7 +91,7 @@ impl ChatsDB {
     }
 
     /// Creates new unique invitation hash for a group
-    /// 
+    ///
     /// e.g. For others to join it
     pub async fn create_invitation_hash(&self, group_chat_id: i32) -> PPResult<InvitationHash> {
         let hash: String = rand::thread_rng()
@@ -106,27 +106,27 @@ impl ChatsDB {
         let mut statement = self.session.statement(update_query);
         statement.bind_string(0, &new_invitation_hash)?;
         statement.bind_int32(1, group_chat_id)?;
-    
+
         statement.execute().await.map_err(PPError::from)?;
-    
+
         Ok(new_invitation_hash)
     }
 
     pub async fn get_chat_by_invitation_hash(&self, invitation_hash: InvitationHash) -> PPResult<Option<Chat>> {
         let select_query = "SELECT * FROM ksp.chats WHERE invitation_hash = ?";
-    
+
         let mut statement = self.session.statement(select_query);
         statement.bind_string(0, &invitation_hash)?;
-    
+
         match statement.execute().await {
             Ok(result) => {
                 if let Some(row) = result.first_row() {
                     let chat_id: i32 = row.get_by_name("id")?;
                     let is_group: bool = row.get_by_name("is_group")?;
-    
+
                     let mut iter: SetIterator = row.get_by_name("participants")?;
                     let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
-                    
+
                     let mut participants: Vec<User> = vec![];
                     while let Some(participant) = iter.next() {
                         let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;
@@ -134,12 +134,12 @@ impl ChatsDB {
                             participants.push(user)
                         }
                     }
-    
+
                     let details = if is_group {
                         let name: String = row.get_by_name("name")?;
                         let avatar_hash: String = row.get_by_name("avatar_hash")?;
                         let username: String = row.get_by_name("username")?;
-    
+
                         Some(ChatDetails {
                             name,
                             chat_id,
@@ -148,7 +148,7 @@ impl ChatsDB {
                             username: if !username.is_empty(){Some(username)}else{None}
                         })
                     } else {None};
-    
+
                     return Ok(Some(Chat::construct(chat_id, is_group, participants, details)));
                 }
                 Ok(None)
@@ -164,7 +164,7 @@ impl ChatsDB {
         let mut statement = self.session.statement(insert_query);
         statement.bind_int32(0, chat_id)?;
         statement.bind_bool(1, true)?;
-        
+
         let mut list = cassandra_cpp::List::new();
         for participant in participants {
             match participant {
@@ -188,7 +188,7 @@ impl ChatsDB {
 
     pub async fn add_participant(&self, chat_id: ChatId, participant: &UserId) -> Result<(), PPError> {
         let update_query = "UPDATE ksp.chats SET participants = participants + ? WHERE id = ?;";
-        
+
         let mut statement = self.session.statement(update_query);
         let mut list = cassandra_cpp::List::new();
         match participant {
@@ -217,6 +217,7 @@ impl ChatsDB {
         Ok(res.first_row().is_some())
     }
 
+    /// Fetch chat by real chat id
     pub async fn fetch_chat(&self, chat_id: ChatId) -> Result<Option<Chat>, PPError> {
         let select_query = "SELECT * FROM ksp.chats WHERE id = ?";
 
@@ -231,7 +232,7 @@ impl ChatsDB {
 
                     let mut iter: SetIterator = row.get_by_name("participants")?;
                     let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
-                    
+
                     let mut participants: Vec<User> = vec![];
                     while let Some(participant) = iter.next() {
                         let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;

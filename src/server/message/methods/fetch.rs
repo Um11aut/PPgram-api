@@ -1,12 +1,10 @@
-use log::debug;
-use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::db::chat::chats::ChatsDB;
 use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
-use crate::server::message::methods::auth_macros;
+use crate::server::message::methods::macros;
 use crate::server::message::types::chat::ChatDetails;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
@@ -124,7 +122,7 @@ async fn on_self(handler: &JsonHandler) -> PPResult<FetchSelfResponseMessage> {
 async fn on_user(handler: &mut JsonHandler) -> PPResult<FetchUserResponse> {
     let content = handler.utf8_content_unchecked();
     let msg: FetchUserRequest = serde_json::from_str(&content)?;
-    
+
     let user_id: UserId = match msg.username {
         Some(username) => username.as_str().into(),
         None => match msg.user_id{
@@ -154,7 +152,7 @@ async fn on_messages(handler: &mut JsonHandler) -> PPResult<FetchMessagesRespons
         method: "fetch_messages".into(),
         messages: fetched_msgs
     })
-} 
+}
 
 
 /// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
@@ -173,7 +171,7 @@ async fn handle_json_message(handler: &mut JsonHandler) -> PPResult<Value> {
 }
 
 pub async fn handle(handler: &mut JsonHandler, method: &str) {
-    auth_macros::require_auth!(handler, method);
+    macros::require_auth!(handler, method);
 
     match handle_json_message(handler).await {
         Ok(message) => handler.send_message(&message).await,
