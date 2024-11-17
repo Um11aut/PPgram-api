@@ -2,8 +2,6 @@ use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
 
 use log::{error, info};
 
-use super::{chat::{chats::ChatsDB, messages::MessagesDB}, user::UsersDB};
-
 #[derive(Debug)]
 pub struct DatabaseBucket {
     connection: Arc<cassandra_cpp::Session>,
@@ -12,10 +10,10 @@ pub struct DatabaseBucket {
 
 impl From<Arc<cassandra_cpp::Session>> for DatabaseBucket {
     fn from(value: Arc<cassandra_cpp::Session>) -> Self {
-        let count = Arc::strong_count(&value); 
+        let count = Arc::strong_count(&value);
         Self {
             connection: value,
-            reference_count: Arc::new(AtomicUsize::from(count)) 
+            reference_count: Arc::new(AtomicUsize::from(count))
         }
     }
 }
@@ -49,8 +47,8 @@ impl DatabaseBucket {
     }
 
     /// Clones the connection and increments reference count
-    /// 
-    /// Reference count in this situation is the count of the 
+    ///
+    /// Reference count in this situation is the count of the
     /// users that are connected to the server,
     /// so whenever some new connection clones `DatabaseBucket`, the
     /// internal reference count is the same
@@ -72,6 +70,14 @@ impl DatabaseBucket {
 
     pub fn get_connection(&self) -> Arc<cassandra_cpp::Session> {
         self.connection.clone()
+    }
+
+    pub fn is_rc_zero(&self) -> bool {
+        self.reference_count.load(Ordering::SeqCst) == 0
+    }
+
+    pub fn get_rc_count(&self) -> usize {
+        self.reference_count.load(Ordering::SeqCst)
     }
 }
 
@@ -102,7 +108,7 @@ pub struct DatabasePool {
 impl DatabasePool {
     pub async fn new() -> Self {
         let buckets: Vec<DatabaseBucket> = vec![DatabaseBucket::new().await];
-        
+
         Self {
             buckets
         }
@@ -110,11 +116,30 @@ impl DatabasePool {
 
     pub async fn get_available_bucket(&mut self) -> DatabaseBucket {
         info!("Getting available db bucket...\n Buckets: {:?}", self.buckets);
-        for bucket in self.buckets.iter_mut() {
+        for (i, bucket) in self.buckets.iter_mut().enumerate() {
             if !bucket.is_full() {
                 return bucket.clone_increment_rc();
             }
+
+            //if bucket.is_rc_zero() {
+            //    tokio::spawn({
+            //        let i = i.clone();
+            //       async move {
+            //            // Wait for 120 secs and check if the rc is still 0...
+            //            // Needed because statistically, it's more likely that new user is going to
+            //            // join in theese 120 secs
+            //            tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+
+            //            if self.buckets[i].is_rc_zero() {
+            //                self.buckets.remove(i);
+            //            }
+            //        }
+            //    });
+            //}
         }
+
+        // Sort by reference count in ascending order
+        self.buckets.sort_by(|a, b| a.get_rc_count().cmp(&b.get_rc_count()));
 
         let new_bucket = DatabaseBucket::new().await;
         self.buckets.push(new_bucket.clone());
