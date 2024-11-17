@@ -1,8 +1,8 @@
-use std::{borrow::Cow, path::{Path, PathBuf}};
+use std::{borrow::Cow, path::PathBuf};
 
 use log::{info, warn};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::{fs::{File, OpenOptions, ReadDir}, io::{AsyncReadExt, AsyncWriteExt}};
+use tokio::{fs::{File, OpenOptions}, io::{AsyncReadExt, AsyncWriteExt}};
 
 use crate::{db::internal::error::{PPError, PPResult}, server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE}};
 
@@ -27,10 +27,10 @@ pub enum MediaType {
     Photo(PhotoType)
 }
 
-impl TryFrom<String> for MediaType {
+impl TryFrom<&str> for MediaType {
     type Error = PPError;
 
-    fn try_from(file_name: String) -> Result<Self, Self::Error> {
+    fn try_from(file_name: &str) -> Result<Self, Self::Error> {
         let file_name = file_name.to_lowercase();
         let fmt = file_name.rsplit('.').next().ok_or(PPError::from("name must contain the file type!"))?;
 
@@ -49,9 +49,9 @@ impl TryFrom<String> for MediaType {
 }
 
 /// Struct for framed uploading of media
-/// 
+///
 /// Uploads a binary frame to a random temp_file in TEMPDIR, while generating a SHA256 hash
-/// 
+///
 /// Then taking that hash and putting it into according Folder that is named after the hash
 pub struct MediaHandler {
     hasher: BinaryHasher,
@@ -65,7 +65,7 @@ impl MediaHandler {
         let document_name = document_name.into().to_string();
 
         // TODO: Depending on the media type make compression support
-        let media_type = MediaType::try_from(document_name.clone())?;
+        let media_type = MediaType::try_from(document_name.as_str())?;
 
         // Generating a random temp file where all the framed binary will be put
         let temp_file: String = rand::thread_rng()
@@ -136,7 +136,7 @@ unsafe impl Send for MediaFetcher {}
 unsafe impl Sync for MediaFetcher {}
 
 impl MediaFetcher {
-    pub fn new(sha256_hash: &str) -> Self { 
+    pub fn new(sha256_hash: &str) -> Self {
         Self {
             sha256_hash: sha256_hash.to_string(),
             metadatas: vec![],
@@ -150,7 +150,7 @@ impl MediaFetcher {
 impl FsFetcher for MediaFetcher {
     async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
         let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&self.sha256_hash)).await?;
-        
+
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path().canonicalize()?;
             let name = entry.file_name().into_string().unwrap();
@@ -164,7 +164,7 @@ impl FsFetcher for MediaFetcher {
         }
 
         self.metadatas.sort_by(|a,b| a.file_size.cmp(&b.file_size));
- 
+
         Ok(self.metadatas.clone())
     }
 
@@ -174,15 +174,15 @@ impl FsFetcher for MediaFetcher {
             warn!("Cannot fetch anything more from metadata...");
             return Ok(vec![])
         }
-        
+
         let mut buf: Vec<u8> = Vec::new();
         buf.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
 
         if let Some(current_file) = self.current_file.as_mut() {
             let read = current_file.read(&mut buf).await?;
-            
+
             self.bytes_read += read as u64;
-            
+
             // Then file is finished reading
             // Open the next one
             if read == 0 {
@@ -216,10 +216,17 @@ impl FsFetcher for MediaFetcher {
 pub async fn is_media(sha256_hash: &str) -> PPResult<bool> {
     if !hash_exists(sha256_hash).await? {return Err("Given SHA256 Hash doesn't exist!".into())};
     let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(sha256_hash)).await?;
-    
+
     let mut count = 0;
     while let Ok(Some(entry)) = entries.next_entry().await {
         if entry.file_type().await?.is_file() {
+            // Will fail on windows when the path is not in ASCII
+            let file_name = entry.file_name().into_string().unwrap();
+            let file_format = file_name.rsplit('.').next().expect("Entry must have a file_name!");
+
+            let maybe_media = MediaType::try_from(file_format);
+            if maybe_media.is_err() {return Ok(false)}
+
             count += 1;
         }
 

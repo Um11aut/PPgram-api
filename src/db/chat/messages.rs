@@ -3,20 +3,17 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::List;
-use log::info;
 use core::range::RangeInclusive;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use tokio::sync::OnceCell;
-
-use crate::db::bucket::DatabaseBucket;
 use crate::db::bucket::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;
 use crate::db::internal::validate::validate_range;
+use crate::fs::hash_exists;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::send::*;
@@ -36,10 +33,11 @@ impl Database for MessagesDB {
     async fn create_table(&self) -> Result<(), PPError> {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS ksp.messages (
-                id int, 
+                id int,
                 is_unread boolean,
                 from_id int,
                 chat_id int,
+                edited boolean,
                 date bigint,
                 has_reply boolean,
                 reply_to int,
@@ -47,7 +45,6 @@ impl Database for MessagesDB {
                 content TEXT,
                 has_media boolean,
                 media_hashes LIST<TEXT>,
-                media_names LIST<TEXT>,
                 PRIMARY KEY (chat_id, id)
             ) WITH CLUSTERING ORDER BY (id DESC);
         "#;
@@ -74,10 +71,10 @@ impl MessagesDB {
         target_chat_id: ChatId,
     ) -> Result<Message, PPError> {
         let insert_query = r#"
-            INSERT INTO ksp.messages 
-                (id, is_unread, from_id, chat_id, date, has_reply,
-                reply_to, has_content, content, 
-                has_media, media_hashes, media_names)
+            INSERT INTO ksp.messages
+                (id, is_unread, from_id, chat_id, edited, date, has_reply,
+                reply_to, has_content, content,
+                has_media, media_hashes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
 
@@ -102,42 +99,41 @@ impl MessagesDB {
             }
         }
         statement.bind_int32(3, target_chat_id)?; // chat_id
+        statement.bind_bool(4, false)?;
         statement.bind_int64(
-            4, // date
+            5, // date
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs() as i64,
         )?;
-        statement.bind_bool(5, msg.common.has_reply)?; // has_reply
-        statement.bind_int32(6, msg.common.reply_to)?; // reply_to
-        match &msg.content {
-            MessageContent::Media(media) => {
-                match &media.caption {
-                    Some(caption) => {
-                        statement.bind_bool(7, true)?; // has_content
-                        statement.bind_string(8, &caption)?; // content
-                    }
-                    None => {
-                        statement.bind_bool(7, true)?; // has_content
-                        statement.bind_string(8, "")?; // content
-                    }
-                }
+        statement.bind_bool(6, if msg.common.reply_to.is_some() {true} else {false})?; // has_reply
+        statement.bind_int32(7, if let Some(reply_to) = msg.common.reply_to {reply_to} else {0})?; // reply_to
 
-                statement.bind_bool(9, true)?; // has_media
-
-                statement.bind_list(10, List::new())?; // media_hashes
-                statement.bind_list(11, List::new())?; // media_names
-
-                // TODO: Implement media messages
-                todo!()
+        match &msg.content.text {
+            Some(content) => {
+                statement.bind_bool(8, true)?;
+                statement.bind_string(9, content)?;
             }
-            MessageContent::Text(text) => {
-                statement.bind_bool(7, true)?; // has_content
-                statement.bind_string(8, &text.text)?; // content
-                statement.bind_bool(9, false)?; // has_media
-                statement.bind_list(10, List::new())?; // media_hashes
-                statement.bind_list(11, List::new())?; // media_names
+            None => {
+                statement.bind_bool(8, false)?;
+                statement.bind_string(9, "")?;
+            }
+        }
+        match &msg.content.sha256_hashes {
+            Some(sha256_hashes) => {
+                statement.bind_bool(10, true)?;
+
+                let mut list = List::new();
+                for sha256_hash in sha256_hashes {
+                    if !hash_exists(&sha256_hash).await? {return Err(format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into())}
+                    list.append_string(sha256_hash)?;
+                }
+                statement.bind_list(11, list)?;
+            }
+            None => {
+                statement.bind_bool(10, false)?;
+                statement.bind_list(11, List::new())?;
             }
         }
 
@@ -176,7 +172,6 @@ impl MessagesDB {
 
         let result = statement.execute().await?;
 
-
         if result.first_row().is_some() {
             Ok(true)
         } else {
@@ -203,9 +198,9 @@ impl MessagesDB {
 
         let statement = if end != 0 {
             let query = r#"
-                SELECT * 
-                    FROM ksp.messages 
-                    WHERE chat_id = ? AND id >= ? AND id <= ? 
+                SELECT *
+                    FROM ksp.messages
+                    WHERE chat_id = ? AND id >= ? AND id <= ?
             "#;
             let mut statement = self.session.statement(query);
             statement.bind_int32(0, chat_id)?;
@@ -214,8 +209,8 @@ impl MessagesDB {
             statement
         } else {
             let query = r#"
-                SELECT * 
-                    FROM ksp.messages 
+                SELECT *
+                    FROM ksp.messages
                     WHERE chat_id = ? AND id = ?;
             "#;
             let mut statement = self.session.statement(query);
@@ -239,13 +234,24 @@ impl MessagesDB {
             let has_content: bool = row.get_by_name("has_content")?;
             let content: String = row.get_by_name("content")?;
             let _: bool = row.get_by_name("has_media")?;
-            // TODO: Media
+            let edited: bool = row.get_by_name("edited")?;
+
+            let mut media_hashes: Vec<String> = vec![];
+
+            let maybe_iter: cassandra_cpp::Result<cassandra_cpp::SetIterator> = row.get_by_name("media_hashes");
+            if let Ok(mut iter) = maybe_iter {
+                while let Some(sha256_hash) = iter.next() {
+                    let hash = sha256_hash.to_string();
+                    media_hashes.push(hash);
+                }
+            }
 
             output.push(Message {
                 message_id,
                 is_unread,
                 from_id,
                 chat_id,
+                is_edited: edited,
                 date,
                 reply_to: if has_reply { Some(reply_to) } else { None },
                 content: if has_content && !content.is_empty() {
@@ -253,8 +259,7 @@ impl MessagesDB {
                 } else {
                     None
                 },
-                media_hashes: vec![],
-                media_names: vec![],
+                media_hashes,
             })
         }
 
@@ -268,50 +273,57 @@ impl MessagesDB {
         new_message: Message
     ) -> PPResult<()> {
         let update_query = r#"
-            UPDATE ksp.messages 
-            SET is_unread = ?, 
-                has_content = ?, 
-                content = ?, 
-                has_reply = ?, 
-                reply_to = ?, 
-                has_media = ?, 
-                media_hashes = ?, 
-                media_names = ? 
+            UPDATE ksp.messages
+            SET is_unread = ?,
+                has_content = ?,
+                content = ?,
+                has_reply = ?,
+                reply_to = ?,
+                has_media = ?,
+                media_hashes = ?,
+                edited = ?
             WHERE chat_id = ? AND id = ?
         "#;
-    
+
         let mut statement = self.session.statement(update_query);
-    
+
         statement.bind_bool(0, new_message.is_unread)?; // is_unread
         statement.bind_bool(1, new_message.content.is_some())?; // has_content
         statement.bind_string(2, new_message.content.unwrap_or_default().as_str())?; // content
         statement.bind_bool(3, new_message.reply_to.is_some())?; // has_reply
         statement.bind_int32(4, new_message.reply_to.unwrap_or(0))?; // reply_to
         statement.bind_bool(5, !new_message.media_hashes.is_empty())?; // has_media
-        statement.bind_list(6, List::new())?; // media_hashes
-        statement.bind_list(7, List::new())?; // media_names
-        
+
+        let mut cass_list = List::new();
+        for sha256_hash in new_message.media_hashes {
+            if !hash_exists(&sha256_hash).await? {return Err(format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into())}
+            cass_list.append_string(&sha256_hash)?;
+        }
+
+        statement.bind_list(6, cass_list)?; // media_hashes
+        statement.bind_bool(7, true)?; // is_edited
+
         statement.bind_int32(8, chat_id)?; // chat_id
         statement.bind_int32(9, msg_id)?; // id
-    
+
         statement.execute().await?;
-    
+
         Ok(())
     }
 
     pub async fn delete_message(&self, chat_id: ChatId, message_id: i32) -> PPResult<()> {
         let delete_query = r#"
-            DELETE FROM ksp.messages 
+            DELETE FROM ksp.messages
             WHERE chat_id = ? AND id = ?
         "#;
-    
+
         let mut statement = self.session.statement(delete_query);
-    
+
         statement.bind_int32(0, chat_id)?; // chat_id
         statement.bind_int32(1, message_id)?; // message_id
-    
+
         statement.execute().await?;
-    
+
         Ok(())
     }
 }

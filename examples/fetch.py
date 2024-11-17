@@ -30,7 +30,7 @@ if __name__ == "__main__":
         fetch = {
             "method": "fetch",
             "what": "messages",
-            "chat_id": -2079655369,
+            "chat_id": 0,
             "range": [-1, -300_000]
         }
         print(send_message(sock, fetch))

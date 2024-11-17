@@ -26,7 +26,7 @@ async fn check_username(handler: &mut JsonHandler, username: &str) {
     }
 }
 
-pub async fn handle(handler: &mut JsonHandler, method: &str) 
+pub async fn handle(handler: &mut JsonHandler, method: &str)
 {
     match serde_json::from_str::<CheckUsernameRequest>(&handler.utf8_content_unchecked()) {
         Ok(msg) => {

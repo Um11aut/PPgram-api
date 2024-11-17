@@ -20,5 +20,4 @@ pub struct EditMessageRequest {
     pub reply_to: Option<i32>,
     pub content: Option<String>,
     pub media_hashes: Option<Vec<String>>,
-    pub media_names: Option<Vec<String>>
 }

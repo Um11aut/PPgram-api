@@ -10,13 +10,14 @@ use db::db::create_tables;
 use log::error;
 use server::server::Server;
 
+const JSON_MESSAGES_PORT: u16 = 3000;
+const FILE_MESSAGES_PORT: u16 = 8080;
+
 #[tokio::main]
 async fn main() {
     create_tables().await;
     env_logger::init();
-    // 1: QUIC Port
-    // 2: TCP Port
-    let server = Server::new(3000, 8080).await;
+    let server = Server::new(JSON_MESSAGES_PORT, FILE_MESSAGES_PORT).await;
 
     match server {
         Ok(server) => server.poll_events().await,

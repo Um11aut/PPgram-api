@@ -192,6 +192,7 @@ impl Server {
         pool: Arc<Mutex<DatabasePool>>,
         connections: Sessions,
     ) {
+        // TODO: Make sure that user has access rights to the hash
         moro::async_scope!(|scope| {
             loop {
                 match listener.accept().await {

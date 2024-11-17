@@ -1,5 +1,4 @@
-use log::{debug, info};
-use serde_json::json;
+use log::debug;
 use tokio::sync::RwLock;
 
 use crate::{db::{chat::{chats::ChatsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB}, server::{

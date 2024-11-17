@@ -6,7 +6,6 @@ pub struct EditedMessageBuilder {
     pub reply_to: Option<i32>,
     pub content: Option<String>,
     pub media_hashes: Option<Vec<String>>,
-    pub media_names: Option<Vec<String>>
 }
 
 impl From<EditMessageRequest> for EditedMessageBuilder {
@@ -16,7 +15,6 @@ impl From<EditMessageRequest> for EditedMessageBuilder {
             reply_to: value.reply_to,
             content: value.content,
             media_hashes: value.media_hashes,
-            media_names: value.media_names
         }
     }
 }
@@ -40,17 +38,12 @@ impl EditedMessageBuilder {
         let media_hashes_changed = if let Some(media_hashes) = self.media_hashes {
             media_hashes
         } else {msg.media_hashes};
-        
-        let media_names_changed = if let Some(media_names) = self.media_names {
-            media_names
-        } else {msg.media_names};
 
         Message {
             is_unread: unread_changed,
             reply_to: reply_to_changed,
             content: content_changed,
             media_hashes: media_hashes_changed,
-            media_names: media_names_changed,
             ..msg
         }
     }

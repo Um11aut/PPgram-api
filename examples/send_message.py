@@ -25,8 +25,7 @@ if __name__ == "__main__":
 
         send_message_dict = {
             "method": "send_message",
-            "to": 1612520800,
-            "has_reply": False,
+            "to": 0,
             "reply_to": 0,
             "content": {
                 "text": "Gay"

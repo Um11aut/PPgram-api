@@ -6,9 +6,9 @@ docker-compose up --build
 docker exec -ti rust-app /bin/bash
 $ cargo run --release
 ```
-Wait until the database is fully started.
+Wait until the server is fully started.
 
-The server is accessible via TCP for basic JSON messages by the adress `0.0.0.0:3000`. And via TCP for files `0.0.0.0:8080` 
+The server is accessible via TCP for basic JSON messages by the adress `0.0.0.0:3000`. And via TCP for files `0.0.0.0:8080`
 
 ## Basics
 ### Protocol
