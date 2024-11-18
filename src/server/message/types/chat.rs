@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 
-use crate::db::{chat::chats::ChatsDB, internal::error::{PPError, PPResult}};
+use crate::db::{chat::chats::ChatsDB, internal::error::PPError};
 
 use super::user::{User, UserId};
 

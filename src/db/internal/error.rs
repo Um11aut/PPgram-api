@@ -1,11 +1,18 @@
-use std::{borrow::Cow, error::Error, fmt::{self}};
+use std::{
+    borrow::Cow,
+    fmt::{self},
+};
 
 use log::error;
 use serde_json::json;
 
 use crate::server::{connection::TCPConnection, message::builder::MessageBuilder};
 
-async fn send_str_as_err<T: Into<Cow<'static, str>>>(method: &str, what: T, connection: &TCPConnection) {
+async fn send_str_as_err<T: Into<Cow<'static, str>>>(
+    method: &str,
+    what: T,
+    connection: &TCPConnection,
+) {
     let what: String = what.into().to_string();
 
     let error = json!({
@@ -19,12 +26,12 @@ async fn send_str_as_err<T: Into<Cow<'static, str>>>(method: &str, what: T, conn
     connection.write(&builder.packed()).await;
 }
 
-/// The error struct that represents all possible 
+/// The error struct that represents all possible
 /// errors that may occur in the code
 #[derive(Debug)]
 pub enum PPError {
     Server(Box<dyn std::error::Error>),
-    Client(String)
+    Client(String),
 }
 
 unsafe impl Send for PPError {}
@@ -34,7 +41,7 @@ impl fmt::Display for PPError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             PPError::Server(ref err) => write!(f, "INTERNAL ERROR: {}", err),
-            PPError::Client(ref msg) => write!(f, "{}", msg)
+            PPError::Client(ref msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -62,7 +69,7 @@ impl From<cassandra_cpp::Error> for PPError {
 
 impl From<serde_json::Error> for PPError {
     fn from(err: serde_json::Error) -> Self {
-        PPError::Client(format!("error while parsing json: {}", err.to_string()))
+        PPError::Client(format! {"error while parsing json: {}", err})
     }
 }
 
@@ -80,7 +87,7 @@ impl From<&str> for PPError {
 
 impl PPError {
     /// if Cassandra error, writes error to console and sends 'Internal error.' to user.
-    /// 
+    ///
     /// if Client error, sends error to the client
     pub async fn safe_send(&self, method: &str, output_connection: &TCPConnection) {
         let err: String = match self {
@@ -88,9 +95,7 @@ impl PPError {
                 error!("{}", internal);
                 "Internal error.".into()
             }
-            PPError::Client(_) => {
-                self.to_string()
-            }
+            PPError::Client(_) => self.to_string(),
         };
         send_str_as_err(method, err, output_connection).await;
     }
@@ -102,3 +107,4 @@ impl From<webrtc::Error> for PPError {
     }
 }
 pub type PPResult<T> = Result<T, PPError>;
+

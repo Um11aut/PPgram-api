@@ -1,26 +1,26 @@
-use argon2::password_hash::SaltString;
-use argon2::Argon2;
+use argon2::{
+    password_hash::{
+        self, rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+    },
+    Argon2,
+};
 use cassandra_cpp;
 use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::MapIterator;
 use cassandra_cpp::SetIterator;
-use log::error;
-use log::info;
-use rand::rngs::OsRng;
+use log::{error, info};
 use rand::{distributions::Alphanumeric, Rng};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::OnceCell;
 
 use crate::fs::media::is_media;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
-use super::bucket::DatabaseBucket;
 use super::bucket::DatabaseBuilder;
 use super::db::Database;
 use super::internal::error::PPError;
@@ -52,6 +52,7 @@ impl Database for UsersDB {
                 username TEXT,
                 photo TEXT,
                 password_hash TEXT,
+                password_salt TEXT,
                 sessions LIST<TEXT>,
                 chats MAP<int, int>
             )
@@ -126,17 +127,29 @@ impl UsersDB {
 
         let user_id: i32 = rand::thread_rng().gen_range(1..i32::MAX);
         let query = r#"
-            INSERT INTO ksp.users (id, name, username, password_hash, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ksp.users (id, name, username, password_hash, password_salt, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#;
         let mut statement = self.session.statement(query);
 
         statement.bind_int32(0, user_id)?;
         statement.bind_string(1, name)?;
         statement.bind_string(2, username)?;
-        statement.bind_string(3, password)?;
-        statement.bind_list(4, cassandra_cpp::List::new())?;
-        statement.bind_string(5, "")?;
-        statement.bind_map(6, cassandra_cpp::Map::new())?;
+
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+
+        let password_hash = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|err| PPError::from(format!("Failed to hash password: {}", err)))?
+            .to_string();
+        info!("Generated new password hash: {}", password_hash);
+
+        statement.bind_string(3, &password_hash)?;
+        statement.bind_string(4, salt.as_str())?;
+
+        statement.bind_list(5, cassandra_cpp::List::new())?;
+        statement.bind_string(6, "")?;
+        statement.bind_map(7, cassandra_cpp::Map::new())?;
 
         statement.execute().await?;
 
@@ -157,7 +170,7 @@ impl UsersDB {
         query: impl Into<Cow<'static, str>>,
     ) -> PPResult<Vec<User>> {
         let search_query: String = query.into().to_string();
-        if search_query.len() == 0 {
+        if search_query.is_empty() {
             return Ok(vec![]);
         }
         let mut cassandra_search_query: String = format!("%{}%", search_query);
@@ -200,7 +213,7 @@ impl UsersDB {
     pub async fn login(
         &self,
         username: &str,
-        password_hash: &str,
+        password: &str,
     ) -> PPResult<(i32 /* user_id */, String /* session_id */)> {
         let query = "SELECT id, password_hash FROM ksp.users WHERE username = ?";
         let mut statement = self.session.statement(query);
@@ -222,8 +235,15 @@ impl UsersDB {
             };
 
         if let (Some(user_id), Some(stored_password_hash)) = (user_id, stored_password_hash) {
-            if stored_password_hash != password_hash {
-                return Err(PPError::from("Invalid password"));
+            let password_matches = Argon2::default()
+                .verify_password(
+                    password.as_bytes(),
+                    &PasswordHash::new(&stored_password_hash)
+                        .expect("Failed to parse password hash!"),
+                )
+                .is_ok();
+            if !password_matches {
+                return Err(PPError::from("Invalid password!"));
             }
 
             match self.create_session(user_id).await {
@@ -263,10 +283,8 @@ impl UsersDB {
             }
         };
 
-        if !sessions.is_empty() {
-            if !sessions.iter().any(|s| s == session_id) {
-                return Err(PPError::from("Invalid session"));
-            }
+        if !sessions.is_empty() && !sessions.iter().any(|s| s == session_id) {
+            return Err(PPError::from("Invalid session"));
         }
 
         Ok(())
@@ -336,7 +354,7 @@ impl UsersDB {
         let query = "UPDATE ksp.users SET photo = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
-        statement.bind_string(0, &media_hash)?;
+        statement.bind_string(0, media_hash)?;
         statement.bind_int32(1, self_user_id.as_i32_unchecked())?;
 
         statement.execute().await?;
@@ -348,7 +366,7 @@ impl UsersDB {
         let query = "UPDATE ksp.users SET name = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
-        statement.bind_string(0, &name)?;
+        statement.bind_string(0, name)?;
         statement.bind_int32(1, self_user_id.as_i32_unchecked())?;
 
         statement.execute().await?;
@@ -360,7 +378,7 @@ impl UsersDB {
         let query = "UPDATE ksp.users SET username = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
-        statement.bind_string(0, &username)?;
+        statement.bind_string(0, username)?;
         statement.bind_int32(1, self_user_id.as_i32_unchecked())?;
 
         statement.execute().await?;
@@ -369,13 +387,29 @@ impl UsersDB {
     }
 
     pub async fn update_password(&self, self_user_id: &UserId, password: &str) -> PPResult<()> {
-        let query = "UPDATE ksp.users SET password = ? WHERE id = ?";
+        // Generate a new salt
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+
+        // Hash the new password with the generated salt
+        let password_hash = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|err| PPError::from(format!("Failed to hash password: {}", err)))?
+            .to_string();
+        info!("Generated new password hash: {}", password_hash);
+
+        let query = "UPDATE ksp.users SET password_hash = ?, password_salt = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
-        statement.bind_string(0, &password)?;
-        statement.bind_int32(1, self_user_id.as_i32_unchecked())?;
+        // Bind the new password hash and salt
+        statement.bind_string(0, &password_hash)?;
+        statement.bind_string(1, salt.as_str())?;
+        statement.bind_int32(2, self_user_id.as_i32_unchecked())?;
 
-        statement.execute().await?;
+        statement.execute().await.map_err(|err| {
+            error!("Failed to update password: {}", err);
+            PPError::from(err)
+        })?;
 
         Ok(())
     }
@@ -394,7 +428,7 @@ impl UsersDB {
             UserId::Username(username) => {
                 let query = "SELECT chats FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
-                statement.bind_string(0, &username)?;
+                statement.bind_string(0, username)?;
                 statement
             }
         };
@@ -408,7 +442,7 @@ impl UsersDB {
 
             if let Ok(mut chats) = maybe_iter {
                 while let Some((key, val)) = chats.next() {
-                    output.insert(key.get_i32()?.into(), val.get_i32()?);
+                    output.insert(key.get_i32()?, val.get_i32()?);
                 }
             }
         }
@@ -439,7 +473,7 @@ impl UsersDB {
             UserId::Username(username) => {
                 let query = "SELECT chats[?] FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
-                statement.bind_string(1, &username)?;
+                statement.bind_string(1, username)?;
                 statement
             }
         };
@@ -488,7 +522,7 @@ impl UsersDB {
                 statement.bind_int32(1, *user_id)?;
             }
             UserId::Username(username) => {
-                statement.bind_string(1, &username)?;
+                statement.bind_string(1, username)?;
             }
         }
 
@@ -508,7 +542,7 @@ impl UsersDB {
             UserId::Username(username) => {
                 let query = "SELECT id, name, photo, username FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
-                statement.bind_string(0, &username)?;
+                statement.bind_string(0, username)?;
                 statement
             }
         };
@@ -532,4 +566,3 @@ impl UsersDB {
         Ok(None)
     }
 }
-

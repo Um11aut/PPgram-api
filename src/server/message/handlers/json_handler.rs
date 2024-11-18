@@ -1,14 +1,12 @@
 use std::sync::Arc;
-use base64::prelude::*;
 
 use log::{debug, info};
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::db::bucket::{DatabaseBucket, DatabaseBuilder};
-use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::server::connection::TCPConnection;
 use crate::server::message::builder::MessageBuilder;

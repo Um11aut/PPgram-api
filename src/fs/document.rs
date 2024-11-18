@@ -1,8 +1,8 @@
-use std::{borrow::Cow, path::{Path, PathBuf}};
+use std::{borrow::Cow, path::PathBuf};
 
 use log::{debug, info, warn};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::{fs::{File, OpenOptions, ReadDir}, io::{AsyncReadExt, AsyncWriteExt}};
+use tokio::{fs::{File, OpenOptions}, io::{AsyncReadExt, AsyncWriteExt}};
 
 use crate::{db::internal::error::{PPError, PPResult}, server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE}};
 

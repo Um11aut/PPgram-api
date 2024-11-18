@@ -5,9 +5,7 @@ use cassandra_cpp::LendingIterator;
 use cassandra_cpp::SetIterator;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use std::fmt::format;
 use std::sync::Arc;
-use tokio::sync::OnceCell;
 
 use db::internal::error::PPError;
 

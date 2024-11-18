@@ -1,20 +1,13 @@
-use std::{
-    borrow::Borrow,
-    net::{Ipv4Addr, SocketAddrV4},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use log::{debug, error, info};
 use serde::Serialize;
 use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
-use webrtc::{sdp::MediaDescription, turn::server::request};
 
 use crate::{
     db::internal::error::{PPError, PPResult},
     fs::{
         document::{DocumentFetcher, DocumentHandler},
-        hash_exists,
         media::{is_media, MediaFetcher, MediaHandler},
         FsFetcher, FsUploader,
     },
@@ -24,7 +17,7 @@ use crate::{
             builder::MessageBuilder,
             types::{
                 files::{
-                    self, extract_file_method, DownloadFileMetadataResponse, DownloadFileRequest,
+                    extract_file_method, DownloadFileMetadataResponse, DownloadFileRequest,
                     FileMetadataRequest, Metadata,
                 },
                 response::send::UploadFileResponse,
@@ -34,7 +27,6 @@ use crate::{
     },
 };
 
-use super::json_handler::SessionArcRwLock;
 
 /// 4Gib - Max message size that can be transmitted
 const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */;

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use crate::db::{bucket::{DatabaseBucket, DatabaseBuilder}, internal::error::{PPError, PPResult}, user::UsersDB};
+use crate::db::{internal::error::PPResult, user::UsersDB};
 
 use tokio::net::TcpStream;
 

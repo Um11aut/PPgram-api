@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::OnceCell;
 
-use log::error;
 
 use super::{chat::{chats::ChatsDB, messages::MessagesDB}, bucket::{DatabaseBuilder, DatabasePool}, internal::error::PPError, user::UsersDB};
 

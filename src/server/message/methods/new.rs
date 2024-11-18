@@ -1,35 +1,21 @@
-use log::debug;
-use serde_json::json;
-use tokio::sync::RwLock;
 
 use crate::{
     db::{
-        chat::{
-            chats::{ChatsDB, InvitationHash},
-            messages::MessagesDB,
-        },
+        chat::chats::{ChatsDB, InvitationHash},
         internal::error::{PPError, PPResult},
         user::UsersDB,
     },
-    server::{
-        message::{
+    server::message::{
             handlers::json_handler::JsonHandler, methods::macros, types::{
-                chat::{Chat, ChatDetails, ChatId},
+                chat::{Chat, ChatDetails},
                 request::{
-                    extract_what_field, new::{NewGroupRequest, NewInvitationLinkRequest}, send::{MessageId, SendMessageRequest}
+                    extract_what_field, new::{NewGroupRequest, NewInvitationLinkRequest}
                 },
-                response::{
-                    events::{NewChatEvent, NewMessageEvent},
-                    new::{NewGroupResponse, NewInvitationLinkResponse},
-                    send::SendMessageResponse,
-                },
+                response::new::{NewGroupResponse, NewInvitationLinkResponse},
                 user::UserId,
             }
         },
-        session::Session,
-    },
 };
-use std::sync::Arc;
 
 /// Returns latest chat message id if sucessful
 async fn handle_new_group(msg: NewGroupRequest, handler: &JsonHandler) -> PPResult<Chat> {

@@ -1,6 +1,4 @@
-use log::info;
 use sha2::{Digest, Sha256};
-use base64::prelude::*;
 
 /// Hashes binary and outputs sha256 Hash
 pub struct BinaryHasher {

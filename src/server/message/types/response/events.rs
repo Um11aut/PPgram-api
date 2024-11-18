@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use crate::server::message::types::{chat::{ChatDetails, ChatId}, message::Message, user::User, };
+use crate::server::message::types::{chat::ChatDetails, message::Message, user::User, };
 
 #[derive(Serialize, Deserialize)]
 pub struct NewChatEvent {

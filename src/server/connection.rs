@@ -1,11 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use log::{debug, error, warn};
+use log::{debug, error};
 use serde::Serialize;
 use serde_json::Value;
-use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}, time::sleep};
+use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}};
 
-use crate::db::internal::error::PPResult;
 
 use super::message::builder::MessageBuilder;
 
