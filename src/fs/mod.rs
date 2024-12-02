@@ -21,7 +21,7 @@ pub trait FsUploader {
 #[async_trait::async_trait]
 pub trait FsFetcher {
     /// Fetches all files in the directory and returns the metadata(s) of those file
-    /// 
+    ///
     /// Length of the Vector is the count of all files stored
     async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>>;
 

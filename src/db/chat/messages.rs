@@ -1,13 +1,3 @@
-use cassandra_cpp;
-use cassandra_cpp::AsRustType;
-use cassandra_cpp::CassCollection;
-use cassandra_cpp::LendingIterator;
-use cassandra_cpp::List;
-use core::range::RangeInclusive;
-use std::ops::Range;
-use std::sync::Arc;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 use crate::db::bucket::DatabaseBuilder;
 use crate::db::db::Database;
 use crate::db::internal::error::PPError;
@@ -18,6 +8,16 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::send::*;
 use crate::server::message::types::user::UserId;
+use cassandra_cpp;
+use cassandra_cpp::AsRustType;
+use cassandra_cpp::CassCollection;
+use cassandra_cpp::LendingIterator;
+use cassandra_cpp::List;
+use core::range::RangeInclusive;
+use std::ops::Range;
+use std::sync::Arc;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 
 pub struct MessagesDB {
     session: Arc<cassandra_cpp::Session>,
@@ -58,7 +58,7 @@ impl Database for MessagesDB {
 impl From<DatabaseBuilder> for MessagesDB {
     fn from(value: DatabaseBuilder) -> Self {
         MessagesDB {
-            session: value.bucket.get_connection()
+            session: value.bucket.get_connection(),
         }
     }
 }
@@ -78,7 +78,7 @@ impl MessagesDB {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
 
-        let mut statement = self.session.statement(&insert_query);
+        let mut statement = self.session.statement(insert_query);
 
         match self.get_latest(target_chat_id).await? {
             Some(id) => {
@@ -107,8 +107,8 @@ impl MessagesDB {
                 .unwrap()
                 .as_secs() as i64,
         )?;
-        statement.bind_bool(6, if msg.common.reply_to.is_some() {true} else {false})?; // has_reply
-        statement.bind_int32(7, if let Some(reply_to) = msg.common.reply_to {reply_to} else {0})?; // reply_to
+        statement.bind_bool(6, msg.common.reply_to.is_some())?; // has_reply
+        statement.bind_int32(7, msg.common.reply_to.unwrap_or(0))?; // reply_to
 
         match &msg.content.text {
             Some(content) => {
@@ -126,7 +126,11 @@ impl MessagesDB {
 
                 let mut list = List::new();
                 for sha256_hash in sha256_hashes {
-                    if !hash_exists(&sha256_hash).await? {return Err(format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into())}
+                    if !hash_exists(sha256_hash).await? {
+                        return Err(
+                            format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into(),
+                        );
+                    }
                     list.append_string(sha256_hash)?;
                 }
                 statement.bind_list(11, list)?;
@@ -146,7 +150,7 @@ impl MessagesDB {
     pub async fn get_latest(&self, chat_id: ChatId) -> Result<Option<MessageId>, PPError> {
         let query = "SELECT id FROM ksp.messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1";
 
-        let mut statement = self.session.statement(&query);
+        let mut statement = self.session.statement(query);
         statement.bind_int32(0, chat_id)?;
 
         let result = statement.execute().await?;
@@ -238,7 +242,8 @@ impl MessagesDB {
 
             let mut media_hashes: Vec<String> = vec![];
 
-            let maybe_iter: cassandra_cpp::Result<cassandra_cpp::SetIterator> = row.get_by_name("media_hashes");
+            let maybe_iter: cassandra_cpp::Result<cassandra_cpp::SetIterator> =
+                row.get_by_name("media_hashes");
             if let Ok(mut iter) = maybe_iter {
                 while let Some(sha256_hash) = iter.next() {
                     let hash = sha256_hash.to_string();
@@ -270,7 +275,7 @@ impl MessagesDB {
         &self,
         msg_id: i32,
         chat_id: ChatId,
-        new_message: Message
+        new_message: Message,
     ) -> PPResult<()> {
         let update_query = r#"
             UPDATE ksp.messages
@@ -296,7 +301,9 @@ impl MessagesDB {
 
         let mut cass_list = List::new();
         for sha256_hash in new_message.media_hashes {
-            if !hash_exists(&sha256_hash).await? {return Err(format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into())}
+            if !hash_exists(&sha256_hash).await? {
+                return Err(format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into());
+            }
             cass_list.append_string(&sha256_hash)?;
         }
 

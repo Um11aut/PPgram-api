@@ -60,7 +60,7 @@ impl MessageBuilder {
         })
     }
 
-    pub fn extend(&mut self, buffer: &[u8]) 
+    pub fn extend(&mut self, buffer: &[u8])
     {
         // if debug, show the progress bar of the message
         if cfg!(debug_assertions) {
@@ -83,12 +83,15 @@ impl MessageBuilder {
             }
 
             info!("[{}] {}%", bar, percentage as u32);
-        } 
+        }
 
-        self.content.extend_from_slice(&buffer)
+        self.content.extend_from_slice(buffer)
     }
 
     pub fn ready(&self) -> bool {
+        if let Some(utf8_content) = self.utf8_content.as_ref() {
+            return utf8_content.len() >= self.size as usize
+        }
         self.content.len() >= self.size as usize
     }
 

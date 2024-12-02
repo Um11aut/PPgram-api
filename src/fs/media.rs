@@ -2,9 +2,15 @@ use std::{borrow::Cow, path::PathBuf};
 
 use log::{info, warn};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::{fs::{File, OpenOptions}, io::{AsyncReadExt, AsyncWriteExt}};
+use tokio::{
+    fs::{File, OpenOptions},
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
-use crate::{db::internal::error::{PPError, PPResult}, server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE}};
+use crate::{
+    db::internal::error::{PPError, PPResult},
+    server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE},
+};
 
 use super::{hash_exists, hasher::BinaryHasher, FsFetcher, FsUploader, FS_BASE};
 
@@ -12,7 +18,7 @@ pub enum VideoType {
     Mp4,
     Mov,
     WebM,
-    FLV
+    FLV,
 }
 
 pub enum PhotoType {
@@ -24,7 +30,7 @@ pub enum PhotoType {
 
 pub enum MediaType {
     Video(VideoType),
-    Photo(PhotoType)
+    Photo(PhotoType),
 }
 
 impl TryFrom<&str> for MediaType {
@@ -32,7 +38,10 @@ impl TryFrom<&str> for MediaType {
 
     fn try_from(file_name: &str) -> Result<Self, Self::Error> {
         let file_name = file_name.to_lowercase();
-        let fmt = file_name.rsplit('.').next().ok_or(PPError::from("name must contain the file type!"))?;
+        let fmt = file_name
+            .rsplit('.')
+            .next()
+            .ok_or(PPError::from("name must contain the file type!"))?;
 
         match fmt {
             "mp4" => Ok(Self::Video(VideoType::Mp4)),
@@ -43,7 +52,7 @@ impl TryFrom<&str> for MediaType {
             "jpg" => Ok(Self::Photo(PhotoType::JPG)),
             "png" => Ok(Self::Photo(PhotoType::PNG)),
             "heic" => Ok(Self::Photo(PhotoType::Heic)),
-            _ => Err(PPError::from("Media type not supported!"))
+            _ => Err(PPError::from("Media type not supported!")),
         }
     }
 }
@@ -57,14 +66,16 @@ pub struct MediaHandler {
     hasher: BinaryHasher,
     temp_file: File,
     temp_file_path: PathBuf,
-    doc_name: String
+    doc_name: String,
 }
 
 impl MediaHandler {
-    pub async fn new_uploader(document_name: impl Into<Cow<'static, str>>) -> PPResult<MediaHandler> {
+    pub async fn new_uploader(
+        document_name: impl Into<Cow<'static, str>>,
+    ) -> PPResult<MediaHandler> {
         let document_name = document_name.into().to_string();
 
-        // TODO: Depending on the media type make compression support
+        // Depending on the media type make compression
         let media_type = MediaType::try_from(document_name.as_str())?;
 
         // Generating a random temp file where all the framed binary will be put
@@ -74,7 +85,10 @@ impl MediaHandler {
             .map(char::from)
             .collect();
         let temp_path = std::env::temp_dir().join(temp_file).canonicalize()?;
-        info!("Creating new temp file for media uploading: {}", temp_path.display());
+        info!(
+            "Creating new temp file for media uploading: {}",
+            temp_path.display()
+        );
 
         let file = OpenOptions::new()
             .write(true)
@@ -87,7 +101,7 @@ impl MediaHandler {
             hasher: BinaryHasher::new(),
             temp_file: file,
             temp_file_path: temp_path,
-            doc_name: document_name
+            doc_name: document_name,
         })
     }
 }
@@ -95,8 +109,8 @@ impl MediaHandler {
 #[async_trait::async_trait]
 impl FsUploader for MediaHandler {
     async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
-        self.temp_file.write_all(&part).await?;
-        self.hasher.hash_part(&part);
+        self.temp_file.write_all(part).await?;
+        self.hasher.hash_part(part);
 
         Ok(())
     }
@@ -104,7 +118,9 @@ impl FsUploader for MediaHandler {
     async fn finalize(self: Box<Self>) -> String {
         let buf = PathBuf::from(FS_BASE);
         if !buf.exists() {
-            tokio::fs::create_dir(buf.canonicalize().unwrap()).await.unwrap();
+            tokio::fs::create_dir(buf.canonicalize().unwrap())
+                .await
+                .unwrap();
         }
 
         // Getting full sha256 hash
@@ -113,13 +129,22 @@ impl FsUploader for MediaHandler {
 
         // If document already exists, delete the temporary file.
         if target_doc_directory.exists() {
-            warn!("The media hash {} already exists... Deleting temporary file. Path: {}", sha256_hash, self.temp_file_path.display());
+            warn!(
+                "The media hash {} already exists... Deleting temporary file. Path: {}",
+                sha256_hash,
+                self.temp_file_path.display()
+            );
             tokio::fs::remove_file(self.temp_file_path).await.unwrap();
             return sha256_hash;
         }
 
         tokio::fs::create_dir(&target_doc_directory).await.unwrap();
-        tokio::fs::rename(self.temp_file_path, target_doc_directory.join(self.doc_name)).await.unwrap();
+        tokio::fs::rename(
+            self.temp_file_path,
+            target_doc_directory.join(self.doc_name),
+        )
+        .await
+        .unwrap();
 
         sha256_hash
     }
@@ -149,21 +174,22 @@ impl MediaFetcher {
 #[async_trait::async_trait]
 impl FsFetcher for MediaFetcher {
     async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
-        let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&self.sha256_hash)).await?;
+        let mut entries =
+            tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&self.sha256_hash)).await?;
 
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path().canonicalize()?;
             let name = entry.file_name().into_string().unwrap();
             let metadata = entry.metadata().await?;
 
-            self.metadatas.push(Metadata{
+            self.metadatas.push(Metadata {
                 file_name: name,
                 file_path: path.to_string_lossy().to_string(),
-                file_size: metadata.len()
+                file_size: metadata.len(),
             })
         }
 
-        self.metadatas.sort_by(|a,b| a.file_size.cmp(&b.file_size));
+        self.metadatas.sort_by(|a, b| a.file_size.cmp(&b.file_size));
 
         Ok(self.metadatas.clone())
     }
@@ -172,7 +198,7 @@ impl FsFetcher for MediaFetcher {
     async fn fetch_part(&mut self) -> PPResult<Vec<u8>> {
         if self.metadatas.is_empty() {
             warn!("Cannot fetch anything more from metadata...");
-            return Ok(vec![])
+            return Ok(vec![]);
         }
 
         let mut buf: Vec<u8> = Vec::new();
@@ -188,16 +214,18 @@ impl FsFetcher for MediaFetcher {
             if read == 0 {
                 self.metadatas.drain(..1);
 
-                if self.metadatas.is_empty() {return Ok(vec![])}
+                if self.metadatas.is_empty() {
+                    return Ok(vec![]);
+                }
 
-                if let Some(metadata) = self.metadatas.iter().next() {
+                if let Some(metadata) = self.metadatas.first() {
                     info!("Opening new file: {}!", metadata.file_path);
                     self.current_file = Some(File::open(&metadata.file_path).await?);
                     self.bytes_read = 0;
                 }
             }
         } else {
-            return Err(PPError::from("File isn't opened!"))
+            return Err(PPError::from("File isn't opened!"));
         }
 
         Ok(buf)
@@ -205,32 +233,41 @@ impl FsFetcher for MediaFetcher {
 
     fn is_part_ready(&self) -> bool {
         if let Some(current) = self.metadatas.first() {
-            return self.bytes_read == current.file_size;
+            self.bytes_read == current.file_size
         } else {
-            return true;
+            true
         }
     }
 }
 
 /// If has more than 2 files - is media
 pub async fn is_media(sha256_hash: &str) -> PPResult<bool> {
-    if !hash_exists(sha256_hash).await? {return Err("Given SHA256 Hash doesn't exist!".into())};
+    if !hash_exists(sha256_hash).await? {
+        return Err("Given SHA256 Hash doesn't exist!".into());
+    };
     let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(sha256_hash)).await?;
 
     let mut count = 0;
     while let Ok(Some(entry)) = entries.next_entry().await {
         if entry.file_type().await?.is_file() {
-            // Will fail on windows when the path is not in ASCII
+            // Will panic on windows when the path is not in ASCII
             let file_name = entry.file_name().into_string().unwrap();
-            let file_format = file_name.rsplit('.').next().expect("Entry must have a file_name!");
+            let file_format = file_name
+                .rsplit('.')
+                .next()
+                .expect("Entry must have a file_name!");
 
             let maybe_media = MediaType::try_from(file_format);
-            if maybe_media.is_err() {return Ok(false)}
+            if maybe_media.is_err() {
+                return Ok(false);
+            }
 
             count += 1;
         }
 
-        if count > 1 {return Ok(true);}
+        if count == 2 {
+            return Ok(true);
+        }
     }
 
     Ok(false)

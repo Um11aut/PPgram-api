@@ -3,6 +3,7 @@ use std::sync::Arc;
 use log::{debug, error, info};
 use serde::Serialize;
 use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
+use webrtc::util::ExactSizeBuf;
 
 use crate::{
     db::internal::error::{PPError, PPResult},
@@ -27,7 +28,6 @@ use crate::{
     },
 };
 
-
 /// 4Gib - Max message size that can be transmitted
 const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */;
 
@@ -35,23 +35,30 @@ struct FileFetcher {
     fs_handler: Box<dyn FsFetcher + Send + Sync>,
     /// Metadata of the file will be fetched in runtime
     metadata: Vec<Metadata>,
-    bytes_fetched: u64,
 }
 
 impl FileFetcher {
-    pub async fn new(sha256_hash: String) -> PPResult<Self> {
-        let mut fs_handler: Box<dyn FsFetcher + Send + Sync> =
-            if is_media(sha256_hash.as_str()).await? {
-                Box::new(MediaFetcher::new(&sha256_hash))
+    pub async fn new(sha256_hash: String, previews_only: bool) -> PPResult<Self> {
+        let is_media = is_media(sha256_hash.as_str()).await?;
+        let mut fs_handler: Box<dyn FsFetcher + Send + Sync> = if is_media {
+            Box::new(MediaFetcher::new(&sha256_hash))
+        } else {
+            Box::new(DocumentFetcher::new(&sha256_hash))
+        };
+        let mut metadata = fs_handler.fetch_metadata().await?;
+
+        // the metadatas are sorted in size ascending order and can have only 1 preview per hash
+        if previews_only {
+            if is_media {
+                metadata.drain(1..);
             } else {
-                Box::new(DocumentFetcher::new(&sha256_hash))
-            };
-        let metadata = fs_handler.fetch_metadata().await?;
+                return Err("Loading the preview of documents is not possible!".into());
+            }
+        }
 
         Ok(Self {
             fs_handler,
             metadata,
-            bytes_fetched: 0,
         })
     }
 
@@ -60,7 +67,7 @@ impl FileFetcher {
         if self.fs_handler.is_part_ready() {
             self.metadata.drain(..1);
         }
-        Ok(self.fs_handler.fetch_part().await?)
+        self.fs_handler.fetch_part().await
     }
 
     /// Gets metadata
@@ -68,27 +75,6 @@ impl FileFetcher {
     /// Dangerous: Metadata get's dynamic unloaded while calling `get_built_response`
     pub fn get_metadata(&self) -> Vec<Metadata> {
         self.metadata.clone()
-    }
-
-    /// Gets ready response:
-    ///
-    /// If needed will add 8 bytes as the binary size for each binary
-    pub async fn get_built_response(&mut self) -> PPResult<Vec<u8>> {
-        let mut additional_data_frame = if self.fs_handler.is_part_ready() {
-            if let Some(metadata) = self.metadata.first() {
-                let size_as_be_bytes = metadata.file_size.to_be_bytes().to_vec();
-                self.metadata.drain(..1);
-                size_as_be_bytes
-            } else {
-                vec![]
-            }
-        } else {
-            vec![]
-        };
-        let data_frame = self.fetch_data_frame().await?;
-        additional_data_frame.extend(data_frame);
-
-        Ok(additional_data_frame)
     }
 
     pub fn is_finished(&self) -> bool {
@@ -150,7 +136,7 @@ enum FileActor {
 /// [4 bytes metadata message size] [{"name": "Test123", "is_media": false, "compress": true}] [8 bytes file message size] [message bytes]
 /// ```
 pub struct FilesHandler {
-    // to put the file frame on fs: Media or Document will be decided at runtime
+    // to put/download the file frame on fs: Media or Document will be decided at runtime
     file_actor: Option<FileActor>,
     is_first: bool,
     // MessageBuilder for the first message
@@ -158,7 +144,7 @@ pub struct FilesHandler {
     output_connection: Arc<TCPConnection>,
     // temp buffer if IP doesn't transfer all the bytes
     content_buf: Vec<u8>,
-    // temp buffer if IP doesn't transfer all the bytes
+    // accumulated if IP doesn't transfer all the bytes
     accumulated_binary_start: Vec<u8>,
 }
 
@@ -169,7 +155,8 @@ impl Handler for FilesHandler {
             Ok(_) => {}
             Err(err) => {
                 error!("[Files] Error while performing file operation:\n {}", err);
-                err.safe_send("file_operation", &self.output_connection).await;
+                err.safe_send("file_operation", &self.output_connection)
+                    .await;
                 self.reset();
             }
         }
@@ -192,7 +179,7 @@ impl FilesHandler {
 
     async fn handle(&mut self, buffer: &[u8]) -> PPResult<()> {
         if self.is_first {
-            self.request_builder = MessageBuilder::parse(&buffer);
+            self.request_builder = MessageBuilder::parse(buffer);
         }
 
         // Then request isn't loaded yet
@@ -210,18 +197,18 @@ impl FilesHandler {
                         .content_utf8()
                         .ok_or(PPError::from("Invalid UTF8 sequence transmitted!"))?;
 
-                    debug!("[Files] Got File Message!\n Message Size: {}\n Message Content: {}", request_content.len(), request_content);
+                    debug!(
+                        "[Files] Got File Message!\n Message Size: {}\n Message Content: {}",
+                        request_content.len(),
+                        request_content
+                    );
 
-                    let method = extract_file_method(&request_content)?;
+                    let method = extract_file_method(request_content)?;
                     match method.as_str() {
                         "upload_file" => {
                             let content_start = &buffer[metadata_offset..];
-                            if content_start.len() < 8 {
-                                self.is_first = false;
-                                return Ok(());
-                            }
-                            let req =
-                                serde_json::from_str::<FileMetadataRequest>(&request_content)?;
+                            if content_start.is_empty() {self.is_first = false; return Ok(());}
+                            let req: FileMetadataRequest = serde_json::from_str(request_content)?;
 
                             self.accumulated_binary_start
                                 .extend_from_slice(content_start);
@@ -241,37 +228,32 @@ impl FilesHandler {
                                 self.accumulated_binary_start[6],
                                 self.accumulated_binary_start[7],
                             ]);
+                            // Drain the binary size
+                            self.accumulated_binary_start.drain(..8);
 
                             // extending content buffer and clearing accumulated binary start
                             self.content_buf
                                 .extend(self.accumulated_binary_start.clone());
-
-                            // Drain the binary size
-                            self.content_buf.drain(..8);
+                            self.accumulated_binary_start.clear();
 
                             self.file_actor = Some(FileActor::Uploader(
                                 FileUploader::new(req, file_size).await?,
                             ));
 
                             request_builder.clear();
-                            self.request_builder = None;
-        
                             self.is_first = false;
-
-                            return Ok(())
+                            return Ok(());
                         }
                         "download_file" => {
-                            let req =
-                                serde_json::from_str::<DownloadFileRequest>(&request_content)?;
-                            self.file_actor =
-                                Some(FileActor::Fetcher(FileFetcher::new(req.sha256_hash).await?));
+                            let req: DownloadFileRequest = serde_json::from_str(request_content)?;
+                            self.file_actor = Some(FileActor::Fetcher(
+                                FileFetcher::new(req.sha256_hash, req.previews_only).await?,
+                            ));
                         }
                         _ => return Err(PPError::from("Invalid Method!")),
                     }
 
                     request_builder.clear();
-                    self.request_builder = None;
-
                     self.is_first = false;
                 }
             }
@@ -282,15 +264,17 @@ impl FilesHandler {
         if let Some(file_actor) = self.file_actor.as_mut() {
             match file_actor {
                 FileActor::Uploader(file_uploader) => {
-                    info!("Uploading data frame to fs. Frame size: {}", self.content_buf.len());
+                    info!(
+                        "Uploading datagramm to fs. Data size: {}",
+                        self.content_buf.len()
+                    );
 
                     let content_fragment = &self.content_buf;
                     if content_fragment.is_empty() {
                         return Ok(());
                     }
-                    debug!("Uploading binary frame: {}", content_fragment.len());
 
-                    file_uploader.consume_data_frame(&content_fragment).await?;
+                    file_uploader.consume_data_frame(content_fragment).await?;
                     self.content_buf.clear();
 
                     if file_uploader.is_ready() {
@@ -327,8 +311,14 @@ impl FilesHandler {
                     loop {
                         // As we have an Vector of Metadatas, we may not include the size of the next binary frame
                         let data_frame = file_fetcher.fetch_data_frame().await?;
-                        if data_frame.len() == 0 {self.reset(); return Ok(())}
-                        info!("[Download] Sending data frame back! Data Frame size: {}", data_frame.len());
+                        if data_frame.is_empty() {
+                            self.reset();
+                            return Ok(());
+                        }
+                        info!(
+                            "[Download] Sending data frame back! Data Frame size: {}",
+                            data_frame.len()
+                        );
                         self.output_connection.write(&data_frame).await;
 
                         if file_fetcher.is_finished() {

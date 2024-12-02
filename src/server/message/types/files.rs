@@ -14,7 +14,8 @@ pub struct FileMetadataRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DownloadFileRequest {
     pub method: String, // download_file
-    pub sha256_hash: String
+    pub sha256_hash: String,
+    pub previews_only: bool
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -25,13 +26,13 @@ pub struct DownloadFileMetadataResponse {
 }
 
 pub fn extract_file_method(content: &String) -> PPResult<String> {
-    let val = serde_json::from_str::<Value>(&content)?;
+    let val = serde_json::from_str::<Value>(content)?;
 
     Ok(val.get("method").ok_or(PPError::from("Failed to get method!"))?.as_str().ok_or("method must be 'str'!")?.to_owned())
 }
 
 /// Struct to fetch the info about file
-/// 
+///
 /// File Path isn't serialized in Json!
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Metadata {
