@@ -1,7 +1,7 @@
+use dashmap::DashMap;
 use log::debug;
 use log::error;
 use log::info;
-use std::collections::HashMap;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -23,7 +23,7 @@ const JSON_MESSAGE_ALLOCATION_SIZE: usize = 1024;
 /// 1 Mib
 pub const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1 * (1024 * 1024);
 
-pub(super) type Sessions = Arc<RwLock<HashMap<i32, Arc<RwLock<Session>>>>>;
+pub(super) type Sessions = Arc<DashMap<i32, Arc<RwLock<Session>>>>;
 
 /// Two ports are available:
 /// 3000 - For Json Messages. The full message is stored in a `Vec`(on RAM) and handled after they are completely received
@@ -68,7 +68,7 @@ impl Server {
         Ok(Server {
             json_listener,
             file_listener,
-            connections: Arc::new(RwLock::new(HashMap::new())),
+            connections: Arc::new(DashMap::new()),
             pool: DatabasePool::new().await,
         })
     }
@@ -106,7 +106,7 @@ impl Server {
     async fn files_event_handler(
         socket: TcpStream,
         addr: SocketAddr,
-        sessions: Sessions,
+        _sessions: Sessions,
         // bucket: DatabaseBucket,
     ) {
         debug!("[Files] Connection established: {}", addr);
@@ -189,7 +189,7 @@ impl Server {
 
     async fn poll_files_events(
         listener: TcpListener,
-        pool: Arc<Mutex<DatabasePool>>,
+        _pool: Arc<Mutex<DatabasePool>>,
         connections: Sessions,
     ) {
         // TODO: Make sure that user has access rights to the hash

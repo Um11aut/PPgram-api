@@ -9,19 +9,19 @@ use crate::{db::internal::error::{PPError, PPResult}, server::{message::types::f
 use super::{hasher::BinaryHasher, FsFetcher, FsUploader, FS_BASE};
 
 /// Struct for framed uploading of documents
-/// 
+///
 /// Uploads a binary frame to a random temp_file in TEMPDIR, while generating a SHA256 hash
-/// 
+///
 /// Then taking that hash and putting it into according Folder that is named after the hash
-pub struct DocumentHandler {
+pub struct DocumentUploader {
     hasher: BinaryHasher,
     temp_file: File,
     temp_file_path: PathBuf,
     doc_name: String
 }
 
-impl DocumentHandler {
-    pub async fn new_uploader(document_name: impl Into<Cow<'static, str>>) -> PPResult<DocumentHandler> {
+impl DocumentUploader {
+    pub async fn new(document_name: impl Into<Cow<'static, str>>) -> PPResult<DocumentUploader> {
         // Generating a random temp file where all the framed binary will be put
         let temp_file: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
@@ -38,7 +38,7 @@ impl DocumentHandler {
             .open(&temp_path)
             .await?;
 
-        Ok(DocumentHandler {
+        Ok(DocumentUploader {
             hasher: BinaryHasher::new(),
             temp_file: file,
             temp_file_path: temp_path,
@@ -48,7 +48,7 @@ impl DocumentHandler {
 }
 
 #[async_trait::async_trait]
-impl FsUploader for DocumentHandler {
+impl FsUploader for DocumentUploader {
     async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
         self.temp_file.write_all(&part).await?;
         self.hasher.hash_part(&part);
@@ -56,7 +56,7 @@ impl FsUploader for DocumentHandler {
         Ok(())
     }
 
-    async fn finalize(self: Box<Self>) -> String {
+    async fn finalize(self) -> String {
         let buf = PathBuf::from(FS_BASE);
         if !buf.exists() {
             tokio::fs::create_dir(&buf).await.unwrap();
@@ -75,7 +75,7 @@ impl FsUploader for DocumentHandler {
 
         tokio::fs::create_dir(&target_doc_directory).await.unwrap();
         tokio::fs::rename(&self.temp_file_path, target_doc_directory.join(&self.doc_name)).await.unwrap();
-        
+
         sha256_hash
     }
 }
@@ -91,7 +91,7 @@ unsafe impl Send for DocumentFetcher {}
 unsafe impl Sync for DocumentFetcher {}
 
 impl DocumentFetcher {
-    pub fn new(sha256_hash: &str) -> Self { 
+    pub fn new(sha256_hash: &str) -> Self {
         Self {
             sha256_hash: sha256_hash.to_string(),
             metadatas: vec![],
@@ -105,7 +105,7 @@ impl DocumentFetcher {
 impl FsFetcher for DocumentFetcher {
     async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
         let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&self.sha256_hash)).await?;
-        
+
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path().canonicalize()?;
             let name = entry.file_name().into_string().unwrap();
@@ -123,7 +123,7 @@ impl FsFetcher for DocumentFetcher {
 
         debug!("Opening first file: {}", self.metadatas[0].file_path);
         self.current_file = Some(File::open(&self.metadatas[0].file_path).await?);
- 
+
         Ok(self.metadatas.clone())
     }
 
@@ -133,15 +133,15 @@ impl FsFetcher for DocumentFetcher {
             warn!("Cannot fetch anything more...");
             return Ok(vec![])
         }
-        
+
         // Move buffer to the heap
         let mut buf = Box::new([0; FILES_MESSAGE_ALLOCATION_SIZE]);
 
         if let Some(current_file) = self.current_file.as_mut() {
             let read = current_file.read(&mut buf[..]).await?;
-            
+
             self.bytes_read += read as u64;
-            
+
             // Then file is finished reading
             // Open the next one
             if read == 0 {

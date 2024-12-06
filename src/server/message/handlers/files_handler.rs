@@ -8,8 +8,8 @@ use webrtc::util::ExactSizeBuf;
 use crate::{
     db::internal::error::{PPError, PPResult},
     fs::{
-        document::{DocumentFetcher, DocumentHandler},
-        media::{is_media, MediaFetcher, MediaHandler},
+        document::{DocumentFetcher, DocumentUploader},
+        media::{is_media, MediaFetcher, MediaUploader},
         FsFetcher, FsUploader,
     },
     server::{
@@ -31,8 +31,36 @@ use crate::{
 /// 4Gib - Max message size that can be transmitted
 const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */;
 
+enum Fetcher {
+    Document(DocumentFetcher),
+    Media(MediaFetcher),
+}
+
+impl Fetcher {
+    pub async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
+        match self {
+            Fetcher::Document(fetcher) => fetcher.fetch_metadata().await,
+            Fetcher::Media(fetcher) => fetcher.fetch_metadata().await,
+        }
+    }
+
+    pub async fn fetch_part(&mut self) -> PPResult<Vec<u8>> {
+        match self {
+            Fetcher::Document(fetcher) => fetcher.fetch_part().await,
+            Fetcher::Media(fetcher) => fetcher.fetch_part().await,
+        }
+    }
+
+    pub fn is_part_ready(&self) -> bool {
+        match self {
+            Fetcher::Document(fetcher) => fetcher.is_part_ready(),
+            Fetcher::Media(fetcher) => fetcher.is_part_ready(),
+        }
+    }
+}
+
 struct FileFetcher {
-    fs_handler: Box<dyn FsFetcher + Send + Sync>,
+    fetcher: Fetcher,
     /// Metadata of the file will be fetched in runtime
     metadata: Vec<Metadata>,
 }
@@ -40,12 +68,12 @@ struct FileFetcher {
 impl FileFetcher {
     pub async fn new(sha256_hash: String, previews_only: bool) -> PPResult<Self> {
         let is_media = is_media(sha256_hash.as_str()).await?;
-        let mut fs_handler: Box<dyn FsFetcher + Send + Sync> = if is_media {
-            Box::new(MediaFetcher::new(&sha256_hash))
+        let mut fetcher= if is_media {
+            Fetcher::Media(MediaFetcher::new(&sha256_hash))
         } else {
-            Box::new(DocumentFetcher::new(&sha256_hash))
+            Fetcher::Document(DocumentFetcher::new(&sha256_hash))
         };
-        let mut metadata = fs_handler.fetch_metadata().await?;
+        let mut metadata = fetcher.fetch_metadata().await?;
 
         // the metadatas are sorted in size ascending order and can have only 1 preview per hash
         if previews_only {
@@ -57,17 +85,17 @@ impl FileFetcher {
         }
 
         Ok(Self {
-            fs_handler,
+            fetcher,
             metadata,
         })
     }
 
     /// Fetch bytes part
     pub async fn fetch_data_frame(&mut self) -> PPResult<Vec<u8>> {
-        if self.fs_handler.is_part_ready() {
+        if self.fetcher.is_part_ready() {
             self.metadata.drain(..1);
         }
-        self.fs_handler.fetch_part().await
+        self.fetcher.fetch_part().await
     }
 
     /// Gets metadata
@@ -82,8 +110,29 @@ impl FileFetcher {
     }
 }
 
+enum Uploader {
+    Document(DocumentUploader),
+    Media(MediaUploader),
+}
+
+impl Uploader {
+    pub async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
+        match self {
+            Uploader::Document(uploader) => uploader.upload_part(part).await,
+            Uploader::Media(uploader) => uploader.upload_part(part).await,
+        }
+    }
+
+    pub async fn finalize(self) -> String {
+        match self {
+            Uploader::Document(uploader) => uploader.finalize().await,
+            Uploader::Media(uploader) => uploader.finalize().await,
+        }
+    }
+}
+
 struct FileUploader {
-    fs_handler: Box<dyn FsUploader + Send + Sync>,
+    uploader: Uploader,
     file_size: u64,
     bytes_uploaded: u64,
 }
@@ -94,12 +143,14 @@ impl FileUploader {
             return Err(PPError::from("Max. upload size exceeded!"));
         }
 
+        let uploader: Uploader = if metadata.is_media {
+            Uploader::Media(MediaUploader::new(metadata.name).await?)
+        } else {
+            Uploader::Document(DocumentUploader::new(metadata.name).await?)
+        };
+
         Ok(Self {
-            fs_handler: if metadata.is_media {
-                Box::new(MediaHandler::new_uploader(metadata.name).await?)
-            } else {
-                Box::new(DocumentHandler::new_uploader(metadata.name).await?)
-            },
+            uploader,
             file_size,
             bytes_uploaded: 0,
         })
@@ -107,14 +158,14 @@ impl FileUploader {
 
     /// Upload file itself
     pub async fn consume_data_frame(&mut self, part: &[u8]) -> PPResult<()> {
-        self.fs_handler.upload_part(part).await?;
+        self.uploader.upload_part(part).await?;
         self.bytes_uploaded += part.len() as u64;
 
         Ok(())
     }
 
     pub async fn finalize(self) -> String {
-        self.fs_handler.finalize().await
+        self.uploader.finalize().await
     }
 
     pub fn is_ready(&self) -> bool {
@@ -207,7 +258,10 @@ impl FilesHandler {
                     match method.as_str() {
                         "upload_file" => {
                             let content_start = &buffer[metadata_offset..];
-                            if content_start.is_empty() {self.is_first = false; return Ok(());}
+                            if content_start.is_empty() {
+                                self.is_first = false;
+                                return Ok(());
+                            }
                             let req: FileMetadataRequest = serde_json::from_str(request_content)?;
 
                             self.accumulated_binary_start

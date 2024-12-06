@@ -82,8 +82,7 @@ pub async fn handle(handler: &mut JsonHandler, method: &str) {
     if let Some((user_id, session_id)) = handler.session.read().await.get_credentials() {
         let user_id = user_id.as_i32().unwrap();
         {
-            let mut connections = handler.sessions.write().await;
-            connections.insert(user_id, Arc::clone(&handler.session));
+            handler.sessions.insert(user_id, Arc::clone(&handler.session));
         }
 
 
