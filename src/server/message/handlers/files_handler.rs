@@ -3,7 +3,6 @@ use std::sync::Arc;
 use log::{debug, error, info};
 use serde::Serialize;
 use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
-use webrtc::util::ExactSizeBuf;
 
 use crate::{
     db::internal::error::{PPError, PPResult},
@@ -18,8 +17,7 @@ use crate::{
             builder::MessageBuilder,
             types::{
                 files::{
-                    extract_file_method, DownloadFileMetadataResponse, DownloadFileRequest,
-                    FileMetadataRequest, Metadata,
+                    extract_file_method, DownloadFileMetadataResponse, DownloadFileRequest, DownloadMetadataRequest, FileMetadataRequest, Metadata
                 },
                 response::send::UploadFileResponse,
             },
@@ -68,7 +66,7 @@ struct FileFetcher {
 impl FileFetcher {
     pub async fn new(sha256_hash: String, previews_only: bool) -> PPResult<Self> {
         let is_media = is_media(sha256_hash.as_str()).await?;
-        let mut fetcher= if is_media {
+        let mut fetcher = if is_media {
             Fetcher::Media(MediaFetcher::new(&sha256_hash))
         } else {
             Fetcher::Document(DocumentFetcher::new(&sha256_hash))
@@ -84,10 +82,18 @@ impl FileFetcher {
             }
         }
 
-        Ok(Self {
-            fetcher,
-            metadata,
-        })
+        Ok(Self { fetcher, metadata })
+    }
+
+    pub async fn fetch_metadata_only(sha256_hash: String) -> PPResult<Vec<Metadata>> {
+        let is_media = is_media(sha256_hash.as_str()).await?;
+        let mut fetcher = if is_media {
+            Fetcher::Media(MediaFetcher::new(&sha256_hash))
+        } else {
+            Fetcher::Document(DocumentFetcher::new(&sha256_hash))
+        };
+        let metadata = fetcher.fetch_metadata().await?;
+        Ok(metadata)
     }
 
     /// Fetch bytes part
@@ -303,6 +309,26 @@ impl FilesHandler {
                             self.file_actor = Some(FileActor::Fetcher(
                                 FileFetcher::new(req.sha256_hash, req.previews_only).await?,
                             ));
+                        }
+                        "download_metadata" => {
+                            let req: DownloadMetadataRequest = serde_json::from_str(request_content)?;
+                            let metadatas =
+                                FileFetcher::fetch_metadata_only(req.sha256_hash).await?;
+                            self.output_connection
+                                .write(
+                                    &MessageBuilder::build_from_str(
+                                        serde_json::to_string(&DownloadFileMetadataResponse {
+                                            ok: true,
+                                            method: "download_metadata".into(),
+                                            metadatas
+                                        })
+                                        .unwrap(),
+                                    )
+                                    .packed(),
+                                )
+                                .await;
+                            self.reset();
+                            return Ok(());
                         }
                         _ => return Err(PPError::from("Invalid Method!")),
                     }

@@ -8,27 +8,38 @@ pub struct FileMetadataRequest {
     pub method: String, // upload_file
     pub name: String,
     pub is_media: bool,
-    pub compress: bool
+    pub compress: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DownloadFileRequest {
     pub method: String, // download_file
     pub sha256_hash: String,
-    pub previews_only: bool
+    pub previews_only: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DownloadMetadataRequest {
+    pub method: String, // download_metadata
+    pub sha256_hash: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DownloadFileMetadataResponse {
     pub ok: bool,
     pub method: String, // download_file
-    pub metadatas: Vec<Metadata>
+    pub metadatas: Vec<Metadata>,
 }
 
-pub fn extract_file_method(content: &String) -> PPResult<String> {
+pub fn extract_file_method(content: &str) -> PPResult<String> {
     let val = serde_json::from_str::<Value>(content)?;
 
-    Ok(val.get("method").ok_or(PPError::from("Failed to get method!"))?.as_str().ok_or("method must be 'str'!")?.to_owned())
+    Ok(val
+        .get("method")
+        .ok_or(PPError::from("Failed to get method!"))?
+        .as_str()
+        .ok_or("method must be 'str'!")?
+        .to_owned())
 }
 
 /// Struct to fetch the info about file
