@@ -15,7 +15,7 @@ pub trait FsUploader {
     /// Must finalize the upload, giving the binary according full SHA256 hash
     /// and removing it from %TEMP%
     /// Returns SHA256 Hash encoded in hex
-    async fn finalize(self: Box<Self>) -> String;
+    async fn finalize(self)-> String;
 }
 
 #[async_trait::async_trait]

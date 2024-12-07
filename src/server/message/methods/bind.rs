@@ -13,8 +13,7 @@ pub async fn handle(handler: &mut JsonHandler, method: &str) {
                 return;
             }
 
-            let connections = handler.sessions.read().await;
-            if let Some(bind_session_arc) = connections.get(&message.user_id) {
+            if let Some(bind_session_arc) = handler.sessions.get(&message.user_id) {
                 let mut bind_session = bind_session_arc.write().await;
                 if bind_session.session_id().unwrap() == &message.session_id {
                     {

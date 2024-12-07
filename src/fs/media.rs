@@ -62,17 +62,17 @@ impl TryFrom<&str> for MediaType {
 /// Uploads a binary frame to a random temp_file in TEMPDIR, while generating a SHA256 hash
 ///
 /// Then taking that hash and putting it into according Folder that is named after the hash
-pub struct MediaHandler {
+pub struct MediaUploader {
     hasher: BinaryHasher,
     temp_file: File,
     temp_file_path: PathBuf,
     doc_name: String,
 }
 
-impl MediaHandler {
-    pub async fn new_uploader(
+impl MediaUploader {
+    pub async fn new(
         document_name: impl Into<Cow<'static, str>>,
-    ) -> PPResult<MediaHandler> {
+    ) -> PPResult<MediaUploader> {
         let document_name = document_name.into().to_string();
 
         // Depending on the media type make compression
@@ -97,7 +97,7 @@ impl MediaHandler {
             .open(&temp_path)
             .await?;
 
-        Ok(MediaHandler {
+        Ok(MediaUploader {
             hasher: BinaryHasher::new(),
             temp_file: file,
             temp_file_path: temp_path,
@@ -107,7 +107,7 @@ impl MediaHandler {
 }
 
 #[async_trait::async_trait]
-impl FsUploader for MediaHandler {
+impl FsUploader for MediaUploader {
     async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
         self.temp_file.write_all(part).await?;
         self.hasher.hash_part(part);
@@ -115,7 +115,7 @@ impl FsUploader for MediaHandler {
         Ok(())
     }
 
-    async fn finalize(self: Box<Self>) -> String {
+    async fn finalize(self) -> String {
         let buf = PathBuf::from(FS_BASE);
         if !buf.exists() {
             tokio::fs::create_dir(buf.canonicalize().unwrap())

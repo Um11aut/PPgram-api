@@ -158,7 +158,7 @@ impl JsonHandler {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
             async move {
-                if let Some(receiver_session) = connections.read().await.get(&to) {
+                if let Some(receiver_session) = connections.get(&to) {
                     let mut target_connection = receiver_session.write().await;
 
                     target_connection.mpsc_send(msg, 0).await;
@@ -223,7 +223,6 @@ impl Drop for JsonHandler {
 
             async move {
                 // Try to find this connection in a global hashmap, delete if authenticated
-                let mut connections = connections.write().await;
                 let mut session = session.write().await;
 
                 session.remove_connection(connection);
