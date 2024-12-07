@@ -1,23 +1,19 @@
 use std::sync::Arc;
 
-use log::{debug, error, info};
-use serde::Serialize;
+use log::{debug, error, trace};
 use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
 
 use crate::{
     db::internal::error::{PPError, PPResult},
-    fs::{
-        document::{DocumentFetcher, DocumentUploader},
-        media::{is_media, MediaFetcher, MediaUploader},
-        FsFetcher, FsUploader,
-    },
+    fs::helpers::{fetcher::FileFetcher, uploader::FileUploader},
     server::{
         connection::TCPConnection,
         message::{
             builder::MessageBuilder,
             types::{
                 files::{
-                    extract_file_method, DownloadFileMetadataResponse, DownloadFileRequest, DownloadMetadataRequest, FileMetadataRequest, Metadata
+                    extract_file_method, DownloadFileMetadataResponse, DownloadFileRequest,
+                    DownloadMetadataRequest, FileMetadataRequest,
                 },
                 response::send::UploadFileResponse,
             },
@@ -25,159 +21,6 @@ use crate::{
         },
     },
 };
-
-/// 4Gib - Max message size that can be transmitted
-const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */;
-
-enum Fetcher {
-    Document(DocumentFetcher),
-    Media(MediaFetcher),
-}
-
-impl Fetcher {
-    pub async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
-        match self {
-            Fetcher::Document(fetcher) => fetcher.fetch_metadata().await,
-            Fetcher::Media(fetcher) => fetcher.fetch_metadata().await,
-        }
-    }
-
-    pub async fn fetch_part(&mut self) -> PPResult<Vec<u8>> {
-        match self {
-            Fetcher::Document(fetcher) => fetcher.fetch_part().await,
-            Fetcher::Media(fetcher) => fetcher.fetch_part().await,
-        }
-    }
-
-    pub fn is_part_ready(&self) -> bool {
-        match self {
-            Fetcher::Document(fetcher) => fetcher.is_part_ready(),
-            Fetcher::Media(fetcher) => fetcher.is_part_ready(),
-        }
-    }
-}
-
-struct FileFetcher {
-    fetcher: Fetcher,
-    /// Metadata of the file will be fetched in runtime
-    metadata: Vec<Metadata>,
-}
-
-impl FileFetcher {
-    pub async fn new(sha256_hash: String, previews_only: bool) -> PPResult<Self> {
-        let is_media = is_media(sha256_hash.as_str()).await?;
-        let mut fetcher = if is_media {
-            Fetcher::Media(MediaFetcher::new(&sha256_hash))
-        } else {
-            Fetcher::Document(DocumentFetcher::new(&sha256_hash))
-        };
-        let mut metadata = fetcher.fetch_metadata().await?;
-
-        // the metadatas are sorted in size ascending order and can have only 1 preview per hash
-        if previews_only {
-            if is_media {
-                metadata.drain(1..);
-            } else {
-                return Err("Loading the preview of documents is not possible!".into());
-            }
-        }
-
-        Ok(Self { fetcher, metadata })
-    }
-
-    pub async fn fetch_metadata_only(sha256_hash: String) -> PPResult<Vec<Metadata>> {
-        let is_media = is_media(sha256_hash.as_str()).await?;
-        let mut fetcher = if is_media {
-            Fetcher::Media(MediaFetcher::new(&sha256_hash))
-        } else {
-            Fetcher::Document(DocumentFetcher::new(&sha256_hash))
-        };
-        let metadata = fetcher.fetch_metadata().await?;
-        Ok(metadata)
-    }
-
-    /// Fetch bytes part
-    pub async fn fetch_data_frame(&mut self) -> PPResult<Vec<u8>> {
-        if self.fetcher.is_part_ready() {
-            self.metadata.drain(..1);
-        }
-        self.fetcher.fetch_part().await
-    }
-
-    /// Gets metadata
-    ///
-    /// Dangerous: Metadata get's dynamic unloaded while calling `get_built_response`
-    pub fn get_metadata(&self) -> Vec<Metadata> {
-        self.metadata.clone()
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.metadata.is_empty()
-    }
-}
-
-enum Uploader {
-    Document(DocumentUploader),
-    Media(MediaUploader),
-}
-
-impl Uploader {
-    pub async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
-        match self {
-            Uploader::Document(uploader) => uploader.upload_part(part).await,
-            Uploader::Media(uploader) => uploader.upload_part(part).await,
-        }
-    }
-
-    pub async fn finalize(self) -> String {
-        match self {
-            Uploader::Document(uploader) => uploader.finalize().await,
-            Uploader::Media(uploader) => uploader.finalize().await,
-        }
-    }
-}
-
-struct FileUploader {
-    uploader: Uploader,
-    file_size: u64,
-    bytes_uploaded: u64,
-}
-
-impl FileUploader {
-    pub async fn new(metadata: FileMetadataRequest, file_size: u64) -> PPResult<Self> {
-        if file_size > MAX_MSG_SIZE {
-            return Err(PPError::from("Max. upload size exceeded!"));
-        }
-
-        let uploader: Uploader = if metadata.is_media {
-            Uploader::Media(MediaUploader::new(metadata.name).await?)
-        } else {
-            Uploader::Document(DocumentUploader::new(metadata.name).await?)
-        };
-
-        Ok(Self {
-            uploader,
-            file_size,
-            bytes_uploaded: 0,
-        })
-    }
-
-    /// Upload file itself
-    pub async fn consume_data_frame(&mut self, part: &[u8]) -> PPResult<()> {
-        self.uploader.upload_part(part).await?;
-        self.bytes_uploaded += part.len() as u64;
-
-        Ok(())
-    }
-
-    pub async fn finalize(self) -> String {
-        self.uploader.finalize().await
-    }
-
-    pub fn is_ready(&self) -> bool {
-        self.file_size == self.bytes_uploaded
-    }
-}
 
 /// To perform action - download or upload a file
 enum FileActor {
@@ -218,6 +61,16 @@ impl Handler for FilesHandler {
             }
         }
     }
+}
+
+macro_rules! write_json {
+    ($connection:expr, $value:expr) => {{
+        $connection
+            .write(
+                &MessageBuilder::build_from_str(serde_json::to_string(&$value).unwrap()).packed(),
+            )
+            .await;
+    }};
 }
 
 impl FilesHandler {
@@ -311,23 +164,21 @@ impl FilesHandler {
                             ));
                         }
                         "download_metadata" => {
-                            let req: DownloadMetadataRequest = serde_json::from_str(request_content)?;
+                            let req: DownloadMetadataRequest =
+                                serde_json::from_str(request_content)?;
                             let metadatas =
                                 FileFetcher::fetch_metadata_only(req.sha256_hash).await?;
-                            self.output_connection
-                                .write(
-                                    &MessageBuilder::build_from_str(
-                                        serde_json::to_string(&DownloadFileMetadataResponse {
-                                            ok: true,
-                                            method: "download_metadata".into(),
-                                            metadatas
-                                        })
-                                        .unwrap(),
-                                    )
-                                    .packed(),
-                                )
-                                .await;
+
+                            write_json!(
+                                &self.output_connection,
+                                DownloadFileMetadataResponse {
+                                    ok: true,
+                                    method: "download_metadata".into(),
+                                    metadatas,
+                                }
+                            );
                             self.reset();
+
                             return Ok(());
                         }
                         _ => return Err(PPError::from("Invalid Method!")),
@@ -344,8 +195,8 @@ impl FilesHandler {
         if let Some(file_actor) = self.file_actor.as_mut() {
             match file_actor {
                 FileActor::Uploader(file_uploader) => {
-                    info!(
-                        "Uploading datagramm to fs. Data size: {}",
+                    trace!(
+                        "[Upload] Uploading datagramm. Size: {}",
                         self.content_buf.len()
                     );
 
@@ -362,31 +213,29 @@ impl FilesHandler {
                         if let FileActor::Uploader(file_uploader) = actor {
                             let sha256_hash = file_uploader.finalize().await;
 
-                            self.write_json(UploadFileResponse {
-                                ok: true,
-                                method: "upload_file".into(),
-                                sha256_hash,
-                            })
-                            .await;
+                            write_json!(
+                                &self.output_connection,
+                                UploadFileResponse {
+                                    ok: true,
+                                    method: "upload_file".into(),
+                                    sha256_hash,
+                                }
+                            );
+
                             self.reset();
                         }
                     }
                 }
                 FileActor::Fetcher(file_fetcher) => {
-                    info!("Sending metadata: {:?}", file_fetcher.get_metadata());
-                    self.output_connection
-                        .write(
-                            &MessageBuilder::build_from_str(
-                                serde_json::to_string(&DownloadFileMetadataResponse {
-                                    ok: true,
-                                    method: "download_file".into(),
-                                    metadatas: file_fetcher.get_metadata(),
-                                })
-                                .unwrap(),
-                            )
-                            .packed(),
-                        )
-                        .await;
+                    let metadatas = file_fetcher.get_metadata();
+                    write_json!(
+                        &self.output_connection,
+                        DownloadFileMetadataResponse {
+                            ok: true,
+                            method: "download_file".into(),
+                            metadatas,
+                        }
+                    );
 
                     loop {
                         // As we have an Vector of Metadatas, we may not include the size of the next binary frame
@@ -395,7 +244,7 @@ impl FilesHandler {
                             self.reset();
                             return Ok(());
                         }
-                        info!(
+                        trace!(
                             "[Download] Sending data frame back! Data Frame size: {}",
                             data_frame.len()
                         );
@@ -411,12 +260,6 @@ impl FilesHandler {
         }
 
         Ok(())
-    }
-
-    async fn write_json(&self, value: impl Serialize) {
-        self.output_connection
-            .write(&MessageBuilder::build_from_str(serde_json::to_string(&value).unwrap()).packed())
-            .await;
     }
 
     pub async fn new(connection: Arc<TCPConnection>) -> FilesHandler {

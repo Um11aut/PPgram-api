@@ -4,6 +4,7 @@ use crate::{db::internal::error::PPResult, server::message::types::files::Metada
 
 pub mod media;
 mod hasher;
+pub(super) mod helpers;
 pub mod document;
 
 /// Base trait for uploading files

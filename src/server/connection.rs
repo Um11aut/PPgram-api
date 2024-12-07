@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{debug, error};
+use log::{debug, error, trace};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}};
@@ -26,7 +26,7 @@ impl TCPConnection {
         let (sender, receiver) = mpsc::channel::<Value>(10);
 
         tokio::spawn(Self::launch_receiver_handler(Arc::clone(&writer), receiver));
-        
+
         Self {
             sender: Mutex::new(sender),
             writer,
@@ -37,12 +37,12 @@ impl TCPConnection {
     /// Send to receiver
     pub async fn mpsc_send(&self, value: impl Serialize) {
         self.sender.lock().await.send(serde_json::to_value(&value).unwrap()).await.unwrap();
-    } 
+    }
 
     /// Writes the data to the buffer
     pub async fn write(&self, buf: &[u8]) {
         if buf.len() < 1000 {
-            debug!("Sending response!\n {}", String::from_utf8_lossy(&buf[4..]));
+            trace!("Sending response!\n {}", String::from_utf8_lossy(&buf[4..]));
         }
         let mut writer = self.writer.lock().await;
         if let Err(err) = writer.write_all(buf).await {
@@ -67,10 +67,10 @@ impl TCPConnection {
 
 //     async fn attempt_reconnect(writer: &Arc<Mutex<OwnedWriteHalf>>, attempts: u32) -> PPResult<()> {
 //         let backoff = Duration::from_secs(5);
-//     
+//
 //         warn!("Waiting for reconnect: {}", backoff);
 //         sleep(backoff).await;
-// 
-// 
+//
+//
 //     }
 }
