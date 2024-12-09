@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
 
 use crate::{
@@ -107,11 +107,13 @@ impl FilesHandler {
                         .content_utf8()
                         .ok_or(PPError::from("Invalid UTF8 sequence transmitted!"))?;
 
-                    debug!(
-                        "[Files] Got File Message!\n Message Size: {}\n Message Content: {}",
-                        request_content.len(),
-                        request_content
-                    );
+                    if self.is_first {
+                        debug!(
+                            "[Files] Got File Message!\n Message Size: {}\n Message Content: {}",
+                            request_content.len(),
+                            request_content
+                        );
+                    }
 
                     let method = extract_file_method(request_content)?;
                     match method.as_str() {
@@ -205,8 +207,19 @@ impl FilesHandler {
                         return Ok(());
                     }
 
-                    file_uploader.consume_data_frame(content_fragment).await?;
-                    self.content_buf.clear();
+                    let rest_to_upload = file_uploader.rest_to_upload() as usize;
+                    if content_fragment.len() > rest_to_upload {
+                        info!("Transmitted more than one binary at once!");
+                        // after this fragment, it's not a part of current binary anymore
+                        let to_upload =
+                            &self.content_buf[..content_fragment.len() - rest_to_upload];
+                        file_uploader.consume_data_frame(to_upload).await?;
+                        self.content_buf
+                            .drain(..content_fragment.len() - rest_to_upload);
+                    } else {
+                        file_uploader.consume_data_frame(content_fragment).await?;
+                        self.content_buf.clear();
+                    }
 
                     if file_uploader.is_ready() {
                         let actor = self.file_actor.take().unwrap();

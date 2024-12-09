@@ -50,8 +50,8 @@ impl DocumentUploader {
 #[async_trait::async_trait]
 impl FsUploader for DocumentUploader {
     async fn upload_part(&mut self, part: &[u8]) -> PPResult<()> {
-        self.temp_file.write_all(&part).await?;
-        self.hasher.hash_part(&part);
+        self.temp_file.write_all(part).await?;
+        self.hasher.hash_part(part);
 
         Ok(())
     }
@@ -68,7 +68,7 @@ impl FsUploader for DocumentUploader {
 
         // If document already exists, delete the temporary file.
         if target_doc_directory.exists() {
-            warn!("The media hash {} already exists... Deleting temporary file. Path: {}", sha256_hash, self.temp_file_path.display());
+            warn!("The document hash {} already exists... Deleting temporary file. Path: {}", sha256_hash, self.temp_file_path.display());
             tokio::fs::remove_file(&self.temp_file_path).await.unwrap();
             return sha256_hash;
         }

@@ -73,10 +73,10 @@ impl MediaUploader {
     pub async fn new(
         document_name: impl Into<Cow<'static, str>>,
     ) -> PPResult<MediaUploader> {
-        let document_name = document_name.into().to_string();
+        let media_name = document_name.into().to_string();
 
         // Depending on the media type make compression
-        let media_type = MediaType::try_from(document_name.as_str())?;
+        let media_type = MediaType::try_from(media_name.as_str())?;
 
         // Generating a random temp file where all the framed binary will be put
         let temp_file: String = rand::thread_rng()
@@ -101,7 +101,7 @@ impl MediaUploader {
             hasher: BinaryHasher::new(),
             temp_file: file,
             temp_file_path: temp_path,
-            doc_name: document_name,
+            doc_name: media_name,
         })
     }
 }

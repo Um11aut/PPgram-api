@@ -1,4 +1,8 @@
-use crate::{db::internal::error::{PPError, PPResult}, fs::{document::DocumentUploader, media::MediaUploader, FsUploader}, server::message::types::files::FileMetadataRequest};
+use crate::{
+    db::internal::error::{PPError, PPResult},
+    fs::{document::DocumentUploader, media::MediaUploader, FsUploader},
+    server::message::types::files::FileMetadataRequest,
+};
 
 /// 4Gib - Max message size that can be transmitted
 const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */;
@@ -59,6 +63,10 @@ impl FileUploader {
 
     pub async fn finalize(self) -> String {
         self.uploader.finalize().await
+    }
+
+    pub fn rest_to_upload(&self) -> u64 {
+        self.file_size - self.bytes_uploaded
     }
 
     pub fn is_ready(&self) -> bool {
