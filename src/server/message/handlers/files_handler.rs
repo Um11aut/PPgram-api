@@ -88,6 +88,8 @@ impl FilesHandler {
     }
 
     async fn handle(&mut self, buffer: &[u8]) -> PPResult<()> {
+        let mut do_extend = true;
+        trace!("{}", buffer.len());
         if self.is_first {
             self.request_builder = MessageBuilder::parse(buffer);
         }
@@ -157,7 +159,7 @@ impl FilesHandler {
 
                             request_builder.clear();
                             self.is_first = false;
-                            return Ok(());
+                            do_extend = false;
                         }
                         "download_file" => {
                             let req: DownloadFileRequest = serde_json::from_str(request_content)?;
@@ -192,7 +194,9 @@ impl FilesHandler {
             }
         }
 
-        self.content_buf.extend_from_slice(buffer);
+        if do_extend {
+            self.content_buf.extend_from_slice(buffer);
+        }
 
         if let Some(file_actor) = self.file_actor.as_mut() {
             match file_actor {
