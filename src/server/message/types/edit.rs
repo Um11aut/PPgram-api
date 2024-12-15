@@ -22,9 +22,7 @@ impl From<EditMessageRequest> for EditedMessageBuilder {
 impl EditedMessageBuilder {
     pub fn get_edited_message(self, msg: Message) -> Message {
         let unread_changed: bool = if let Some(unread) = self.is_unread {
-            if !unread {
-                true
-            } else {false}
+            !unread
         } else {msg.is_unread};
 
         let reply_to_changed: Option<i32> = if let Some(reply_to) = self.reply_to {

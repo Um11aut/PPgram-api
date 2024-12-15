@@ -55,12 +55,6 @@ impl Database for ChatsDB {
     }
 }
 
-impl From<DatabaseBucket> for ChatsDB {
-    fn from(value: DatabaseBucket) -> Self {
-        value.into()
-    }
-}
-
 impl ChatsDB {
     pub async fn create_private(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
         let chat_id = rand::thread_rng().gen_range(1..i32::MAX);
@@ -76,9 +70,7 @@ impl ChatsDB {
                 UserId::UserId(user_id) => {
                     list.append_int32(user_id)?;
                 }
-                UserId::Username(_) => {
-                    return Err(PPError::from("Cannot add chat with username!"))
-                }
+                UserId::Username(_) => return Err(PPError::from("Cannot add chat with username!")),
             }
         }
         statement.bind_list(2, list)?;
@@ -110,7 +102,10 @@ impl ChatsDB {
         Ok(new_invitation_hash)
     }
 
-    pub async fn get_chat_by_invitation_hash(&self, invitation_hash: InvitationHash) -> PPResult<Option<Chat>> {
+    pub async fn get_chat_by_invitation_hash(
+        &self,
+        invitation_hash: InvitationHash,
+    ) -> PPResult<Option<Chat>> {
         let select_query = "SELECT * FROM ksp.chats WHERE invitation_hash = ?";
 
         let mut statement = self.session.statement(select_query);
@@ -142,12 +137,27 @@ impl ChatsDB {
                             name,
                             chat_id,
                             is_group: true,
-                            photo: if !avatar_hash.is_empty(){Some(avatar_hash)}else{None},
-                            username: if !username.is_empty(){Some(username)}else{None}
+                            photo: if !avatar_hash.is_empty() {
+                                Some(avatar_hash)
+                            } else {
+                                None
+                            },
+                            username: if !username.is_empty() {
+                                Some(username)
+                            } else {
+                                None
+                            },
                         })
-                    } else {None};
+                    } else {
+                        None
+                    };
 
-                    return Ok(Some(Chat::construct(chat_id, is_group, participants, details)));
+                    return Ok(Some(Chat::construct(
+                        chat_id,
+                        is_group,
+                        participants,
+                        details,
+                    )));
                 }
                 Ok(None)
             }
@@ -155,7 +165,11 @@ impl ChatsDB {
         }
     }
 
-    pub async fn create_group(&self, participants: Vec<UserId>, details: ChatDetails) -> Result<Chat, PPError> {
+    pub async fn create_group(
+        &self,
+        participants: Vec<UserId>,
+        details: ChatDetails,
+    ) -> Result<Chat, PPError> {
         let chat_id = rand::thread_rng().gen_range(i32::MIN..-1);
         let insert_query = "INSERT INTO ksp.chats (id, is_group, participants, name, avatar_hash, username) VALUES (?, ?, ?, ?, ?, ?)";
 
@@ -169,9 +183,7 @@ impl ChatsDB {
                 UserId::UserId(user_id) => {
                     list.append_int32(user_id)?;
                 }
-                UserId::Username(_) => {
-                    return Err(PPError::from("Cannot add chat with username!"))
-                }
+                UserId::Username(_) => return Err(PPError::from("Cannot add chat with username!")),
             }
         }
         statement.bind_list(2, list)?;
@@ -184,7 +196,11 @@ impl ChatsDB {
         Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
     }
 
-    pub async fn add_participant(&self, chat_id: ChatId, participant: &UserId) -> Result<(), PPError> {
+    pub async fn add_participant(
+        &self,
+        chat_id: ChatId,
+        participant: &UserId,
+    ) -> Result<(), PPError> {
         let update_query = "UPDATE ksp.chats SET participants = participants + ? WHERE id = ?;";
 
         let mut statement = self.session.statement(update_query);
@@ -193,9 +209,7 @@ impl ChatsDB {
             UserId::UserId(user_id) => {
                 list.append_int32(*user_id)?;
             }
-            UserId::Username(_) => {
-                return Err(PPError::from("UserId must be integer!"))
-            }
+            UserId::Username(_) => return Err(PPError::from("UserId must be integer!")),
         }
         statement.bind_list(0, list)?;
         statement.bind_int32(1, chat_id)?;
@@ -208,7 +222,7 @@ impl ChatsDB {
     pub async fn chat_exists(&self, chat_id: ChatId) -> PPResult<bool> {
         let query = "SELECT * FROM ksp.chats WHERE id = ?";
 
-        let mut statement = self.session.statement(&query);
+        let mut statement = self.session.statement(query);
         statement.bind_int32(0, chat_id)?;
         let res = statement.execute().await?;
 
@@ -219,58 +233,64 @@ impl ChatsDB {
     pub async fn fetch_chat(&self, chat_id: ChatId) -> Result<Option<Chat>, PPError> {
         let select_query = "SELECT * FROM ksp.chats WHERE id = ?";
 
-        let mut statement = self.session.statement(&select_query);
+        let mut statement = self.session.statement(select_query);
         statement.bind_int32(0, chat_id)?;
+        let result = statement.execute().await?;
 
-        match statement.execute().await {
-            Ok(result) => {
-                if let Some(row) = result.first_row() {
-                    let chat_id: i32 = row.get_by_name("id")?;
-                    let is_group: bool = row.get_by_name("is_group")?;
+        if let Some(row) = result.first_row() {
+            let chat_id: i32 = row.get_by_name("id")?;
+            let is_group: bool = row.get_by_name("is_group")?;
 
-                    let mut iter: SetIterator = row.get_by_name("participants")?;
-                    let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
+            let mut iter: SetIterator = row.get_by_name("participants")?;
+            let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
 
-                    let mut participants: Vec<User> = vec![];
-                    while let Some(participant) = iter.next() {
-                        let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;
-                        if let Some(user) = user {
-                            participants.push(user)
-                        }
-                    }
-
-                    let details = if is_group {
-                        let name: String = row.get_by_name("name")?;
-                        let avatar_hash: String = row.get_by_name("avatar_hash")?;
-                        let username: String = row.get_by_name("username")?;
-
-                        Some(ChatDetails {
-                            name,
-                            chat_id,
-                            is_group: true,
-                            photo: if !avatar_hash.is_empty(){Some(avatar_hash)}else{None},
-                            username: if !username.is_empty(){Some(username)}else{None}
-                        })
-                    } else {None};
-
-                    return Ok(Some(Chat::construct(
-                        chat_id,
-                        is_group,
-                        participants,
-                        details
-                    )))
+            let mut participants: Vec<User> = vec![];
+            while let Some(participant) = iter.next() {
+                let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;
+                if let Some(user) = user {
+                    participants.push(user)
                 }
-                return Ok(None)
-            },
-            Err(err) => return Err(err.into())
+            }
+
+            let details = if is_group {
+                let name: String = row.get_by_name("name")?;
+                let avatar_hash: String = row.get_by_name("avatar_hash")?;
+                let username: String = row.get_by_name("username")?;
+
+                Some(ChatDetails {
+                    name,
+                    chat_id,
+                    is_group: true,
+                    photo: if !avatar_hash.is_empty() {
+                        Some(avatar_hash)
+                    } else {
+                        None
+                    },
+                    username: if !username.is_empty() {
+                        Some(username)
+                    } else {
+                        None
+                    },
+                })
+            } else {
+                None
+            };
+
+            return Ok(Some(Chat::construct(
+                chat_id,
+                is_group,
+                participants,
+                details,
+            )));
         }
+        Ok(None)
     }
 }
 
 impl From<DatabaseBuilder> for ChatsDB {
     fn from(value: DatabaseBuilder) -> Self {
         ChatsDB {
-            session: value.bucket.get_connection()
+            session: value.bucket.get_connection(),
         }
     }
 }

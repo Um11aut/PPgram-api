@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{
     db::{
-        chat::{chats::ChatsDB, messages::MessagesDB},
+        chat::{chats::ChatsDB, drafts::DraftsDB, messages::MessagesDB},
         internal::error::PPResult,
         user::UsersDB,
     },
@@ -13,12 +13,12 @@ use crate::{
             edit::EditedMessageBuilder,
             request::{
                 delete::DeleteMessageRequest,
-                edit::{EditMessageRequest, EditSelfRequest},
+                edit::{EditDraftRequest, EditMessageRequest, EditSelfRequest},
                 extract_what_field,
             },
             response::{
                 delete::DeleteMessageResponse,
-                edit::EditMessageResponse,
+                edit::{EditDraftResponse, EditMessageResponse},
                 events::{DeleteMessageEvent, EditMessageEvent, EditSelfEvent},
             },
             user::User,
@@ -46,8 +46,8 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
         .message_exists(real_chat_id, msg.message_id)
         .await?
     {
-        let private_chat_id = msg.chat_id.clone();
-        let msg_id = msg.message_id.clone();
+        let private_chat_id = msg.chat_id;
+        let msg_id = msg.message_id;
 
         let builder = EditedMessageBuilder::from(msg);
         let existing_message = messages_db
@@ -101,6 +101,28 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
     } else {
         return Err("Message with the given message_id wasn't found!".into());
     }
+
+    Ok(())
+}
+
+async fn handle_edit_draft(handler: &mut JsonHandler, msg: &EditDraftRequest) -> PPResult<()> {
+    let self_user_id = {
+        let session = handler.session.read().await;
+        let (user_id, _) = session.get_credentials_unchecked();
+        user_id
+    };
+
+    let drafts_db: DraftsDB = handler.get_db();
+    let users_db: UsersDB = handler.get_db();
+
+    let real_chat_id = users_db
+        .get_associated_chat_id(&self_user_id, msg.chat_id)
+        .await?
+        .ok_or("Chat with the given chat_id doesn't exist!")?;
+
+    drafts_db
+        .update_draft(&self_user_id, real_chat_id, msg.draft.as_str())
+        .await?;
 
     Ok(())
 }
@@ -160,32 +182,41 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
     Ok(())
 }
 
-async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<EditMessageResponse> {
-    let what_field = extract_what_field(&content)?;
+async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_json::Value> {
+    let what_field = extract_what_field(content)?;
 
     match what_field.as_str() {
         "message" => {
-            let msg: EditMessageRequest = serde_json::from_str(&content)?;
+            let msg: EditMessageRequest = serde_json::from_str(content)?;
             handle_edit_message(handler, msg).await?;
-            Ok(EditMessageResponse {
+            Ok(serde_json::to_value(EditMessageResponse {
                 ok: true,
                 method: "edit_message".into(),
-            })
+            }).unwrap())
         }
         "self" => {
-            let msg: EditSelfRequest = serde_json::from_str(&content)?;
+            let msg: EditSelfRequest = serde_json::from_str(content)?;
             handle_edit_self(handler, &msg).await?;
-            Ok(EditMessageResponse {
+            Ok(serde_json::to_value(EditMessageResponse {
                 ok: true,
                 method: "edit_self".into(),
-            })
+            }).unwrap())
+        }
+        "draft" => {
+            let msg: EditDraftRequest = serde_json::from_str(content)?;
+            handle_edit_draft(handler, &msg).await?;
+            Ok(serde_json::to_value(EditDraftResponse {
+                ok: true,
+                method: "edit_draft".into(),
+                chat_id: msg.chat_id,
+            }).unwrap())
         }
         _ => Err("Unknown what field! Known what fields for edit: 'message', 'self'".into()),
     }
 }
 
-async fn on_delete(handler: &mut JsonHandler, content: &String) -> PPResult<DeleteMessageResponse> {
-    let msg: DeleteMessageRequest = serde_json::from_str(&content)?;
+async fn on_delete(handler: &mut JsonHandler, content: &str) -> PPResult<DeleteMessageResponse> {
+    let msg: DeleteMessageRequest = serde_json::from_str(content)?;
 
     let self_user_id = {
         let session = handler.session.read().await;
