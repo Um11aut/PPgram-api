@@ -333,4 +333,23 @@ impl MessagesDB {
 
         Ok(())
     }
+
+    pub async fn fetch_unread_count(&self, chat_id: ChatId) -> Result<u32, PPError> {
+        let query = r#"
+            SELECT COUNT(*) FROM ksp.messages
+            WHERE chat_id = ? AND is_unread = true
+        "#;
+
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, chat_id)?;
+
+        let result = statement.execute().await?;
+
+        if let Some(row) = result.first_row() {
+            let count: i32 = row.get_column(0)?.get_i32()?;
+            Ok(count as u32)
+        } else {
+            Ok(0) // Return 0 if no rows were found
+        }
+    }
 }

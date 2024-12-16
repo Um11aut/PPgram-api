@@ -12,7 +12,7 @@ use crate::{
             handlers::json_handler::JsonHandler,
             methods::macros,
             types::{
-                chat::ChatId,
+                chat::{ChatDetailsResponse, ChatId},
                 request::send::{MessageId, SendMessageRequest},
                 response::{
                     events::{NewChatEvent, NewMessageEvent},
@@ -50,9 +50,10 @@ async fn handle_send_message(
             .await?
     } else {
         match handler
-                    .get_db::<ChatsDB>()
-                    .chat_exists(msg.common.to)
-                    .await? {
+            .get_db::<ChatsDB>()
+            .chat_exists(msg.common.to)
+            .await?
+        {
             true => Some(msg.common.to),
             false => return Err("No group found by the given chat id!".into()),
         }
@@ -60,8 +61,9 @@ async fn handle_send_message(
 
     let associated_chat = match maybe_chat {
         Some(existing_chat_id) => chats_db
-            .fetch_chat(existing_chat_id)
+            .fetch_chat(&self_user_id, existing_chat_id)
             .await?
+            .map(|v| v.0)
             .ok_or(PPError::from("Failed to find Chat!")),
         // Create chat id if doesn't exist
         None => {
@@ -74,9 +76,12 @@ async fn handle_send_message(
                 return Err(PPError::from("Target user_id doesn't exist!"));
             }
 
-            let chat = handler
+            let (chat, mut chat_details) = handler
                 .get_db::<ChatsDB>()
-                .create_private(vec![self_user_id.clone(), msg.common.to.into()])
+                .create_private(
+                    &self_user_id,
+                    vec![self_user_id.clone(), msg.common.to.into()],
+                )
                 .await?;
             users_db
                 .add_chat(&self_user_id, msg.common.to, chat.chat_id())
@@ -91,13 +96,17 @@ async fn handle_send_message(
                 .await
                 .unwrap();
 
-            let mut chat_details = chat.details(&msg.common.to.into()).await?.unwrap();
+            let messages_db: MessagesDB = handler.get_db();
+            let unread_count = messages_db.fetch_unread_count(chat_details.chat_id).await?;
             chat_details.chat_id = self_user_id.as_i32().unwrap();
             handler.send_event_to_con_detached(
                 msg.common.to,
                 NewChatEvent {
                     event: "new_chat".into(),
-                    new_chat: chat_details,
+                    new_chat: ChatDetailsResponse {
+                        details: chat_details,
+                        unread_count,
+                    },
                 },
             );
 

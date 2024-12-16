@@ -81,8 +81,7 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
             );
         } else {
             let chats_db: ChatsDB = handler.get_db();
-            let chat = chats_db.fetch_chat(real_chat_id).await?.unwrap();
-            assert!(chat.is_group());
+            let (chat, _) = chats_db.fetch_chat(&self_user_id, real_chat_id).await?.unwrap();
 
             for participant in chat
                 .participants()
@@ -259,8 +258,8 @@ async fn on_delete(handler: &mut JsonHandler, content: &str) -> PPResult<DeleteM
                 },
             );
         } else {
-            let chat = chats_db.fetch_chat(real_chat_id).await?.unwrap();
-            assert!(chat.is_group());
+            let (chat, _)= chats_db.fetch_chat(&self_user_id, real_chat_id).await?.unwrap();
+            // assert!(chat_details.is_group());
 
             // filter self
             for participant in chat

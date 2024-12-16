@@ -1,12 +1,16 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::server::message::types::{chat::ChatDetails, message::Message, user::User};
+use crate::server::message::types::{
+    chat::{ChatDetails, ChatDetailsResponse},
+    message::Message,
+    user::User,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct FetchChatsResponse {
     pub ok: bool,
     pub method: String,
-    pub chats: Vec<ChatDetails>
+    pub chats: Vec<ChatDetailsResponse>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -19,19 +23,20 @@ pub struct FetchUserResponse {
     pub photo: Option<String>,
 }
 
-pub type FetchSelfResponseMessage = FetchUserResponse;
+pub type FetchSelfResponse = FetchUserResponse;
 
 #[derive(Serialize, Deserialize)]
 pub struct FetchMessagesResponse {
     pub ok: bool,
     pub method: String,
-    pub messages: Vec<Message>
+    pub messages: Vec<Message>,
 }
 
 /// Response on fetching users by search query
 #[derive(Deserialize, Serialize)]
 pub struct FetchUsersResponse {
     pub ok: bool,
-    pub method: String, 
-    pub users: Vec<User>
+    pub method: String,
+    pub users: Vec<User>,
 }
+

@@ -1,13 +1,13 @@
 
 use crate::{
     db::{
-        chat::chats::{ChatsDB, InvitationHash},
+        chat::{chats::{ChatsDB, InvitationHash}, messages::MessagesDB},
         internal::error::{PPError, PPResult},
         user::UsersDB,
     },
     server::message::{
             handlers::json_handler::JsonHandler, methods::macros, types::{
-                chat::{Chat, ChatDetails},
+                chat::{Chat, ChatDetails, ChatDetailsResponse},
                 request::{
                     extract_what_field, new::{NewGroupRequest, NewInvitationLinkRequest}
                 },
@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Returns latest chat message id if sucessful
-async fn handle_new_group(msg: NewGroupRequest, handler: &JsonHandler) -> PPResult<Chat> {
+async fn handle_new_group(msg: NewGroupRequest, handler: &JsonHandler) -> PPResult<(Chat, ChatDetails)> {
     let self_user_id: UserId = {
         handler
             .session
@@ -32,17 +32,18 @@ async fn handle_new_group(msg: NewGroupRequest, handler: &JsonHandler) -> PPResu
     let chats_db = handler.get_db::<ChatsDB>();
     let group =
         chats_db.create_group(
+                &self_user_id,
             vec![self_user_id.clone()],
             ChatDetails {
                 name: msg.name,
                 chat_id: Default::default(),
                 is_group: true,
-                username: msg.username,
+                tag: msg.username,
                 photo: msg.avatar_hash,
             },
         )
         .await?;
-    handler.get_db::<UsersDB>().add_chat(&self_user_id, group.chat_id(), group.chat_id()).await?;
+    handler.get_db::<UsersDB>().add_chat(&self_user_id, group.0.chat_id(), group.0.chat_id()).await?;
 
     Ok(group)
 }
@@ -89,12 +90,15 @@ async fn on_new(handler: &mut JsonHandler) -> PPResult<()> {
     match what_field.as_str() {
         "group" => match serde_json::from_str::<NewGroupRequest>(&content) {
             Ok(msg) => {
-                let chat = handle_new_group(msg, handler).await?;
+                let (_, chat_details) = handle_new_group(msg, handler).await?;
                 handler
                     .send_message(&NewGroupResponse {
                         ok: true,
                         method: "new_group".into(),
-                        chat: chat.group_details_unchecked(),
+                        chat: ChatDetailsResponse{
+                            details: chat_details,
+                            unread_count: 0
+                        },
                     })
                     .await;
             }

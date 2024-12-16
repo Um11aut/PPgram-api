@@ -56,7 +56,11 @@ impl Database for ChatsDB {
 }
 
 impl ChatsDB {
-    pub async fn create_private(&self, participants: Vec<UserId>) -> Result<Chat, PPError> {
+    pub async fn create_private(
+        &self,
+        self_user_id: &UserId,
+        participants: Vec<UserId>,
+    ) -> PPResult<(Chat, ChatDetails)> {
         let chat_id = rand::thread_rng().gen_range(1..i32::MAX);
         let insert_query = "INSERT INTO ksp.chats (id, is_group, participants) VALUES (?, ?, ?)";
 
@@ -77,7 +81,7 @@ impl ChatsDB {
 
         statement.execute().await?;
 
-        Ok(self.fetch_chat(chat_id).await?.unwrap())
+        Ok(self.fetch_chat(self_user_id, chat_id).await?.unwrap())
     }
 
     /// Creates new unique invitation hash for a group
@@ -104,72 +108,66 @@ impl ChatsDB {
 
     pub async fn get_chat_by_invitation_hash(
         &self,
+        self_user_id: &UserId,
         invitation_hash: InvitationHash,
-    ) -> PPResult<Option<Chat>> {
+    ) -> PPResult<Option<(Chat, ChatDetails)>> {
         let select_query = "SELECT * FROM ksp.chats WHERE invitation_hash = ?";
 
         let mut statement = self.session.statement(select_query);
         statement.bind_string(0, &invitation_hash)?;
+        let result = statement.execute().await?;
 
-        match statement.execute().await {
-            Ok(result) => {
-                if let Some(row) = result.first_row() {
-                    let chat_id: i32 = row.get_by_name("id")?;
-                    let is_group: bool = row.get_by_name("is_group")?;
+        if let Some(row) = result.first_row() {
+            let chat_id: i32 = row.get_by_name("id")?;
+            let is_group: bool = row.get_by_name("is_group")?;
 
-                    let mut iter: SetIterator = row.get_by_name("participants")?;
-                    let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
+            let mut iter: SetIterator = row.get_by_name("participants")?;
+            let users_db: UsersDB = DatabaseBuilder::from_raw(self.session.clone()).into();
 
-                    let mut participants: Vec<User> = vec![];
-                    while let Some(participant) = iter.next() {
-                        let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;
-                        if let Some(user) = user {
-                            participants.push(user)
-                        }
-                    }
+            let mut participants: Vec<User> = vec![];
+            while let Some(participant) = iter.next() {
+                let user = users_db.fetch_user(&participant.get_i32()?.into()).await?;
+                if let Some(user) = user {
+                    participants.push(user)
+                }
+            }
 
-                    let details = if is_group {
-                        let name: String = row.get_by_name("name")?;
-                        let avatar_hash: String = row.get_by_name("avatar_hash")?;
-                        let username: String = row.get_by_name("username")?;
+            let chat = Chat::construct(chat_id, is_group, participants);
+            let details = if is_group {
+                let name: String = row.get_by_name("name")?;
+                let avatar_hash: String = row.get_by_name("avatar_hash")?;
+                let username: String = row.get_by_name("username")?;
 
-                        Some(ChatDetails {
-                            name,
-                            chat_id,
-                            is_group: true,
-                            photo: if !avatar_hash.is_empty() {
-                                Some(avatar_hash)
-                            } else {
-                                None
-                            },
-                            username: if !username.is_empty() {
-                                Some(username)
-                            } else {
-                                None
-                            },
-                        })
+                ChatDetails {
+                    name,
+                    chat_id,
+                    is_group: true,
+                    photo: if !avatar_hash.is_empty() {
+                        Some(avatar_hash)
                     } else {
                         None
-                    };
-
-                    return Ok(Some(Chat::construct(
-                        chat_id,
-                        is_group,
-                        participants,
-                        details,
-                    )));
+                    },
+                    tag: if !username.is_empty() {
+                        Some(username)
+                    } else {
+                        None
+                    },
                 }
-                Ok(None)
-            }
-            Err(err) => Err(err.into()),
+            } else {
+                chat.get_personal_chat_details(&self_user_id).await?
+            };
+
+            return Ok(Some((chat, details)));
         }
+        Ok(None)
     }
 
     pub async fn create_group(
         &self,
+        self_user_id: &UserId,
         participants: Vec<UserId>,
         details: ChatDetails,
-    ) -> Result<Chat, PPError> {
+    ) -> PPResult<(Chat, ChatDetails)> {
         let chat_id = rand::thread_rng().gen_range(i32::MIN..-1);
         let insert_query = "INSERT INTO ksp.chats (id, is_group, participants, name, avatar_hash, username) VALUES (?, ?, ?, ?, ?, ?)";
 
@@ -193,7 +191,11 @@ impl ChatsDB {
 
         statement.execute().await?;
 
-        Ok(self.fetch_chat(chat_id).await.unwrap().unwrap())
+        Ok(self
+            .fetch_chat(self_user_id, chat_id)
+            .await
+            .unwrap()
+            .unwrap())
     }
 
     pub async fn add_participant(
@@ -230,7 +232,11 @@ impl ChatsDB {
     }
 
     /// Fetch chat by real chat id
-    pub async fn fetch_chat(&self, chat_id: ChatId) -> Result<Option<Chat>, PPError> {
+    pub async fn fetch_chat(
+        &self,
+        self_user_id: &UserId,
+        chat_id: ChatId,
+    ) -> PPResult<Option<(Chat, ChatDetails)>> {
         let select_query = "SELECT * FROM ksp.chats WHERE id = ?";
 
         let mut statement = self.session.statement(select_query);
@@ -252,12 +258,13 @@ impl ChatsDB {
                 }
             }
 
+            let chat = Chat::construct(chat_id, is_group, participants);
             let details = if is_group {
                 let name: String = row.get_by_name("name")?;
                 let avatar_hash: String = row.get_by_name("avatar_hash")?;
                 let username: String = row.get_by_name("username")?;
 
-                Some(ChatDetails {
+                ChatDetails {
                     name,
                     chat_id,
                     is_group: true,
@@ -266,22 +273,17 @@ impl ChatsDB {
                     } else {
                         None
                     },
-                    username: if !username.is_empty() {
+                    tag: if !username.is_empty() {
                         Some(username)
                     } else {
                         None
                     },
-                })
+                }
             } else {
-                None
+                chat.get_personal_chat_details(&self_user_id).await?
             };
 
-            return Ok(Some(Chat::construct(
-                chat_id,
-                is_group,
-                participants,
-                details,
-            )));
+            return Ok(Some((chat, details)));
         }
         Ok(None)
     }

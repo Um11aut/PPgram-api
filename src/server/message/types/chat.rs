@@ -1,8 +1,9 @@
-
 use serde::{Deserialize, Serialize};
 
-
-use crate::db::{chat::chats::ChatsDB, internal::error::PPError};
+use crate::db::{
+    chat::chats::ChatsDB,
+    internal::error::{PPError, PPResult},
+};
 
 use super::user::{User, UserId};
 
@@ -14,10 +15,33 @@ pub struct ChatDetails {
     pub chat_id: ChatId,
     pub is_group: bool,
     pub photo: Option<String>,
-    pub username: Option<String>,
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ChatDetailsResponse {
+    #[serde(flatten)]
+    pub details: ChatDetails,
+    pub unread_count: u32
 }
 
 impl ChatDetails {
+    pub fn construct(
+        name: String,
+        chat_id: ChatId,
+        is_group: bool,
+        photo: Option<String>,
+        tag: Option<String>,
+    ) -> Self {
+        Self{
+            name,
+            chat_id,
+            is_group,
+            photo,
+            tag,
+        }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -27,7 +51,7 @@ impl ChatDetails {
     }
 
     pub fn username(&self) -> Option<&String> {
-        self.username.as_ref()
+        self.tag.as_ref()
     }
 }
 
@@ -36,25 +60,14 @@ pub struct Chat {
     chat_id: ChatId,
     is_group: bool,
     participants: Vec<User>,
-    details: Option<ChatDetails>
 }
 
 impl Chat {
-    pub async fn new(chats_db: ChatsDB, chat_id: ChatId) -> Result<Self, PPError> {
-        let chat = chats_db.fetch_chat(chat_id).await?;
-
-        match chat {
-            Some(chat) => Ok(chat),
-            None => Err(PPError::from("Failed to find chat with the given chat_id!"))
-        }
-    }
-
-    pub fn construct(chat_id: i32, is_group: bool, participants: Vec<User>, details: Option<ChatDetails>) -> Self {
+    pub fn construct(chat_id: i32, is_group: bool, participants: Vec<User>) -> Self {
         Self {
             chat_id,
             is_group,
             participants,
-            details
         }
     }
 
@@ -70,37 +83,28 @@ impl Chat {
         &self.participants
     }
 
-    /// Fetches chat details(`ResponseChatInfo`), which is photo, name of the chat, username, etc.
-    /// 
-    /// If the chat isn't group(2 people only), it will fetch the info of another user in the chat.
-    /// 
-    /// If the chat is group, info must be present, it will fetch the chat info.
-    pub async fn details(&self, relative_to: &UserId) -> Result<Option<ChatDetails>, PPError> {
+    /// Group ChatDetails are fetched earlier
+    pub async fn get_personal_chat_details(&self, relative_to: &UserId) -> PPResult<ChatDetails> {
         match self.is_group {
-            // if not is_group, just take the user info of other participant
             false => {
-                if let Some(peer) = self.participants.iter().find(|&participant| participant.user_id() != relative_to.as_i32().unwrap()) {
-                    return Ok(Some(ChatDetails{
+                if let Some(peer) = self
+                    .participants
+                    .iter()
+                    .find(|&participant| participant.user_id() != relative_to.as_i32_unchecked())
+                {
+                    Ok(ChatDetails {
                         name: peer.name().into(),
                         chat_id: self.chat_id,
                         is_group: self.is_group,
                         photo: peer.photo().cloned(),
-                        username: Some(peer.username().into())
-                    }))
-                    } else {
-                        return Ok(None)
-                    }
+                        tag: Some(peer.username().into()),
+                    })
+                } else {
+                    Err("Provided UserId wasn't found in the chat!".into())
+                }
             }
-            true => {
-                Ok(self.details.clone())
-            }
+            true => Err("ChatDetails can only be get for a personal chat!".into()),
         }
     }
-
-    /// Get chat details knowing that it is group
-    /// 
-    /// Panics if the chat isn't the group
-    pub fn group_details_unchecked(&self) -> ChatDetails {
-        self.details.clone().unwrap()
-    }
 }
+
