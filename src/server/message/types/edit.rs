@@ -35,13 +35,13 @@ impl EditedMessageBuilder {
 
         let media_hashes_changed = if let Some(media_hashes) = self.media_hashes {
             media_hashes
-        } else {msg.media_hashes};
+        } else {msg.sha256_hashes};
 
         Message {
             is_unread: unread_changed,
             reply_to: reply_to_changed,
             content: content_changed,
-            media_hashes: media_hashes_changed,
+            sha256_hashes: media_hashes_changed,
             ..msg
         }
     }

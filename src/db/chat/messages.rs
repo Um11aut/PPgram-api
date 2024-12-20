@@ -19,6 +19,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+const AS_LAST_MESSAGE_IDX: i32 = -1;
+
 pub struct MessagesDB {
     session: Arc<cassandra_cpp::Session>,
 }
@@ -43,13 +45,21 @@ impl Database for MessagesDB {
                 reply_to int,
                 has_content boolean,
                 content TEXT,
-                has_media boolean,
-                media_hashes LIST<TEXT>,
+                has_hashes boolean,
+                sha256_hashes LIST<TEXT>,
                 PRIMARY KEY (chat_id, id)
             ) WITH CLUSTERING ORDER BY (id DESC);
         "#;
 
         self.session.execute(create_table_query).await?;
+
+        self.session
+            .execute(
+                r#"
+                    CREATE INDEX IF NOT EXISTS unread_index ON ksp.messages (is_unread);
+                "#,
+            )
+            .await?;
 
         Ok(())
     }
@@ -74,7 +84,7 @@ impl MessagesDB {
             INSERT INTO ksp.messages
                 (id, is_unread, from_id, chat_id, edited, date, has_reply,
                 reply_to, has_content, content,
-                has_media, media_hashes)
+                has_hashes, sha256_hashes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
 
@@ -188,7 +198,7 @@ impl MessagesDB {
         chat_id: ChatId,
         mut range: Range<MessageId>,
     ) -> Result<Vec<Message>, PPError> {
-        if range.start == -1 {
+        if range.start == AS_LAST_MESSAGE_IDX {
             match self.get_latest(chat_id).await? {
                 Some(latest) => {
                     range.start = latest;
@@ -237,17 +247,19 @@ impl MessagesDB {
             let reply_to: i32 = row.get_by_name("reply_to")?;
             let has_content: bool = row.get_by_name("has_content")?;
             let content: String = row.get_by_name("content")?;
-            let _: bool = row.get_by_name("has_media")?;
+            let has_hashes: bool = row.get_by_name("has_hashes")?;
             let edited: bool = row.get_by_name("edited")?;
 
-            let mut media_hashes: Vec<String> = vec![];
+            let mut sha256_hashes: Vec<String> = vec![];
 
-            let maybe_iter: cassandra_cpp::Result<cassandra_cpp::SetIterator> =
-                row.get_by_name("media_hashes");
-            if let Ok(mut iter) = maybe_iter {
-                while let Some(sha256_hash) = iter.next() {
-                    let hash = sha256_hash.to_string();
-                    media_hashes.push(hash);
+            if has_hashes {
+                let maybe_iter: cassandra_cpp::Result<cassandra_cpp::SetIterator> =
+                    row.get_by_name("sha256_hashes");
+                if let Ok(mut iter) = maybe_iter {
+                    while let Some(sha256_hash) = iter.next() {
+                        let hash = sha256_hash.to_string();
+                        sha256_hashes.push(hash);
+                    }
                 }
             }
 
@@ -264,7 +276,7 @@ impl MessagesDB {
                 } else {
                     None
                 },
-                media_hashes,
+                sha256_hashes,
             })
         }
 
@@ -284,8 +296,8 @@ impl MessagesDB {
                 content = ?,
                 has_reply = ?,
                 reply_to = ?,
-                has_media = ?,
-                media_hashes = ?,
+                has_hashes = ?,
+                sha256_hashes = ?,
                 edited = ?
             WHERE chat_id = ? AND id = ?
         "#;
@@ -297,17 +309,17 @@ impl MessagesDB {
         statement.bind_string(2, new_message.content.unwrap_or_default().as_str())?; // content
         statement.bind_bool(3, new_message.reply_to.is_some())?; // has_reply
         statement.bind_int32(4, new_message.reply_to.unwrap_or(0))?; // reply_to
-        statement.bind_bool(5, !new_message.media_hashes.is_empty())?; // has_media
+        statement.bind_bool(5, !new_message.sha256_hashes.is_empty())?; // has_hashes
 
         let mut cass_list = List::new();
-        for sha256_hash in new_message.media_hashes {
+        for sha256_hash in new_message.sha256_hashes {
             if !hash_exists(&sha256_hash).await? {
                 return Err(format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into());
             }
             cass_list.append_string(&sha256_hash)?;
         }
 
-        statement.bind_list(6, cass_list)?; // media_hashes
+        statement.bind_list(6, cass_list)?; // sha256_hashes
         statement.bind_bool(7, true)?; // is_edited
 
         statement.bind_int32(8, chat_id)?; // chat_id
@@ -334,10 +346,11 @@ impl MessagesDB {
         Ok(())
     }
 
-    pub async fn fetch_unread_count(&self, chat_id: ChatId) -> Result<u32, PPError> {
+    pub async fn fetch_unread_count(&self, chat_id: ChatId) -> Result<u64, PPError> {
         let query = r#"
-            SELECT COUNT(*) FROM ksp.messages
-            WHERE chat_id = ? AND is_unread = true
+            SELECT COUNT(*)
+            FROM ksp.messages
+            WHERE chat_id = ? AND is_unread = true;
         "#;
 
         let mut statement = self.session.statement(query);
@@ -346,8 +359,8 @@ impl MessagesDB {
         let result = statement.execute().await?;
 
         if let Some(row) = result.first_row() {
-            let count: i32 = row.get_column(0)?.get_i32()?;
-            Ok(count as u32)
+            let count: i64 = row.get_column(0)?.get_i64()?;
+            Ok(count as u64)
         } else {
             Ok(0) // Return 0 if no rows were found
         }

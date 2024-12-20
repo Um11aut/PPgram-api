@@ -77,6 +77,10 @@ impl MediaUploader {
 
         // Depending on the media type make compression
         let media_type = MediaType::try_from(media_name.as_str())?;
+        match media_type {
+            MediaType::Video(video_type) => todo!(),
+            MediaType::Photo(photo_type) => {},
+        };
 
         // Generating a random temp file where all the framed binary will be put
         let temp_file: String = rand::thread_rng()

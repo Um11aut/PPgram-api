@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::db::{
-    chat::chats::ChatsDB,
-    internal::error::{PPError, PPResult},
-};
+use crate::db::internal::error::PPResult;
 
 use super::user::{User, UserId};
 
@@ -22,7 +19,7 @@ pub struct ChatDetails {
 pub struct ChatDetailsResponse {
     #[serde(flatten)]
     pub details: ChatDetails,
-    pub unread_count: u32
+    pub unread_count: u64,
 }
 
 impl ChatDetails {
@@ -33,7 +30,7 @@ impl ChatDetails {
         photo: Option<String>,
         tag: Option<String>,
     ) -> Self {
-        Self{
+        Self {
             name,
             chat_id,
             is_group,
@@ -107,4 +104,3 @@ impl Chat {
         }
     }
 }
-

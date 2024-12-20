@@ -1,3 +1,4 @@
+use log::debug;
 use serde_json::Value;
 
 use crate::db::chat::chats::ChatsDB;
@@ -38,12 +39,12 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsRe
             .unwrap();
         if let Some((chat, mut details)) = chat {
             if !chat.is_group() {
-                // Fake the chat id by the user id
+                // Fake the chat id with the user id
                 details.chat_id = chat_id;
             }
-            chats_details.push(ChatDetailsResponse{
+            chats_details.push(ChatDetailsResponse {
                 details,
-                unread_count: messages_db.fetch_unread_count(chat_id).await?
+                unread_count: messages_db.fetch_unread_count(chat_id).await?,
             });
         }
     }
@@ -98,17 +99,10 @@ async fn handle_fetch_messages(
             .get_db::<UsersDB>()
             .get_associated_chat_id(&user_id, msg.chat_id)
             .await
+    } else if handler.get_db::<ChatsDB>().chat_exists(msg.chat_id).await? {
+        Ok(Some(msg.chat_id))
     } else {
-        match handler.get_db::<ChatsDB>().chat_exists(msg.chat_id).await {
-            Ok(res) => {
-                if res {
-                    Ok(Some(msg.chat_id))
-                } else {
-                    Err("No group found by the given chat id!".into())
-                }
-            }
-            Err(err) => Err(err),
-        }
+        Err("No group found by the given chat id!".into())
     }?;
 
     match maybe_chat_id {

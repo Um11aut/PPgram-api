@@ -2,8 +2,8 @@ FROM rustlang/rust:nightly
 
 WORKDIR /tmp
 
-# Install dependencies and Rust
 RUN apt-get -qq update && \
+    apt-get -y -qq install ffmpeg libavutil-dev libavformat-dev libavfilter-dev libavdevice-dev libclang-dev pkg-config && \
     apt-get -y -qq install wget build-essential libssl-dev libuv1-dev && \
     # Download and install Cassandra C++ Driver
     wget -O cassandra-cpp-driver_2.17.1-1_amd64.deb https://datastax.jfrog.io/artifactory/cpp-php-drivers/cpp-driver/builds/2.17.1/e05897d/ubuntu/22.04/cassandra/v2.17.1/cassandra-cpp-driver_2.17.1-1_amd64.deb && \

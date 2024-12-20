@@ -100,11 +100,5 @@ impl PPError {
         send_str_as_err(method, err, output_connection).await;
     }
 }
-
-impl From<webrtc::Error> for PPError {
-    fn from(err: webrtc::Error) -> Self {
-        Self::Server(err.into())
-    }
-}
 pub type PPResult<T> = Result<T, PPError>;
 
