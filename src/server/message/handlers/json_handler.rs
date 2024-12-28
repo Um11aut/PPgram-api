@@ -4,85 +4,64 @@ use log::{debug, info};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::net::tcp::OwnedReadHalf;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock};
 
 use crate::db::bucket::{DatabaseBucket, DatabaseBuilder};
 use crate::db::internal::error::PPError;
 use crate::server::connection::TCPConnection;
 use crate::server::message::builder::MessageBuilder;
 use crate::server::message::methods::{auth, bind, check, edit, fetch, join, new, send};
-use crate::server::message::types::response::events::IsTypingEvent;
-use crate::server::message::types::user::UserId;
 use crate::server::message::Handler;
 use crate::server::server::Sessions;
 use crate::server::session::Session;
 
 pub type SessionArcRwLock = Arc<RwLock<Session>>;
 
-const MAX_JSON_MSG_SIZE: u32 = 4096 /* 4kb */;
+const MAX_MSG_SIZE: u32 = 100_000_000 /* 100Mb */;
 
-/// used by the channels to send is_typing event
-/// `Vec<UserId>` is the users, to which this event will be sent
-pub type TypingEventMsg = (IsTypingEvent, Vec<UserId>);
-
-/// Message handler struct that has everything it needs to have to be able
+/// TCP Message handler struct that has everything it needs to have to be able
 /// to handle any JSON message type
-///
-/// TODO: Refactor to ensure SRP
 pub struct JsonHandler {
     builder: Option<MessageBuilder>,
-    is_message_first: bool,
+    is_first: bool,
     pub session: SessionArcRwLock,
     pub sessions: Sessions,
-    /// Output TCP connection on which all the responses/messages are sent
+    // Output TCP connection on which all the responses/messages are sent
     pub output_connection: Arc<TCPConnection>,
-    bucket: DatabaseBucket,
-    /// Mpsc Sender on receiver task for is_typing event
-    /// TODO: Maybe better 'is_typing' event sending?
-    is_typing_tx: mpsc::Sender<TypingEventMsg>,
+    bucket: DatabaseBucket
 }
 
 #[async_trait::async_trait]
 impl Handler for JsonHandler {
     async fn handle_segmented_frame(&mut self, buffer: &[u8]) {
-        if self.is_message_first {
+        if self.is_first {
             self.builder = MessageBuilder::parse(buffer);
             if let Some(builder) = &self.builder {
                 if builder.size() == 0 {
-                    self.send_error("none", "Message size cannot be 0!".into())
-                        .await;
+                    self.send_error("none", "Message size cannot be 0!".into()).await;
                     self.builder = None;
-                    self.is_message_first = true;
+                    self.is_first = true;
                     return;
                 }
 
                 // if message size exceeds the maximum size do not handle it.
-                if builder.size() > MAX_JSON_MSG_SIZE {
-                    self.send_error(
-                        "none",
-                        format!("Message size cannot be {}!", builder.size()).into(),
-                    )
-                    .await;
+                if builder.size() > MAX_MSG_SIZE {
+                    self.send_error("none", "Message size cannot be 0!".into()).await;
                     self.builder = None;
-                    self.is_message_first = true;
+                    self.is_first = true;
                     return;
                 }
 
-                #[cfg(debug_assertions)]
                 if builder.size() < 1024 {
-                    debug!(
-                        "Got the message! \n Message size: {} \n Message Content: {}",
-                        builder.size(),
-                        String::from_utf8_lossy(builder.content_bytes())
-                    );
+                    debug!("Got the message! \n Message size: {} \n Message Content: {}", builder.size(), String::from_utf8_lossy(builder.content_bytes()));
                 } else {
                     debug!("Got the message! \n Message size: {}", builder.size());
                 }
             }
+            self.is_first = false;
 
             if let Some(ref message) = self.builder {
                 if !message.ready() {
-                    self.is_message_first = false;
                     return;
                 }
             }
@@ -90,7 +69,7 @@ impl Handler for JsonHandler {
 
         let mut do_handle = false;
         if let Some(ref mut message) = self.builder {
-            if !message.ready() && !self.is_message_first {
+            if !message.ready() {
                 message.extend(buffer);
             }
 
@@ -98,8 +77,6 @@ impl Handler for JsonHandler {
                 do_handle = true;
             }
         }
-
-        self.is_message_first = false;
 
         if do_handle {
             if self.builder.is_some() {
@@ -110,91 +87,33 @@ impl Handler for JsonHandler {
                 message.clear();
             }
             self.builder = None;
-            self.is_message_first = true;
+            self.is_first = true;
         }
     }
 }
 
 impl JsonHandler {
-    async fn typing_recv_task(sessions: Sessions, mut rx: mpsc::Receiver<TypingEventMsg>) {
-        let delay_fut = tokio::time::sleep(std::time::Duration::from_millis(100));
-        tokio::pin!(delay_fut);
-
-        while let Some((msg, users)) = rx.recv().await {
-            delay_fut
-                .as_mut()
-                .reset(tokio::time::Instant::now() + std::time::Duration::from_millis(100));
-
-            // If new message is received before the Sleeper finishes, prioritise new message
-            tokio::select! {
-                _ = &mut delay_fut => {
-                    let mut msg = msg;
-                    msg.is_typing = false;
-
-                    for user in users {
-                        if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
-                            let mut target_connection = receiver_session.write().await;
-
-                            target_connection.mpsc_send(msg.clone(), 0).await;
-                        }
-                    }
-                },
-                Some((new_msg, new_users)) = rx.recv() => {
-                    for user in new_users {
-                        if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
-                            let mut target_connection = receiver_session.write().await;
-
-                            target_connection.mpsc_send(new_msg.clone(), 0).await;
-                        }
-                    }
-                },
-                else => break
-            }
-        }
-    }
-
-    pub async fn new(
-        session: Arc<RwLock<Session>>,
-        sessions: Sessions,
-        bucket: DatabaseBucket,
-    ) -> Self {
+    pub async fn new(session: Arc<RwLock<Session>>, sessions: Sessions, bucket: DatabaseBucket) -> Self {
         let output_connection = {
             let session_locked = session.read().await;
             // Assume the last connection is the output connection
             // TODO: User must decide on which connection he wants the output
-            Arc::clone(session_locked.connections().last().unwrap())
+            Arc::clone(&session_locked.connections().last().unwrap())
         };
-
-        let (tx, rx) = mpsc::channel::<TypingEventMsg>(3);
-        tokio::spawn({
-            let sessions = Arc::clone(&sessions);
-            async move {
-                Self::typing_recv_task(sessions, rx).await;
-            }
-        });
 
         JsonHandler {
             builder: None,
             session: Arc::clone(&session),
             sessions,
             output_connection,
-            is_message_first: true,
-            bucket,
-            is_typing_tx: tx,
+            is_first: true,
+            bucket
         }
     }
 
     /// Later, we need to retreive the content of the `self.builder`
     pub fn utf8_content_unchecked(&mut self) -> &String {
         self.builder.as_mut().unwrap().content_utf8().unwrap()
-    }
-
-    pub async fn send_is_typing(&self, event: IsTypingEvent, users: Vec<UserId>) {
-        let res = self.is_typing_tx.send((event, users)).await;
-
-        if cfg!(debug_assertions) {
-            res.expect("to be able to send to the queue");
-        }
     }
 
     /// Sends standartized json error:
@@ -214,18 +133,14 @@ impl JsonHandler {
             let data = Arc::clone(&data);
             info!("Sending media back: {}", data.len());
             async move {
-                connection
-                    .write(&MessageBuilder::build_from_slice(&data).packed())
-                    .await
+                connection.write(&MessageBuilder::build_from_slice(&data).packed()).await
             }
         });
     }
 
     /// Instead of json, sends raw buffer directly to the connection
     pub async fn send_raw(&self, data: &[u8]) {
-        self.output_connection
-            .write(&MessageBuilder::build_from_slice(data).packed())
-            .await;
+        self.output_connection.write(&MessageBuilder::build_from_slice(&data).packed()).await;
     }
 
     pub fn reader(&self) -> Arc<Mutex<OwnedReadHalf>> {
@@ -233,11 +148,7 @@ impl JsonHandler {
     }
 
     pub async fn send_message<T: ?Sized + Serialize>(&self, message: &T) {
-        self.output_connection
-            .write(
-                &MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed(),
-            )
-            .await;
+        self.output_connection.write(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await;
     }
 
     /// Sends message to other user, meaning connection(e.g. new chat, new message, or any other event that must be handled in realtime)
@@ -256,32 +167,6 @@ impl JsonHandler {
         });
     }
 
-    /// same as `send_event_to_con_detached`, but multiple
-    ///
-    /// Ensure that `recv` and `msg` have the same length!
-    pub async fn send_events_to_connections(
-        &self,
-        recv: Vec<i32>,
-        msgs: Vec<impl Serialize + Send + 'static>,
-    ) {
-        if cfg!(debug_assertions) {
-            assert!(recv.len() == msgs.len())
-        }
-
-        tokio::spawn({
-            let connections = Arc::clone(&self.sessions);
-            async move {
-                for (to, msg) in recv.iter().zip(msgs) {
-                    if let Some(receiver_session) = connections.get(to) {
-                        let mut target_connection = receiver_session.write().await;
-
-                        target_connection.mpsc_send(msg, 0).await;
-                    }
-                }
-            }
-        });
-    }
-
     // Function to get any database by just passing the type
     pub fn get_db<T: From<DatabaseBuilder>>(&self) -> T {
         DatabaseBuilder::from(self.bucket.clone()).into()
@@ -290,34 +175,33 @@ impl JsonHandler {
     async fn try_handle_json_message(&mut self) {
         let message = self.builder.as_mut().unwrap().content_utf8();
         if message.is_none() {
-            self.send_error("none", "Invalid utf8 sequence!".into())
-                .await;
-            return;
+            self.send_error("none", "Invalid utf8 sequence!".into()).await;
+            return
         }
         let message = message.unwrap();
 
-        match serde_json::from_str::<Value>(message) {
-            Ok(value) => match value.get("method").and_then(Value::as_str) {
-                Some(method) => match method {
-                    "login" | "auth" | "register" => auth::handle(self, method).await,
-                    "send_message" => send::handle(self, method).await,
-                    "edit" | "delete" => edit::handle(self, method).await,
-                    "fetch" => fetch::handle(self, method).await,
-                    "check" => check::handle(self, method).await,
-                    "bind" => bind::handle(self, method).await,
-                    "new" => new::handle(self, method).await,
-                    "join" => join::handle(self, method).await,
-                    _ => {
-                        self.send_error(method, "Unknown method given!".into())
-                            .await
-                    }
-                },
-                None => {
-                    self.send_error(
-                        "none",
-                        "Failed to get the method from the json message!".into(),
-                    )
-                    .await
+        if !message.ends_with('}') {
+            self.send_error("none", "Invalid json string sequence!".into()).await;
+            return
+        }
+
+        match serde_json::from_str::<Value>(&message) {
+            Ok(value) => {
+                match value.get("method").and_then(Value::as_str) {
+                    Some(method) => {
+                        match method {
+                            "login" | "auth" | "register" => auth::handle(self, method).await,
+                            "send_message" => send::handle(self, method).await,
+                            "edit" | "delete" => edit::handle(self, method).await,
+                            "fetch" => fetch::handle(self, method).await,
+                            "check" => check::handle(self, method).await,
+                            "bind" => bind::handle(self, method).await,
+                            "new" => new::handle(self, method).await,
+                            "join" => join::handle(self, method).await,
+                            _ => self.send_error(method, "Unknown method given!".into()).await
+                        }
+                    },
+                    None => self.send_error("none", "Failed to get the method from the json message!".into()).await
                 }
             },
             Err(err) => {

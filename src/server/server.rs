@@ -17,15 +17,13 @@ use crate::server::message::handlers::files_handler::FilesHandler;
 use crate::server::message::Handler;
 use crate::server::{message::handlers::json_handler::JsonHandler, session::Session};
 
-use super::message::handlers::json_handler::SessionArcRwLock;
-
 /// 1024 bytes
 const JSON_MESSAGE_ALLOCATION_SIZE: usize = 1024;
 
 /// 1 Mib
-pub const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1024 * 1024;
+pub const FILES_MESSAGE_ALLOCATION_SIZE: usize = 1 * (1024 * 1024);
 
-pub(super) type Sessions = Arc<DashMap<i32, SessionArcRwLock>>;
+pub(super) type Sessions = Arc<DashMap<i32, Arc<RwLock<Session>>>>;
 
 /// Two ports are available:
 /// 3000 - For Json Messages. The full message is stored in a `Vec`(on RAM) and handled after they are completely received
@@ -117,11 +115,11 @@ impl Server {
 
         let reader = handler.reader();
 
-        // Store buffer on the heap to avoid StackOverflow
-        let mut buffer = Vec::new();
-        buffer.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
-
         loop {
+            // Store buffer on the heap to avoid StackOverflow
+            let mut buffer = Vec::new();
+            buffer.resize(FILES_MESSAGE_ALLOCATION_SIZE, Default::default());
+
             match reader.lock().await.read(&mut buffer).await {
                 Ok(0) => {drop(buffer); break;},
                 Ok(n) => {

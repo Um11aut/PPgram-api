@@ -1,11 +1,10 @@
 use log::debug;
 use serde_json::Value;
-use tokio::sync::mpsc;
 
 use crate::{
     db::{
         chat::{chats::ChatsDB, drafts::DraftsDB, messages::MessagesDB},
-        internal::error::{PPError, PPResult},
+        internal::error::PPResult,
         user::UsersDB,
     },
     server::message::{
@@ -20,9 +19,9 @@ use crate::{
             response::{
                 delete::DeleteMessageResponse,
                 edit::{EditDraftResponse, EditMessageResponse},
-                events::{DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent},
+                events::{DeleteMessageEvent, EditMessageEvent, EditSelfEvent},
             },
-            user::{User, UserId},
+            user::User,
         },
     },
 };
@@ -43,68 +42,63 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
         .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?
         .ok_or("Chat with the given chat_id doesn't exist!")?;
-
-    if !messages_db
+    if messages_db
         .message_exists(real_chat_id, msg.message_id)
         .await?
     {
-        return Err("Message with the given message_id wasn't found!".into());
-    }
+        let private_chat_id = msg.chat_id;
+        let msg_id = msg.message_id;
 
-    let private_chat_id = msg.chat_id;
-    let msg_id = msg.message_id;
-
-    let builder = EditedMessageBuilder::from(msg);
-    let existing_message = messages_db
-        .fetch_messages(real_chat_id, msg_id..0)
-        .await?
-        .remove(0);
-    if existing_message.from_id != self_user_id.as_i32_unchecked() {
-        return Err("You can edit only yours message!".into());
-    }
-    debug!("Existing Message: {:?}", existing_message);
-
-    let edited_msg = builder.get_edited_message(existing_message);
-    messages_db
-        .edit_message(msg_id, real_chat_id, edited_msg.clone())
-        .await?;
-    debug!("Edited Message: {:?}", edited_msg);
-
-    // only negative chat id's are groups
-    let is_group = real_chat_id.is_negative();
-
-    if !is_group {
-        let mut edited_msg = edited_msg;
-        edited_msg.chat_id = self_user_id.as_i32_unchecked();
-
-        handler.send_event_to_con_detached(
-            private_chat_id,
-            EditMessageEvent {
-                event: "edit_message".into(),
-                new_message: edited_msg,
-            },
-        );
-    } else {
-        let chats_db: ChatsDB = handler.get_db();
-        let (chat, _) = chats_db
-            .fetch_chat(&self_user_id, real_chat_id)
+        let builder = EditedMessageBuilder::from(msg);
+        let existing_message = messages_db
+            .fetch_messages(real_chat_id, msg_id..0)
             .await?
-            .unwrap();
+            .remove(0);
+        if existing_message.from_id != self_user_id.as_i32_unchecked() {
+            return Err("You can edit only yours message!".into());
+        }
+        debug!("Existing Message: {:?}", existing_message);
 
-        let receivers = chat
-            .participants()
-            .iter()
-            .filter(|el| el.user_id() == self_user_id.as_i32_unchecked())
-            .map(|u| u.user_id());
+        let edited_msg = builder.get_edited_message(existing_message);
+        messages_db
+            .edit_message(msg_id, real_chat_id, edited_msg.clone())
+            .await?;
+        debug!("Edited Message: {:?}", edited_msg);
 
-        let msgs = receivers.clone().map(|_| EditMessageEvent {
-            event: "edit_message".into(),
-            new_message: edited_msg.clone(),
-        });
+        // only negative chat id's are groups
+        let is_group = real_chat_id.is_negative();
 
-        handler
-            .send_events_to_connections(receivers.collect(), msgs.collect())
-            .await;
+        if !is_group {
+            let mut edited_msg = edited_msg;
+            edited_msg.chat_id = self_user_id.as_i32_unchecked();
+
+            handler.send_event_to_con_detached(
+                private_chat_id,
+                EditMessageEvent {
+                    event: "edit_message".into(),
+                    new_message: edited_msg,
+                },
+            );
+        } else {
+            let chats_db: ChatsDB = handler.get_db();
+            let (chat, _) = chats_db.fetch_chat(&self_user_id, real_chat_id).await?.unwrap();
+
+            for participant in chat
+                .participants()
+                .iter()
+                .filter(|el| el.user_id() == self_user_id.as_i32_unchecked())
+            {
+                handler.send_event_to_con_detached(
+                    participant.user_id(),
+                    EditMessageEvent {
+                        event: "edit_message".into(),
+                        new_message: edited_msg.clone(),
+                    },
+                );
+            }
+        }
+    } else {
+        return Err("Message with the given message_id wasn't found!".into());
     }
 
     Ok(())
@@ -119,34 +113,11 @@ async fn handle_edit_draft(handler: &mut JsonHandler, msg: &EditDraftRequest) ->
 
     let drafts_db: DraftsDB = handler.get_db();
     let users_db: UsersDB = handler.get_db();
-    let chats_db: ChatsDB = handler.get_db();
 
     let real_chat_id = users_db
         .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?
         .ok_or("Chat with the given chat_id doesn't exist!")?;
-
-    let event_chat_id = if msg.chat_id.is_positive() {
-        real_chat_id
-    } else {
-        self_user_id.as_i32_unchecked()
-    };
-
-    let users = if msg.chat_id.is_positive() {
-        vec![UserId::UserId(msg.chat_id)]
-    } else {
-        let (group, _) = chats_db.fetch_chat(&self_user_id, real_chat_id).await?.expect("chat to exist");
-        group.participants().iter().map(|user| UserId::UserId(user.user_id())).collect()
-    };
-
-    let ev = IsTypingEvent {
-        event: "is_typing".into(),
-        is_typing: true,
-        chat_id: event_chat_id,
-        user_id: self_user_id.as_i32_unchecked(),
-    };
-
-    handler.send_is_typing(ev, users).await;
 
     drafts_db
         .update_draft(&self_user_id, real_chat_id, msg.draft.as_str())
@@ -220,8 +191,7 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
             Ok(serde_json::to_value(EditMessageResponse {
                 ok: true,
                 method: "edit_message".into(),
-            })
-            .unwrap())
+            }).unwrap())
         }
         "self" => {
             let msg: EditSelfRequest = serde_json::from_str(content)?;
@@ -229,8 +199,7 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
             Ok(serde_json::to_value(EditMessageResponse {
                 ok: true,
                 method: "edit_self".into(),
-            })
-            .unwrap())
+            }).unwrap())
         }
         "draft" => {
             let msg: EditDraftRequest = serde_json::from_str(content)?;
@@ -239,8 +208,7 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
                 ok: true,
                 method: "edit_draft".into(),
                 chat_id: msg.chat_id,
-            })
-            .unwrap())
+            }).unwrap())
         }
         _ => Err("Unknown what field! Known what fields for edit: 'message', 'self'".into()),
     }
@@ -290,10 +258,7 @@ async fn on_delete(handler: &mut JsonHandler, content: &str) -> PPResult<DeleteM
                 },
             );
         } else {
-            let (chat, _) = chats_db
-                .fetch_chat(&self_user_id, real_chat_id)
-                .await?
-                .unwrap();
+            let (chat, _)= chats_db.fetch_chat(&self_user_id, real_chat_id).await?.unwrap();
             // assert!(chat_details.is_group());
 
             // filter self

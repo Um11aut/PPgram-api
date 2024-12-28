@@ -40,11 +40,3 @@ pub struct NewParticipantEvent {
     pub chat_id: i32,
     pub new_user: User
 }
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct IsTypingEvent {
-    pub event: String, // is_typing
-    pub is_typing: bool,
-    pub chat_id: i32,
-    pub user_id: i32
-}
