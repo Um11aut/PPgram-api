@@ -127,9 +127,9 @@ async fn handle_edit_draft(handler: &mut JsonHandler, msg: &EditDraftRequest) ->
         .ok_or("Chat with the given chat_id doesn't exist!")?;
 
     let event_chat_id = if msg.chat_id.is_positive() {
-        real_chat_id
-    } else {
         self_user_id.as_i32_unchecked()
+    } else {
+        real_chat_id
     };
 
     let users = if msg.chat_id.is_positive() {
