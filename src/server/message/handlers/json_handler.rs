@@ -19,7 +19,7 @@ use crate::server::session::Session;
 
 pub type SessionArcRwLock = Arc<RwLock<Session>>;
 
-const IS_TYPING_SLEEP_DURATION: std::time::Duration = std::time::Duration::from_millis(100);
+const IS_TYPING_SLEEP_DURATION: std::time::Duration = std::time::Duration::from_millis(1000);
 
 const MAX_JSON_MSG_SIZE: u32 = 4096 /* 4kb */;
 
