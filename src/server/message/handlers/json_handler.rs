@@ -19,6 +19,8 @@ use crate::server::session::Session;
 
 pub type SessionArcRwLock = Arc<RwLock<Session>>;
 
+const IS_TYPING_SLEEP_DURATION: std::time::Duration = std::time::Duration::from_millis(100);
+
 const MAX_JSON_MSG_SIZE: u32 = 4096 /* 4kb */;
 
 /// used by the channels to send is_typing event
@@ -117,38 +119,41 @@ impl Handler for JsonHandler {
 
 impl JsonHandler {
     async fn typing_recv_task(sessions: Sessions, mut rx: mpsc::Receiver<TypingEventMsg>) {
-        let delay_fut = tokio::time::sleep(std::time::Duration::from_millis(100));
+        let delay_fut = tokio::time::sleep(IS_TYPING_SLEEP_DURATION);
         tokio::pin!(delay_fut);
 
-        while let Some((msg, users)) = rx.recv().await {
+        'receiver_loop:
+        while let Some((mut msg, mut users)) = rx.recv().await {
             delay_fut
                 .as_mut()
-                .reset(tokio::time::Instant::now() + std::time::Duration::from_millis(100));
+                .reset(tokio::time::Instant::now() + IS_TYPING_SLEEP_DURATION);
 
-            // If new message is received before the Sleeper finishes, prioritise new message
-            tokio::select! {
-                _ = &mut delay_fut => {
-                    let mut msg = msg;
-                    msg.is_typing = false;
+            // If new message is received before the Sleeper finishes, reset sleeper
+            loop {
+                tokio::select! {
+                        _ = &mut delay_fut => {
+                            let mut msg = msg;
+                            msg.is_typing = false;
 
-                    for user in users {
-                        if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
-                            let mut target_connection = receiver_session.write().await;
+                            for user in users {
+                                if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
+                                    let mut target_connection = receiver_session.write().await;
 
-                            target_connection.mpsc_send(msg.clone(), 0).await;
-                        }
+                                    target_connection.mpsc_send(msg.clone(), 0).await;
+                                }
+                            }
+                            break;
+                        },
+                        // reset timer
+                        Some((new_msg, new_users)) = rx.recv() => {
+                            msg = new_msg;
+                            users = new_users;
+                            delay_fut
+                                .as_mut()
+                                .reset(tokio::time::Instant::now() + IS_TYPING_SLEEP_DURATION);
+                        },
+                        else => break 'receiver_loop
                     }
-                },
-                Some((new_msg, new_users)) = rx.recv() => {
-                    for user in new_users {
-                        if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
-                            let mut target_connection = receiver_session.write().await;
-
-                            target_connection.mpsc_send(new_msg.clone(), 0).await;
-                        }
-                    }
-                },
-                else => break
             }
         }
     }
