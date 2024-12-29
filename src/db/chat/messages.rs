@@ -346,7 +346,7 @@ impl MessagesDB {
         Ok(())
     }
 
-    pub async fn fetch_unread_count(&self, chat_id: ChatId) -> Result<u64, PPError> {
+    pub async fn fetch_unread_count(&self, chat_id: ChatId) -> PPResult<u64> {
         let query = r#"
             SELECT COUNT(*)
             FROM ksp.messages
@@ -362,7 +362,7 @@ impl MessagesDB {
             let count: i64 = row.get_column(0)?.get_i64()?;
             Ok(count as u64)
         } else {
-            Ok(0) // Return 0 if no rows were found
+            Err("Failed to find chat!".into())
         }
     }
 }

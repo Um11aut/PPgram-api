@@ -44,7 +44,7 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsRe
             }
             chats_details.push(ChatDetailsResponse {
                 details,
-                unread_count: messages_db.fetch_unread_count(chat_id).await?,
+                unread_count: messages_db.fetch_unread_count(associated_chat_id).await?,
             });
         }
     }

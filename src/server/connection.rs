@@ -10,7 +10,7 @@ use super::message::builder::MessageBuilder;
 
 #[derive(Debug)]
 pub struct TCPConnection {
-    sender: Mutex<mpsc::Sender<Value>>,
+    sender: mpsc::Sender<Value>,
     writer: Arc<Mutex<OwnedWriteHalf>>,
     reader: Arc<Mutex<OwnedReadHalf>>,
 }
@@ -28,7 +28,7 @@ impl TCPConnection {
         tokio::spawn(Self::launch_receiver_handler(Arc::clone(&writer), receiver));
 
         Self {
-            sender: Mutex::new(sender),
+            sender,
             writer,
             reader
         }
@@ -36,7 +36,7 @@ impl TCPConnection {
 
     /// Send to receiver
     pub async fn mpsc_send(&self, value: impl Serialize) {
-        self.sender.lock().await.send(serde_json::to_value(&value).unwrap()).await.unwrap();
+        self.sender.send(serde_json::to_value(&value).unwrap()).await.unwrap();
     }
 
     /// Writes the data to the buffer
@@ -44,6 +44,7 @@ impl TCPConnection {
         if buf.len() < 1000 {
             trace!("Sending response!\n {}", String::from_utf8_lossy(&buf[4..]));
         }
+
         let mut writer = self.writer.lock().await;
         if let Err(err) = writer.write_all(buf).await {
             error!("Failed to write to the buffer: {}", err);
@@ -60,7 +61,7 @@ impl TCPConnection {
         while let Some(message) = receiver.recv().await {
             let mut writer = writer.lock().await;
             if let Err(e) = writer.write_all(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await {
-                error!("Failed to send message: {}", e);
+                error!("Failed to send event: {}", e);
             }
         }
     }
