@@ -245,7 +245,6 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
             Ok(serde_json::to_value(EditDraftResponse {
                 ok: true,
                 method: "edit_draft".into(),
-                chat_id: msg.chat_id,
             })
             .unwrap())
         }

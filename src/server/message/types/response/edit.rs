@@ -10,5 +10,4 @@ pub struct EditMessageResponse {
 pub struct EditDraftResponse {
     pub ok: bool,
     pub method: String,
-    pub chat_id: i32
 }
