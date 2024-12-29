@@ -119,41 +119,67 @@ impl Handler for JsonHandler {
 
 impl JsonHandler {
     async fn typing_recv_task(sessions: Sessions, mut rx: mpsc::Receiver<TypingEventMsg>) {
+        let mut last_chat_id: i32;
+
         let delay_fut = tokio::time::sleep(IS_TYPING_SLEEP_DURATION);
         tokio::pin!(delay_fut);
 
-        'receiver_loop:
-        while let Some((mut msg, mut users)) = rx.recv().await {
+        'receiver_loop: while let Some((mut msg, mut users)) = rx.recv().await {
+            last_chat_id = msg.chat_id;
+
             delay_fut
                 .as_mut()
                 .reset(tokio::time::Instant::now() + IS_TYPING_SLEEP_DURATION);
 
+            for user in users.iter() {
+                if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
+                    let mut target_connection = receiver_session.write().await;
+
+                    target_connection.mpsc_send(msg.clone(), 0).await;
+                }
+            }
+
             // If new message is received before the Sleeper finishes, reset sleeper
-            loop {
+            'inner_loop: loop {
                 tokio::select! {
-                        _ = &mut delay_fut => {
-                            let mut msg = msg;
+                    _ = &mut delay_fut => {
+                        msg.is_typing = false;
+
+                        for user in users.iter() {
+                            if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
+                                let mut target_connection = receiver_session.write().await;
+
+                                target_connection.mpsc_send(msg.clone(), 0).await;
+                            }
+                        }
+                        break 'inner_loop;
+                    },
+                    // reset timer
+                    Some((new_msg, new_users)) = rx.recv() => {
+                        msg = new_msg;
+                        users = new_users;
+
+                        if msg.chat_id != last_chat_id {
                             msg.is_typing = false;
 
-                            for user in users {
+                            for user in users.iter() {
                                 if let Some(receiver_session) = sessions.get(&user.as_i32_unchecked()) {
                                     let mut target_connection = receiver_session.write().await;
 
                                     target_connection.mpsc_send(msg.clone(), 0).await;
                                 }
                             }
-                            break;
-                        },
-                        // reset timer
-                        Some((new_msg, new_users)) = rx.recv() => {
-                            msg = new_msg;
-                            users = new_users;
+                            break 'inner_loop;
+                        } else {
                             delay_fut
                                 .as_mut()
                                 .reset(tokio::time::Instant::now() + IS_TYPING_SLEEP_DURATION);
-                        },
-                        else => break 'receiver_loop
+                        }
+                    },
+                    else => {
+                        break 'receiver_loop;
                     }
+                }
             }
         }
     }

@@ -135,8 +135,15 @@ async fn handle_edit_draft(handler: &mut JsonHandler, msg: &EditDraftRequest) ->
     let users = if msg.chat_id.is_positive() {
         vec![UserId::UserId(msg.chat_id)]
     } else {
-        let (group, _) = chats_db.fetch_chat(&self_user_id, real_chat_id).await?.expect("chat to exist");
-        group.participants().iter().map(|user| UserId::UserId(user.user_id())).collect()
+        let (group, _) = chats_db
+            .fetch_chat(&self_user_id, real_chat_id)
+            .await?
+            .expect("chat to exist");
+        group
+            .participants()
+            .iter()
+            .map(|user| UserId::UserId(user.user_id()))
+            .collect()
     };
 
     let ev = IsTypingEvent {
