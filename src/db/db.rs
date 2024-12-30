@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 
 
-use super::{chat::{chats::ChatsDB, messages::MessagesDB}, bucket::{DatabaseBuilder, DatabasePool}, internal::error::PPError, user::UsersDB};
+use super::{bucket::{DatabaseBuilder, DatabasePool}, chat::{chats::ChatsDB, drafts::DraftsDB, messages::MessagesDB}, internal::error::PPError, user::UsersDB};
 
 pub trait Database {
-    fn new(session: Arc<cassandra_cpp::Session>) -> Self; 
+    fn new(session: Arc<cassandra_cpp::Session>) -> Self;
     fn create_table(&self) -> impl std::future::Future<Output = Result<(), PPError>> + Send;
 }
 
@@ -17,6 +17,7 @@ pub async fn create_tables() {
     let users_db: UsersDB = DatabaseBuilder::from(bucket.clone()).into();
     let messages_db: MessagesDB = DatabaseBuilder::from(bucket.clone()).into();
     let chats_db: ChatsDB = DatabaseBuilder::from(bucket.clone()).into();
+    let drafts_db: DraftsDB = DatabaseBuilder::from(bucket.clone()).into();
 
     bucket.get_connection().execute("
                     CREATE KEYSPACE IF NOT EXISTS ksp
@@ -26,6 +27,7 @@ pub async fn create_tables() {
                 .await
                 .unwrap();
 
+    drafts_db.create_table().await.unwrap();
     users_db.create_table().await.unwrap();
     messages_db.create_table().await.unwrap();
     chats_db.create_table().await.unwrap();

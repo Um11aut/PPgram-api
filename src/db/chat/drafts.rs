@@ -64,8 +64,8 @@ impl DraftsDB {
     pub async fn fetch_draft(&self, self_user_id: &UserId, chat_id: ChatId) -> PPResult<Option<String>> {
         let query = "SELECT content FROM ksp.drafts WHERE user_id = ? AND chat_id = ?";
         let mut statement = self.session.statement(query);
-        statement.bind_int32(0, self_user_id.as_i32_unchecked());
-        statement.bind_int32(1, chat_id);
+        statement.bind_int32(0, self_user_id.as_i32_unchecked())?;
+        statement.bind_int32(1, chat_id)?;
 
         let result = statement.execute().await?;
         if let Some(row) = result.first_row() {
