@@ -2,6 +2,7 @@ use log::debug;
 use serde_json::Value;
 
 use crate::db::chat::chats::ChatsDB;
+use crate::db::chat::drafts::DraftsDB;
 use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
@@ -27,6 +28,7 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsRe
     let users_db: UsersDB = handler.get_db();
     let chats_db: ChatsDB = handler.get_db();
     let messages_db: MessagesDB = handler.get_db();
+    let drafts_db: DraftsDB = handler.get_db();
 
     let (user_id, _) = handler.session.read().await.get_credentials_unchecked();
     let chat_ids = users_db.fetch_chats(&user_id).await?;
@@ -37,6 +39,7 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsRe
             .fetch_chat(&self_user_id, associated_chat_id)
             .await
             .unwrap();
+
         if let Some((chat, mut details)) = chat {
             if !chat.is_group() {
                 // Fake the chat id with the user id
@@ -45,6 +48,10 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsRe
             chats_details.push(ChatDetailsResponse {
                 details,
                 unread_count: messages_db.fetch_unread_count(associated_chat_id).await?,
+                draft: drafts_db
+                    .fetch_draft(&self_user_id, associated_chat_id)
+                    .await?
+                    .unwrap_or("".into()),
             });
         }
     }

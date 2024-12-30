@@ -97,7 +97,8 @@ async fn on_new(handler: &mut JsonHandler) -> PPResult<()> {
                         method: "new_group".into(),
                         chat: ChatDetailsResponse{
                             details: chat_details,
-                            unread_count: 0
+                            unread_count: 0,
+                            draft: "".into()
                         },
                     })
                     .await;

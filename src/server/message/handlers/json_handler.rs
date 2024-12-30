@@ -274,7 +274,7 @@ impl JsonHandler {
     /// Sends message to other user, meaning connection(e.g. new chat, new message, or any other event that must be handled in realtime)
     ///
     /// If user isn't connected to the server, nothing happens
-    pub fn send_event_to_con_detached(&self, to: i32, msg: impl Serialize + Send + 'static) {
+    pub fn send_event_to_con_detached(&self, to: i32, msg: impl Serialize + std::fmt::Debug + Send + 'static) {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
             async move {
@@ -293,7 +293,7 @@ impl JsonHandler {
     pub async fn send_events_to_connections(
         &self,
         recv: Vec<i32>,
-        msgs: Vec<impl Serialize + Send + 'static>,
+        msgs: Vec<impl Serialize + std::fmt::Debug + Send + 'static>,
     ) {
         if cfg!(debug_assertions) {
             assert!(recv.len() == msgs.len())

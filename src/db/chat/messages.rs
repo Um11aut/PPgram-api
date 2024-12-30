@@ -283,6 +283,28 @@ impl MessagesDB {
         Ok(output)
     }
 
+    pub async fn mark_as_read(
+        &self,
+        chat_id: ChatId,
+        msg_id: i32,
+    ) -> PPResult<()> {
+        let update_query = r#"
+            UPDATE ksp.messages
+            SET is_unread = ?,
+            WHERE chat_id = ? AND id = ?
+        "#;
+
+        let mut statement = self.session.statement(update_query);
+
+        statement.bind_bool(0, true)?; // is_unread
+        statement.bind_int32(1, chat_id)?; // chat_id
+        statement.bind_int32(2, msg_id)?; // msg_id
+
+        statement.execute().await?;
+
+        Ok(())
+    }
+
     pub async fn edit_message(
         &self,
         msg_id: i32,

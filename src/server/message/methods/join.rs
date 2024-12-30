@@ -1,6 +1,6 @@
 use crate::{
     db::{
-        chat::{chats::ChatsDB, messages::MessagesDB},
+        chat::{chats::ChatsDB, drafts::DraftsDB, messages::MessagesDB},
         internal::error::{PPError, PPResult},
         user::UsersDB,
     },
@@ -79,13 +79,17 @@ async fn on_join_group(
             }
 
             let messages_db: MessagesDB = handler.get_db();
+            let drafts_db: DraftsDB = handler.get_db();
+
             let unread_count = messages_db.fetch_unread_count(chat_details.chat_id).await?;
+            let draft = drafts_db.fetch_draft(&self_user_id, chat_details.chat_id).await?;
             Ok(JoinGroupResult::JoinGroupResponse(JoinGroupResponse {
                 ok: true,
                 method: "join_group".into(),
                 chat: ChatDetailsResponse{
                     details: chat_details,
-                    unread_count
+                    unread_count,
+                    draft: draft.unwrap_or("".to_string())
                 }
             }))
         }

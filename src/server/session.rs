@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
 
+use log::debug;
 use serde::Serialize;
 
 use crate::db::{internal::error::PPResult, user::UsersDB};
@@ -99,7 +100,8 @@ impl Session {
     /// Sends json message to some existing connection (with connection index as server can handle multiple connections per session)
     ///
     /// Needed for live events, sending messages etc.
-    pub async fn mpsc_send(&mut self, message: impl Serialize, con_idx: usize) {
+    pub async fn mpsc_send(&mut self, message: impl Serialize + std::fmt::Debug, con_idx: usize) {
+        debug!("Sending event:\n{:?}", message);
         self.connections[con_idx].mpsc_send(message).await;
     }
 

@@ -39,4 +39,3 @@ pub struct FetchUsersResponse {
     pub method: String,
     pub users: Vec<User>,
 }
-

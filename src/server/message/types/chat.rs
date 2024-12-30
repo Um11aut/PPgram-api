@@ -20,6 +20,7 @@ pub struct ChatDetailsResponse {
     #[serde(flatten)]
     pub details: ChatDetails,
     pub unread_count: u64,
+    pub draft: String,
 }
 
 impl ChatDetails {
@@ -100,7 +101,7 @@ impl Chat {
                     Err("Provided UserId wasn't found in the chat!".into())
                 }
             }
-            true => Err("ChatDetails can only be get for a personal chat!".into()),
+            true => Err("ChatDetails can only be got for a personal chat!".into()),
         }
     }
 }

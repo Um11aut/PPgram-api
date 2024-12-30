@@ -14,12 +14,15 @@ use crate::{
             edit::EditedMessageBuilder,
             request::{
                 delete::DeleteMessageRequest,
-                edit::{EditDraftRequest, EditMessageRequest, EditSelfRequest},
+                edit::{
+                    EditDraftRequest, EditIsUnreadMessageRequest, EditMessageRequest,
+                    EditSelfRequest,
+                },
                 extract_what_field,
             },
             response::{
                 delete::DeleteMessageResponse,
-                edit::{EditDraftResponse, EditMessageResponse},
+                edit::{EditDraftResponse, EditIsUnreadResponse, EditMessageResponse},
                 events::{DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent},
             },
             user::{User, UserId},
@@ -106,6 +109,28 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
             .send_events_to_connections(receivers.collect(), msgs.collect())
             .await;
     }
+
+    Ok(())
+}
+
+async fn handle_edit_unread_message(
+    handler: &mut JsonHandler,
+    msg: &EditIsUnreadMessageRequest,
+) -> PPResult<()> {
+    let self_user_id = {
+        let session = handler.session.read().await;
+        let (user_id, _) = session.get_credentials_unchecked();
+        user_id
+    };
+
+    let messages_db: MessagesDB = handler.get_db();
+    let users_db: UsersDB = handler.get_db();
+    let chat_id = users_db
+        .get_associated_chat_id(&self_user_id, msg.chat_id)
+        .await?
+        .ok_or("Given ChatId doesn't exist!")?;
+
+    messages_db.mark_as_read(chat_id, msg.message_id);
 
     Ok(())
 }
@@ -245,6 +270,16 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
             Ok(serde_json::to_value(EditDraftResponse {
                 ok: true,
                 method: "edit_draft".into(),
+            })
+            .unwrap())
+        }
+        "is_unread" => {
+            let msg: EditIsUnreadMessageRequest = serde_json::from_str(content)?;
+            handle_edit_unread_message(handler, &msg).await?;
+            Ok(serde_json::to_value(EditIsUnreadResponse {
+                ok: true,
+                method: "edit_is_unread".into(),
+                chat_id: msg.chat_id,
             })
             .unwrap())
         }

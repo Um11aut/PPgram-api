@@ -11,6 +11,14 @@ pub struct EditSelfRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct EditIsUnreadMessageRequest {
+    pub method: String,
+    pub what: String,
+    pub chat_id: i32,
+    pub message_id: i32
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct EditDraftRequest {
     pub method: String,
     pub what: String,

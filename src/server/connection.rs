@@ -3,8 +3,14 @@ use std::sync::Arc;
 use log::{debug, error, trace};
 use serde::Serialize;
 use serde_json::Value;
-use tokio::{io::AsyncWriteExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}, sync::{mpsc, Mutex}};
-
+use tokio::{
+    io::AsyncWriteExt,
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
+    },
+    sync::{mpsc, Mutex},
+};
 
 use super::message::builder::MessageBuilder;
 
@@ -30,13 +36,16 @@ impl TCPConnection {
         Self {
             sender,
             writer,
-            reader
+            reader,
         }
     }
 
     /// Send to receiver
     pub async fn mpsc_send(&self, value: impl Serialize) {
-        self.sender.send(serde_json::to_value(&value).unwrap()).await.unwrap();
+        self.sender
+            .send(serde_json::to_value(&value).unwrap())
+            .await
+            .unwrap();
     }
 
     /// Writes the data to the buffer
@@ -55,23 +64,32 @@ impl TCPConnection {
         Arc::clone(&self.reader)
     }
 
-    async fn launch_receiver_handler(writer: Arc<Mutex<OwnedWriteHalf>>, mut receiver: mpsc::Receiver<Value>) {
+    async fn launch_receiver_handler(
+        writer: Arc<Mutex<OwnedWriteHalf>>,
+        mut receiver: mpsc::Receiver<Value>,
+    ) {
         let writer = Arc::clone(&writer);
 
         while let Some(message) = receiver.recv().await {
             let mut writer = writer.lock().await;
-            if let Err(e) = writer.write_all(&MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed()).await {
+            if let Err(e) = writer
+                .write_all(
+                    &MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap())
+                        .packed(),
+                )
+                .await
+            {
                 error!("Failed to send event: {}", e);
             }
         }
     }
 
-//     async fn attempt_reconnect(writer: &Arc<Mutex<OwnedWriteHalf>>, attempts: u32) -> PPResult<()> {
-//         let backoff = Duration::from_secs(5);
-//
-//         warn!("Waiting for reconnect: {}", backoff);
-//         sleep(backoff).await;
-//
-//
-//     }
+    //     async fn attempt_reconnect(writer: &Arc<Mutex<OwnedWriteHalf>>, attempts: u32) -> PPResult<()> {
+    //         let backoff = Duration::from_secs(5);
+    //
+    //         warn!("Waiting for reconnect: {}", backoff);
+    //         sleep(backoff).await;
+    //
+    //
+    //     }
 }
