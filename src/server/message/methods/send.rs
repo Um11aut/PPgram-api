@@ -96,8 +96,6 @@ async fn handle_send_message(
                 .await
                 .unwrap();
 
-            let messages_db: MessagesDB = handler.get_db();
-            let unread_count = messages_db.fetch_unread_count(chat_details.chat_id).await?;
             chat_details.chat_id = self_user_id.as_i32().unwrap();
             handler.send_event_to_con_detached(
                 msg.common.to,
@@ -105,7 +103,8 @@ async fn handle_send_message(
                     event: "new_chat".into(),
                     new_chat: ChatDetailsResponse {
                         details: chat_details,
-                        unread_count,
+                        unread_count: 1,
+                        draft: "".into()
                     },
                 },
             );
