@@ -23,7 +23,7 @@ use crate::{
             response::{
                 delete::DeleteMessageResponse,
                 edit::{EditDraftResponse, EditIsUnreadResponse, EditMessageResponse},
-                events::{DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent},
+                events::{DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent, MarkAsReadEvent},
             },
             user::{User, UserId},
         },
@@ -130,7 +130,14 @@ async fn handle_edit_unread_message(
         .await?
         .ok_or("Given ChatId doesn't exist!")?;
 
-    messages_db.mark_as_read(chat_id, msg.message_id);
+    messages_db.mark_as_read(chat_id, msg.message_id).await?;
+    if msg.chat_id.is_positive() {
+        handler.send_event_to_con_detached(msg.chat_id, MarkAsReadEvent{
+            event: "mark_as_read".into(),
+            chat_id: self_user_id.as_i32_unchecked(),
+            message_id: msg.message_id
+        });
+    }
 
     Ok(())
 }

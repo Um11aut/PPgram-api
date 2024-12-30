@@ -25,6 +25,13 @@ pub struct EditMessageEvent {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct MarkAsReadEvent {
+    pub event: String, // mark_as_read
+    pub chat_id: i32,
+    pub message_id: i32
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EditSelfEvent {
     pub event: String,
     pub new_profile: User,
