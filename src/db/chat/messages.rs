@@ -290,7 +290,7 @@ impl MessagesDB {
     ) -> PPResult<()> {
         let update_query = r#"
             UPDATE ksp.messages
-            SET is_unread = ?,
+            SET is_unread = ?
             WHERE chat_id = ? AND id = ?
         "#;
 
