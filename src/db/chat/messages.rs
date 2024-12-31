@@ -283,22 +283,26 @@ impl MessagesDB {
         Ok(output)
     }
 
-    pub async fn mark_as_read(
-        &self,
-        chat_id: ChatId,
-        msg_id: i32,
-    ) -> PPResult<()> {
-        let update_query = r#"
+    pub async fn mark_as_read(&self, chat_id: ChatId, msg_ids: &[i32]) -> PPResult<()> {
+        if msg_ids.is_empty() {
+            return Ok(());
+        }
+
+        let placeholders = msg_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+
+        let update_query = format!(r#"
             UPDATE ksp.messages
-            SET is_unread = ?
-            WHERE chat_id = ? AND id = ?
-        "#;
+            SET is_unread = false
+            WHERE chat_id = ? AND id IN ({})
+        "#, placeholders);
 
         let mut statement = self.session.statement(update_query);
 
-        statement.bind_bool(0, true)?; // is_unread
-        statement.bind_int32(1, chat_id)?; // chat_id
-        statement.bind_int32(2, msg_id)?; // msg_id
+        statement.bind_int32(0, chat_id)?; // chat_id
+
+        for (i, msg_id) in msg_ids.iter().enumerate() {
+            statement.bind_int32((i + 1) as usize, *msg_id)?; // Bind each msg_id
+        }
 
         statement.execute().await?;
 

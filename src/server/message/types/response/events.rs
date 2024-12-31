@@ -24,11 +24,11 @@ pub struct EditMessageEvent {
     pub new_message: Message,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkAsReadEvent {
     pub event: String, // mark_as_read
     pub chat_id: i32,
-    pub message_id: i32
+    pub message_ids: Vec<i32>
 }
 
 #[derive(Debug, Serialize, Deserialize)]

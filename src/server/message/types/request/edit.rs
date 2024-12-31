@@ -15,7 +15,7 @@ pub struct EditIsUnreadMessageRequest {
     pub method: String,
     pub what: String,
     pub chat_id: i32,
-    pub message_id: i32
+    pub message_ids: Vec<i32>
 }
 
 #[derive(Serialize, Deserialize)]

@@ -1,11 +1,10 @@
 use log::debug;
 use serde_json::Value;
-use tokio::sync::mpsc;
 
 use crate::{
     db::{
         chat::{chats::ChatsDB, drafts::DraftsDB, messages::MessagesDB},
-        internal::error::{PPError, PPResult},
+        internal::error::PPResult,
         user::UsersDB,
     },
     server::message::{
@@ -23,7 +22,10 @@ use crate::{
             response::{
                 delete::DeleteMessageResponse,
                 edit::{EditDraftResponse, EditIsUnreadResponse, EditMessageResponse},
-                events::{DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent, MarkAsReadEvent},
+                events::{
+                    DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent,
+                    MarkAsReadEvent,
+                },
             },
             user::{User, UserId},
         },
@@ -105,9 +107,7 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
             new_message: edited_msg.clone(),
         });
 
-        handler
-            .send_events_to_connections(receivers.collect(), msgs.collect())
-            .await;
+        handler.send_events_to_connections(receivers.collect(), msgs.collect());
     }
 
     Ok(())
@@ -125,18 +125,37 @@ async fn handle_edit_unread_message(
 
     let messages_db: MessagesDB = handler.get_db();
     let users_db: UsersDB = handler.get_db();
+    let chats_db: ChatsDB = handler.get_db();
     let chat_id = users_db
         .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?
         .ok_or("Given ChatId doesn't exist!")?;
 
-    messages_db.mark_as_read(chat_id, msg.message_id).await?;
+    messages_db.mark_as_read(chat_id, &msg.message_ids).await?;
+
+    let ev = MarkAsReadEvent {
+        event: "mark_as_read".into(),
+        chat_id: self_user_id.as_i32_unchecked(),
+        message_ids: msg.message_ids.clone(),
+    };
+
     if msg.chat_id.is_positive() {
-        handler.send_event_to_con_detached(msg.chat_id, MarkAsReadEvent{
-            event: "mark_as_read".into(),
-            chat_id: self_user_id.as_i32_unchecked(),
-            message_id: msg.message_id
-        });
+        handler.send_event_to_con_detached(msg.chat_id, ev);
+    } else {
+        let (group, _) = chats_db
+            .fetch_chat(&self_user_id, chat_id)
+            .await?
+            .expect("chat to exist");
+
+        let receivers: Vec<i32> = group
+            .participants()
+            .iter()
+            .filter(|&u| u.user_id() == self_user_id.as_i32_unchecked())
+            .map(|u| u.user_id())
+            .collect();
+        let msgs: Vec<MarkAsReadEvent> = receivers.clone().iter().map(|_| ev.clone()).collect();
+
+        handler.send_events_to_connections(receivers, msgs);
     }
 
     Ok(())
@@ -174,6 +193,7 @@ async fn handle_edit_draft(handler: &mut JsonHandler, msg: &EditDraftRequest) ->
         group
             .participants()
             .iter()
+            .filter(|&u| u.user_id() == self_user_id.as_i32_unchecked())
             .map(|user| UserId::UserId(user.user_id()))
             .collect()
     };
