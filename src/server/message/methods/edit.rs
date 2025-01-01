@@ -126,6 +126,7 @@ async fn handle_edit_unread_message(
     let messages_db: MessagesDB = handler.get_db();
     let users_db: UsersDB = handler.get_db();
     let chats_db: ChatsDB = handler.get_db();
+
     let chat_id = users_db
         .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?

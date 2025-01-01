@@ -15,7 +15,8 @@ pub struct FileMetadataRequest {
 pub struct DownloadFileRequest {
     pub method: String, // download_file
     pub sha256_hash: String,
-    pub previews_only: bool,
+    // Doesn't matter if downloading a document
+    pub mode: String // ["preview_only", "media_only", "full"]
 }
 
 #[derive(Serialize, Deserialize, Debug)]

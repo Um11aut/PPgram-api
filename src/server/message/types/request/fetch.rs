@@ -15,6 +15,13 @@ pub struct FetchUserRequest {
 }
 
 #[derive(Deserialize, Serialize)]
+pub struct FetchHashInfoRequest {
+    pub method: String,
+    pub what: String, // hash_info
+    pub sha256_hash: String
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct FetchMessagesRequest {
     pub method: String,
     pub what: String,

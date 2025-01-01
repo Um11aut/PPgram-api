@@ -5,7 +5,10 @@ use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
 
 use crate::{
     db::internal::error::{PPError, PPResult},
-    fs::helpers::{fetcher::FileFetcher, uploader::FileUploader},
+    fs::helpers::{
+        fetcher::{FileFetcher, MediaFetchMode},
+        uploader::FileUploader,
+    },
     server::{
         connection::TCPConnection,
         message::{
@@ -164,7 +167,11 @@ impl FilesHandler {
                         "download_file" => {
                             let req: DownloadFileRequest = serde_json::from_str(request_content)?;
                             self.file_actor = Some(FileActor::Fetcher(
-                                FileFetcher::new(req.sha256_hash, req.previews_only).await?,
+                                FileFetcher::new(
+                                    req.sha256_hash,
+                                    MediaFetchMode::try_from(req.media_mode.as_str())?,
+                                )
+                                .await?,
                             ));
                         }
                         "download_metadata" => {

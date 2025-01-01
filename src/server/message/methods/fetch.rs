@@ -6,18 +6,38 @@ use crate::db::chat::drafts::DraftsDB;
 use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
+use crate::fs::{document, media, FsFetcher};
 use crate::server::message::methods::macros;
 use crate::server::message::types::chat::{ChatDetails, ChatDetailsResponse};
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{
-    FetchChatsResponse, FetchMessagesResponse, FetchSelfResponse, FetchUserResponse,
-    FetchUsersResponse,
+    FetchChatsResponse, FetchHashInfoResponse, FetchMessagesResponse, FetchSelfResponse,
+    FetchUserResponse, FetchUsersResponse,
 };
 use crate::server::message::{
     handlers::json_handler::JsonHandler,
     types::user::{User, UserId},
 };
+
+async fn handle_fetch_hash_info(
+    msg: FetchHashInfoRequest,
+) -> PPResult<FetchHashInfoResponse> {
+    let is_media = media::is_media(&msg.sha256_hash).await?;
+    let mut metadata = document::fetch_metadata(msg.sha256_hash.as_str()).await?;
+
+    // remove preview if exists
+    if is_media {
+        metadata.drain(..1);
+    }
+
+    Ok(FetchHashInfoResponse {
+        ok: true,
+        method: "fetch_hash_info".into(),
+        is_media,
+        metadata: metadata.remove(0),
+    })
+}
 
 async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsResponse>> {
     let self_user_id = {

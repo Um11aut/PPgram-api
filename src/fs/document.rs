@@ -85,6 +85,7 @@ pub struct DocumentFetcher {
     metadatas: Vec<Metadata>,
     bytes_read: u64,
     current_file: Option<File>,
+    read_buf: Box<[u8]>
 }
 
 unsafe impl Send for DocumentFetcher {}
@@ -92,11 +93,15 @@ unsafe impl Sync for DocumentFetcher {}
 
 impl DocumentFetcher {
     pub fn new(sha256_hash: &str) -> Self {
+        // Move buffer to the heap
+        let buf = Box::new([0; FILES_MESSAGE_ALLOCATION_SIZE]);
+
         Self {
             sha256_hash: sha256_hash.to_string(),
             metadatas: vec![],
             bytes_read: 0,
             current_file: None,
+            read_buf: buf
         }
     }
 }
@@ -104,22 +109,7 @@ impl DocumentFetcher {
 #[async_trait::async_trait]
 impl FsFetcher for DocumentFetcher {
     async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
-        let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&self.sha256_hash)).await?;
-
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path().canonicalize()?;
-            let name = entry.file_name().into_string().unwrap();
-            let metadata = entry.metadata().await?;
-
-            self.metadatas.push(Metadata{
-                file_name: name,
-                file_path: path.to_string_lossy().to_string(),
-                file_size: metadata.len()
-            })
-        }
-
-        // Sort from smallest to biggest file size
-        self.metadatas.sort_by(|a,b| a.file_size.cmp(&b.file_size));
+        self.metadatas = fetch_metadata(&self.sha256_hash).await?;
 
         debug!("Opening first file: {}", self.metadatas[0].file_path);
         self.current_file = Some(File::open(&self.metadatas[0].file_path).await?);
@@ -134,11 +124,8 @@ impl FsFetcher for DocumentFetcher {
             return Ok(vec![])
         }
 
-        // Move buffer to the heap
-        let mut buf = Box::new([0; FILES_MESSAGE_ALLOCATION_SIZE]);
-
         if let Some(current_file) = self.current_file.as_mut() {
-            let read = current_file.read(&mut buf[..]).await?;
+            let read = current_file.read(&mut self.read_buf[..]).await?;
 
             self.bytes_read += read as u64;
 
@@ -147,7 +134,7 @@ impl FsFetcher for DocumentFetcher {
             if read == 0 {
                 self.metadatas.drain(..1);
 
-                if self.metadatas.is_empty() {return Ok(buf[..read].to_vec())}
+                if self.metadatas.is_empty() {return Ok(self.read_buf[..read].to_vec())}
 
                 if let Some(metadata) = self.metadatas.iter().next() {
                     info!("Opening new file: {}!", metadata.file_path);
@@ -156,7 +143,7 @@ impl FsFetcher for DocumentFetcher {
                 }
             }
 
-            return Ok(buf[..read].to_vec())
+            return Ok(self.read_buf[..read].to_vec())
         } else {
             return Err(PPError::from("File isn't opened!"))
         }
@@ -170,3 +157,27 @@ impl FsFetcher for DocumentFetcher {
         }
     }
 }
+
+pub async fn fetch_metadata(sha256_hash: &str) -> PPResult<Vec<Metadata>> {
+    let mut metadatas: Vec<Metadata> = Vec::with_capacity(2);
+    let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&sha256_hash)).await?;
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path().canonicalize()?;
+        let name = entry.file_name().into_string().unwrap();
+        let metadata = entry.metadata().await?;
+
+        metadatas.push(Metadata {
+            file_name: name,
+            file_path: path.to_string_lossy().to_string(),
+            file_size: metadata.len(),
+        });
+    }
+
+    // Sort from smallest to biggest file size
+    metadatas.sort_by(|a, b| a.file_size.cmp(&b.file_size));
+
+    Ok(metadatas)
+}
+
+

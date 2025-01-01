@@ -1,4 +1,12 @@
-use crate::{db::internal::error::PPResult, fs::{document::DocumentFetcher, media::{is_media, MediaFetcher}, FsFetcher}, server::message::types::files::Metadata};
+use crate::{
+    db::internal::error::{PPError, PPResult},
+    fs::{
+        document::DocumentFetcher,
+        media::{is_media, MediaFetcher},
+        FsFetcher,
+    },
+    server::message::types::files::Metadata,
+};
 
 enum Fetcher {
     Document(DocumentFetcher),
@@ -28,6 +36,25 @@ impl Fetcher {
     }
 }
 
+pub enum MediaFetchMode {
+    PreviewOnly,
+    MediaOnly,
+    Full,
+}
+
+impl TryFrom<&str> for MediaFetchMode {
+    type Error = PPError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "preview_only" => Ok(Self::PreviewOnly),
+            "media_only" => Ok(Self::MediaOnly),
+            "Full" => Ok(Self::Full),
+            _ => Err("Unkown mode provided. Known modes: preview_only, media_only, full".into()),
+        }
+    }
+}
+
 pub(crate) struct FileFetcher {
     fetcher: Fetcher,
     /// Metadata of the file will be fetched in runtime
@@ -35,7 +62,7 @@ pub(crate) struct FileFetcher {
 }
 
 impl FileFetcher {
-    pub async fn new(sha256_hash: String, previews_only: bool) -> PPResult<Self> {
+    pub async fn new(sha256_hash: String, mode: MediaFetchMode) -> PPResult<Self> {
         let is_media = is_media(sha256_hash.as_str()).await?;
         let mut fetcher = if is_media {
             Fetcher::Media(MediaFetcher::new(&sha256_hash))
@@ -45,11 +72,15 @@ impl FileFetcher {
         let mut metadata = fetcher.fetch_metadata().await?;
 
         // the metadatas are sorted in size ascending order and can have only 1 preview per hash
-        if previews_only {
-            if is_media {
-                metadata.drain(1..);
-            } else {
-                return Err("Loading the preview of documents is not possible!".into());
+        if is_media {
+            match mode {
+                MediaFetchMode::PreviewOnly => {
+                    metadata.drain(1..);
+                }
+                MediaFetchMode::MediaOnly => {
+                    metadata.drain(0..1);
+                }
+                MediaFetchMode::Full => {}
             }
         }
 
