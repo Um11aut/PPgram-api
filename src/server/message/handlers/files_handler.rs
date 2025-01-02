@@ -169,7 +169,7 @@ impl FilesHandler {
                             self.file_actor = Some(FileActor::Fetcher(
                                 FileFetcher::new(
                                     req.sha256_hash,
-                                    MediaFetchMode::try_from(req.media_mode.as_str())?,
+                                    MediaFetchMode::try_from(req.mode.as_str())?,
                                 )
                                 .await?,
                             ));
