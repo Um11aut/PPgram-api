@@ -11,7 +11,7 @@ pub struct EditSelfRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct EditIsUnreadMessageRequest {
+pub struct MarkAsReadRequest {
     pub method: String,
     pub what: String,
     pub chat_id: i32,

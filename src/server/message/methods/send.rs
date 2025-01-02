@@ -15,7 +15,7 @@ use crate::{
                 chat::{ChatDetailsResponse, ChatId},
                 request::send::{MessageId, SendMessageRequest},
                 response::{
-                    events::{NewChatEvent, NewMessageEvent},
+                    events::{IsTypingEvent, NewChatEvent, NewMessageEvent},
                     send::SendMessageResponse,
                 },
             },
@@ -104,7 +104,7 @@ async fn handle_send_message(
                     new_chat: ChatDetailsResponse {
                         details: chat_details,
                         unread_count: 1,
-                        draft: "".into()
+                        draft: "".into(),
                     },
                 },
             );
@@ -122,20 +122,36 @@ async fn handle_send_message(
     }
     let message_id = db_message.message_id;
 
-    // Send every user in chat notification
-    for participant in associated_chat.participants() {
-        // Don't send it on yourself
-        if participant.user_id() == self_user_id.as_i32_unchecked() {
-            continue;
-        }
+    let ev = NewMessageEvent {
+        event: "new_message".into(),
+        new_message: db_message.clone(),
+    };
 
-        handler.send_event_to_con_detached(
-            msg.common.to,
-            NewMessageEvent {
-                event: "new_message".into(),
-                new_message: db_message.clone(),
-            },
-        );
+    let interrupt_typing_ev = IsTypingEvent {
+        event: "is_typing".into(),
+        is_typing: false,
+        chat_id: db_message.chat_id,
+        user_id: self_user_id.as_i32_unchecked(),
+    };
+
+    if associated_chat.is_group() {
+        let receivers: Vec<i32> = associated_chat
+            .participants()
+            .iter()
+            .filter(|&u| u.user_id() != self_user_id.as_i32_unchecked())
+            .map(|u| u.user_id())
+            .collect();
+        let msgs: Vec<NewMessageEvent> = receivers.clone().iter().map(|_| ev.clone()).collect();
+        let is_typing_receivers = receivers.iter().map(|&u| u.into()).collect();
+
+        handler.send_events_to_connections(receivers, msgs);
+        handler.send_is_typing(interrupt_typing_ev, is_typing_receivers).await;
+    } else {
+        handler.send_event_to_con_detached(msg.common.to, ev);
+
+        handler
+            .send_is_typing(interrupt_typing_ev, vec![msg.common.to.into()])
+            .await;
     }
 
     Ok((message_id, msg.common.to))

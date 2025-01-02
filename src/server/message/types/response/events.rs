@@ -12,7 +12,7 @@ pub struct NewChatEvent {
     pub new_chat: ChatDetailsResponse,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewMessageEvent {
     pub event: String,
     pub new_message: Message,

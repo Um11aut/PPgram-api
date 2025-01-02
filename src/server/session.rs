@@ -94,7 +94,7 @@ impl Session {
 
     /// In case of disconnecting
     pub fn remove_connection(&mut self, connection: Arc<TCPConnection>) {
-        self.connections.retain(|x| Arc::ptr_eq(x, &connection));
+        self.connections.retain(|x| !Arc::ptr_eq(x, &connection));
     }
 
     /// Sends json message to some existing connection (with connection index as server can handle multiple connections per session)
@@ -118,7 +118,7 @@ impl Session {
     ///
     /// Because we know that user is already authenticated
     pub fn get_credentials_unchecked(&self) -> (UserId, String) {
-        return (self.user_id.unwrap().into(), self.session_id.clone().unwrap())
+        (self.user_id.unwrap().into(), self.session_id.clone().unwrap())
     }
 
     pub fn is_authenticated(&self) -> bool {

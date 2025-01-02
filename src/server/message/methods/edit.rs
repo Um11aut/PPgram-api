@@ -14,7 +14,7 @@ use crate::{
             request::{
                 delete::DeleteMessageRequest,
                 edit::{
-                    EditDraftRequest, EditIsUnreadMessageRequest, EditMessageRequest,
+                    EditDraftRequest, MarkAsReadRequest, EditMessageRequest,
                     EditSelfRequest,
                 },
                 extract_what_field,
@@ -99,7 +99,7 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
         let receivers = chat
             .participants()
             .iter()
-            .filter(|el| el.user_id() == self_user_id.as_i32_unchecked())
+            .filter(|el| el.user_id() != self_user_id.as_i32_unchecked())
             .map(|u| u.user_id());
 
         let msgs = receivers.clone().map(|_| EditMessageEvent {
@@ -115,7 +115,7 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
 
 async fn handle_edit_unread_message(
     handler: &mut JsonHandler,
-    msg: &EditIsUnreadMessageRequest,
+    msg: &MarkAsReadRequest,
 ) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
@@ -151,7 +151,7 @@ async fn handle_edit_unread_message(
         let receivers: Vec<i32> = group
             .participants()
             .iter()
-            .filter(|&u| u.user_id() == self_user_id.as_i32_unchecked())
+            .filter(|&u| u.user_id() != self_user_id.as_i32_unchecked())
             .map(|u| u.user_id())
             .collect();
         let msgs: Vec<MarkAsReadEvent> = receivers.clone().iter().map(|_| ev.clone()).collect();
@@ -194,7 +194,7 @@ async fn handle_edit_draft(handler: &mut JsonHandler, msg: &EditDraftRequest) ->
         group
             .participants()
             .iter()
-            .filter(|&u| u.user_id() == self_user_id.as_i32_unchecked())
+            .filter(|&u| u.user_id() != self_user_id.as_i32_unchecked())
             .map(|user| UserId::UserId(user.user_id()))
             .collect()
     };
@@ -302,7 +302,7 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
             .unwrap())
         }
         "is_unread" => {
-            let msg: EditIsUnreadMessageRequest = serde_json::from_str(content)?;
+            let msg: MarkAsReadRequest = serde_json::from_str(content)?;
             handle_edit_unread_message(handler, &msg).await?;
             Ok(serde_json::to_value(EditIsUnreadResponse {
                 ok: true,
@@ -369,7 +369,7 @@ async fn on_delete(handler: &mut JsonHandler, content: &str) -> PPResult<DeleteM
             for participant in chat
                 .participants()
                 .iter()
-                .filter(|el| el.user_id() == self_user_id.as_i32_unchecked())
+                .filter(|el| el.user_id() != self_user_id.as_i32_unchecked())
             {
                 // send real chat id for everyone
                 handler.send_event_to_con_detached(

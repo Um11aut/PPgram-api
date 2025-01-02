@@ -301,7 +301,7 @@ impl MessagesDB {
         statement.bind_int32(0, chat_id)?; // chat_id
 
         for (i, msg_id) in msg_ids.iter().enumerate() {
-            statement.bind_int32((i + 1) as usize, *msg_id)?; // Bind each msg_id
+            statement.bind_int32(i + 1, *msg_id)?; // Bind each msg_id
         }
 
         statement.execute().await?;

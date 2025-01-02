@@ -159,7 +159,7 @@ impl JsonHandler {
                         msg = new_msg;
                         users = new_users;
 
-                        if msg.chat_id != last_chat_id {
+                        if msg.chat_id != last_chat_id || !msg.is_typing {
                             msg.is_typing = false;
 
                             for user in users.iter() {
@@ -193,7 +193,7 @@ impl JsonHandler {
             let session_locked = session.read().await;
             // Assume the last connection is the output connection
             // TODO: User must decide on which connection he wants the output
-            Arc::clone(session_locked.connections().last().unwrap())
+            Arc::clone(session_locked.connections().first().unwrap())
         };
 
         let (tx, rx) = mpsc::channel::<TypingEventMsg>(3);
