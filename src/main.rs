@@ -9,14 +9,12 @@ pub mod fs;
 use db::db::create_tables;
 use log::error;
 use server::server::Server;
-use ffmpeg_next::init;
 
 const JSON_MESSAGES_PORT: u16 = 3000;
 const FILE_MESSAGES_PORT: u16 = 8080;
 
 #[tokio::main]
 async fn main() {
-    init().expect("Failed to initialize ffmpeg!");
     create_tables().await;
     env_logger::init();
     let server = Server::new(JSON_MESSAGES_PORT, FILE_MESSAGES_PORT).await;

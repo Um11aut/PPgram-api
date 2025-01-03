@@ -8,10 +8,12 @@ use tokio::{
 };
 
 use crate::{
-    db::internal::error::{PPError, PPResult}, fs::document::fetch_metadata, server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE}
+    db::internal::error::{PPError, PPResult},
+    fs::document::fetch_metadata,
+    server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE},
 };
 
-use super::{hash_exists, hasher::BinaryHasher, FsFetcher, FsUploader, FS_BASE};
+use super::{hash_exists, hasher::BinaryHasher, helpers::compress, FsFetcher, FsUploader, FS_BASE};
 
 pub enum VideoType {
     Mp4,
@@ -73,11 +75,7 @@ impl MediaUploader {
         let media_name = document_name.into().to_string();
 
         // Depending on the media type make compression
-        let media_type = MediaType::try_from(media_name.as_str())?;
-        match media_type {
-            MediaType::Video(video_type) => todo!(),
-            MediaType::Photo(photo_type) => {}
-        };
+        let _ = MediaType::try_from(media_name.as_str())?;
 
         // Generating a random temp file where all the framed binary will be put
         let temp_file: String = rand::thread_rng()
@@ -142,10 +140,23 @@ impl FsUploader for MediaUploader {
         tokio::fs::create_dir(&target_doc_directory).await.unwrap();
         tokio::fs::rename(
             self.temp_file_path,
-            target_doc_directory.join(self.doc_name),
+            target_doc_directory.join(&self.doc_name),
         )
         .await
         .unwrap();
+
+        let dot_pos = self.doc_name.rfind('.').unwrap();
+        let (name, extension) = self.doc_name.split_at(dot_pos);
+        let preview_name = format!("{}preview.{}", name, extension);
+
+        if let Err(err) = compress::generate_thumbnail(
+            target_doc_directory.join(self.doc_name),
+            target_doc_directory.join(preview_name),
+            compress::ThumbnailQuality::Medium
+        )
+        {
+            log::error!("Error occured while generating thumbnail: {}", err);
+        }
 
         sha256_hash
     }
@@ -257,7 +268,7 @@ pub async fn is_media(sha256_hash: &str) -> PPResult<bool> {
             count += 1;
         }
 
-        if count == 2 {
+        if count > 1 {
             return Ok(true);
         }
     }
