@@ -1,5 +1,5 @@
 use crate::{
-    db::internal::error::{PPError, PPResult},
+    db::{chat::hashes::HashesDB, internal::error::{PPError, PPResult}},
     fs::{document::DocumentUploader, media::MediaUploader, FsUploader},
     server::message::types::files::FileMetadataRequest,
 };
@@ -20,10 +20,10 @@ impl Uploader {
         }
     }
 
-    pub async fn finalize(self) -> String {
+    pub async fn finalize(self, db: &HashesDB) -> PPResult<String> {
         match self {
-            Uploader::Document(uploader) => uploader.finalize().await,
-            Uploader::Media(uploader) => uploader.finalize().await,
+            Uploader::Document(uploader) => uploader.finalize(db).await,
+            Uploader::Media(uploader) => uploader.finalize(db).await,
         }
     }
 }
@@ -61,8 +61,8 @@ impl FileUploader {
         Ok(())
     }
 
-    pub async fn finalize(self) -> String {
-        self.uploader.finalize().await
+    pub async fn finalize(self, db: &HashesDB) -> PPResult<String> {
+        self.uploader.finalize(db).await
     }
 
     pub fn rest_to_upload(&self) -> u64 {

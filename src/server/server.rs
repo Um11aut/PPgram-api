@@ -109,11 +109,11 @@ impl Server {
         socket: TcpStream,
         addr: SocketAddr,
         _sessions: Sessions,
-        // bucket: DatabaseBucket,
+        bucket: DatabaseBucket,
     ) {
         debug!("[Files] Connection established: {}", addr);
         let mut handler =
-            FilesHandler::new(Arc::new(TCPConnection::new(socket))).await;
+            FilesHandler::new(Arc::new(TCPConnection::new(socket)), bucket).await;
 
         let reader = handler.reader();
 
@@ -191,7 +191,7 @@ impl Server {
 
     async fn poll_files_events(
         listener: TcpListener,
-        _pool: Arc<Mutex<DatabasePool>>,
+        pool: Arc<Mutex<DatabasePool>>,
         connections: Sessions,
     ) {
         // TODO: Make sure that user has access rights to the hash
@@ -199,16 +199,16 @@ impl Server {
             loop {
                 match listener.accept().await {
                     Ok((socket, addr)) => {
-                        // let available_bucket = {
-                        //     let mut db_pool = pool.lock().await;
-                        //     db_pool.get_available_bucket().await
-                        // };
+                        let available_bucket = {
+                            let mut db_pool = pool.lock().await;
+                            db_pool.get_available_bucket().await
+                        };
 
                         scope.spawn(Self::files_event_handler(
                             socket,
                             addr,
                             Arc::clone(&connections),
-                            // available_bucket,
+                            available_bucket,
                         ));
                     }
                     Err(err) => {

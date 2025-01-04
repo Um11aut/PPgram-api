@@ -29,7 +29,8 @@ pub struct DownloadMetadataRequest {
 pub struct DownloadFileMetadataResponse {
     pub ok: bool,
     pub method: String, // download_file
-    pub metadatas: Vec<Metadata>,
+    pub file_metadata: Option<Metadata>,
+    pub preview_metadata: Option<Metadata>,
 }
 
 pub fn extract_file_method(content: &str) -> PPResult<String> {

@@ -14,7 +14,7 @@ impl From<EditMessageRequest> for EditedMessageBuilder {
             is_unread: value.is_unread,
             reply_to: value.reply_to,
             content: value.content,
-            media_hashes: value.media_hashes,
+            media_hashes: value.sha256_hashes,
         }
     }
 }

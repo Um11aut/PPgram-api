@@ -1,40 +1,13 @@
+use tokio::{fs::File, io::AsyncReadExt};
+
 use crate::{
-    db::internal::error::{PPError, PPResult},
-    fs::{
-        document::{fetch_metadata, DocumentFetcher},
-        media::{is_media, MediaFetcher},
-        FsFetcher,
+    db::{
+        chat::hashes::HashesDB,
+        internal::error::{PPError, PPResult},
     },
-    server::message::types::files::Metadata,
+    fs::document::fetch_hash_metadata,
+    server::{message::types::files::Metadata, server::FILES_MESSAGE_ALLOCATION_SIZE},
 };
-
-enum Fetcher {
-    Document(DocumentFetcher),
-    Media(MediaFetcher),
-}
-
-impl Fetcher {
-    pub async fn fetch_metadata(&mut self) -> PPResult<Vec<Metadata>> {
-        match self {
-            Fetcher::Document(fetcher) => fetcher.fetch_metadata().await,
-            Fetcher::Media(fetcher) => fetcher.fetch_metadata().await,
-        }
-    }
-
-    pub async fn fetch_part(&mut self) -> PPResult<Vec<u8>> {
-        match self {
-            Fetcher::Document(fetcher) => fetcher.fetch_part().await,
-            Fetcher::Media(fetcher) => fetcher.fetch_part().await,
-        }
-    }
-
-    pub fn is_part_ready(&self) -> bool {
-        match self {
-            Fetcher::Document(fetcher) => fetcher.is_part_ready(),
-            Fetcher::Media(fetcher) => fetcher.is_part_ready(),
-        }
-    }
-}
 
 pub enum MediaFetchMode {
     PreviewOnly,
@@ -49,72 +22,91 @@ impl TryFrom<&str> for MediaFetchMode {
         match value {
             "preview_only" => Ok(Self::PreviewOnly),
             "media_only" => Ok(Self::MediaOnly),
-            "Full" => Ok(Self::Full),
+            "full" => Ok(Self::Full),
             _ => Err("Unkown mode provided. Known modes: preview_only, media_only, full".into()),
         }
     }
 }
 
 pub(crate) struct FileFetcher {
-    fetcher: Fetcher,
-    /// Metadata of the file will be fetched in runtime
-    metadata: Vec<Metadata>,
+    metadatas: (Option<Metadata>, Option<Metadata>),
+    current_file: File,
+    read_buf: Box<[u8]>,
 }
 
 impl FileFetcher {
-    pub async fn new(sha256_hash: String, mode: MediaFetchMode) -> PPResult<Self> {
-        let is_media = is_media(sha256_hash.as_str()).await?;
-        let mut fetcher = if is_media {
-            Fetcher::Media(MediaFetcher::new(&sha256_hash))
-        } else {
-            Fetcher::Document(DocumentFetcher::new(&sha256_hash))
-        };
-        let mut metadata = fetcher.fetch_metadata().await?;
+    pub async fn new(db: HashesDB, sha256_hash: String, mode: MediaFetchMode) -> PPResult<Self> {
+        let buf = Box::new([0; FILES_MESSAGE_ALLOCATION_SIZE]);
+
+        let hash_info = db
+            .fetch_hash(&sha256_hash)
+            .await?
+            .ok_or("Provided SHA256 Hash doesn't exist")?;
+
+        let (main_metadata, maybe_preview) = fetch_hash_metadata(db, &sha256_hash).await?;
 
         // the metadatas are sorted in size ascending order and can have only 1 preview per hash
-        if is_media {
-            match mode {
-                MediaFetchMode::PreviewOnly => {
-                    metadata.drain(1..);
-                }
-                MediaFetchMode::MediaOnly => {
-                    metadata.drain(0..1);
-                }
-                MediaFetchMode::Full => {}
-            }
-        }
+        let metadatas = if hash_info.is_media {
+            #[cfg(debug_assertions)]
+            assert!(maybe_preview.is_some());
 
-        Ok(Self { fetcher, metadata })
+            match mode {
+                MediaFetchMode::PreviewOnly => (None, maybe_preview),
+                MediaFetchMode::MediaOnly => (Some(main_metadata), None),
+                MediaFetchMode::Full => (Some(main_metadata), maybe_preview),
+            }
+        } else {
+            (Some(main_metadata), None)
+        };
+
+        let current_file = if let Some(main_metadata) = metadatas.0.as_ref() {
+            File::open(&main_metadata.file_path).await?
+        } else if let Some(preview_metadata) = metadatas.1.as_ref() {
+            File::open(&preview_metadata.file_path).await?
+        } else {
+            unreachable!()
+        };
+
+        Ok(Self {
+            metadatas,
+            current_file,
+            read_buf: buf,
+        })
     }
 
-    pub async fn fetch_metadata_only(sha256_hash: String) -> PPResult<Vec<Metadata>> {
-        let is_media = is_media(sha256_hash.as_str()).await?;
-        let mut metadata = fetch_metadata(&sha256_hash).await?;
-
-        // drain previews
-        if is_media {
-            metadata.drain(..1);
-        }
-
-        Ok(metadata)
+    pub fn get_metadata(&self) -> (Option<Metadata>, Option<Metadata>) {
+        self.metadatas.clone()
     }
 
     /// Fetch bytes part
-    pub async fn fetch_data_frame(&mut self) -> PPResult<Vec<u8>> {
-        if self.fetcher.is_part_ready() {
-            self.metadata.drain(..1);
-        }
-        self.fetcher.fetch_part().await
-    }
+    pub async fn fetch_data_frame(&mut self) -> PPResult<&[u8]> {
+        let bytes_read = if self.metadatas.0.is_some() {
+            let bytes_read = self.current_file.read(&mut self.read_buf[..]).await?;
 
-    /// Gets metadata
-    ///
-    /// Dangerous: Metadata get's dynamic unloaded while calling `get_built_response`
-    pub fn get_metadata(&self) -> Vec<Metadata> {
-        self.metadata.clone()
+            if bytes_read == 0 {
+                self.metadatas.0.take();
+                if let Some(preview_metadata) = self.metadatas.1.as_ref() {
+                    self.current_file = File::open(&preview_metadata.file_path).await?;
+                }
+            }
+
+            bytes_read
+        } else if self.metadatas.1.is_some() {
+            let bytes_read = self.current_file.read(&mut self.read_buf[..]).await?;
+
+            if bytes_read == 0 {
+                self.metadatas.1.take();
+            }
+
+            bytes_read
+        } else {
+            0
+        };
+
+        Ok(&self.read_buf[..bytes_read])
     }
 
     pub fn is_finished(&self) -> bool {
-        self.metadata.is_empty()
+        self.metadatas.0.is_none() && self.metadatas.1.is_none()
     }
 }

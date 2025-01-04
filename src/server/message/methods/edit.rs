@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{
     db::{
-        chat::{chats::ChatsDB, drafts::DraftsDB, messages::MessagesDB},
+        chat::{chats::ChatsDB, drafts::DraftsDB, hashes::HashesDB, messages::MessagesDB},
         internal::error::PPResult,
         user::UsersDB,
     },
@@ -14,14 +14,13 @@ use crate::{
             request::{
                 delete::DeleteMessageRequest,
                 edit::{
-                    EditDraftRequest, MarkAsReadRequest, EditMessageRequest,
-                    EditSelfRequest,
+                    EditDraftRequest, EditMessageRequest, EditSelfRequest, MarkAsReadRequest
                 },
                 extract_what_field,
             },
             response::{
                 delete::DeleteMessageResponse,
-                edit::{EditDraftResponse, MarkAsReadResponse, EditMessageResponse},
+                edit::{EditDraftResponse, EditMessageResponse, MarkAsReadResponse},
                 events::{
                     DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent,
                     MarkAsReadEvent,
@@ -58,6 +57,16 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
 
     let private_chat_id = msg.chat_id;
     let msg_id = msg.message_id;
+
+    let hashes_db: HashesDB = handler.get_db();
+
+    if let Some(hashes) = msg.sha256_hashes.as_ref() {
+        for hash in hashes.iter() {
+            if !hashes_db.hash_exists(hash).await? {
+                return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into())
+            }
+        }
+    }
 
     let builder = EditedMessageBuilder::from(msg);
     let existing_message = messages_db
@@ -233,8 +242,12 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
         users_db.update_username(&self_user_id, username).await?;
     }
 
-    if let Some(photo) = msg.photo.as_ref() {
-        users_db.update_name(&self_user_id, photo).await?;
+    if let Some(hash) = msg.photo.as_ref() {
+        let hashes_db: HashesDB = handler.get_db();
+        if !hashes_db.hash_exists(hash).await? {
+            return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into())
+        }
+        users_db.update_name(&self_user_id, hash).await?;
     }
 
     if let Some(password) = msg.password.as_ref() {

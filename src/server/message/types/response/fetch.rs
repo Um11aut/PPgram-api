@@ -24,6 +24,16 @@ pub struct FetchUserResponse {
 pub type FetchSelfResponse = FetchUserResponse;
 
 #[derive(Serialize, Deserialize)]
+pub struct FetchChatInfoResponse {
+    pub ok: bool,
+    pub method: String,
+    pub photo_count: u32,
+    pub video_count: u32,
+    pub document_count: u32,
+    pub participants: Vec<i32>
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct FetchMessagesResponse {
     pub ok: bool,
     pub method: String,
