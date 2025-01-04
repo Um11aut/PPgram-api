@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::server::message::types::{
-    chat::{ChatDetails, ChatDetailsResponse}, files::Metadata, message::Message, user::User
+    chat::ChatDetailsResponse, message::Message, user::User
 };
 
 #[derive(Serialize, Deserialize)]
@@ -9,15 +9,6 @@ pub struct FetchChatsResponse {
     pub ok: bool,
     pub method: String,
     pub chats: Vec<ChatDetailsResponse>,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct FetchHashInfoResponse {
-    pub ok: bool,
-    pub method: String, // fetch_hash_info
-    pub is_media: bool,
-    #[serde(flatten)]
-    pub metadata: Metadata
 }
 
 #[derive(Serialize, Deserialize)]

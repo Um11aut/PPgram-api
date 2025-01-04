@@ -192,7 +192,7 @@ impl FilesHandler {
 
                             return Ok(());
                         }
-                        _ => return Err(PPError::from("Invalid Method!")),
+                        _ => return Err("Unknown method provided".into()),
                     }
 
                     request_builder.clear();

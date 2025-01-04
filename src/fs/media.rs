@@ -221,7 +221,7 @@ impl FsFetcher for MediaFetcher {
                     return Ok(self.read_buf[..read].to_vec());
                 }
 
-                if let Some(metadata) = self.metadatas.iter().next() {
+                if let Some(metadata) = self.metadatas.first() {
                     info!("Opening new file: {}!", metadata.file_path);
                     self.current_file = Some(File::open(&metadata.file_path).await?);
                     self.bytes_read = 0;
@@ -236,9 +236,9 @@ impl FsFetcher for MediaFetcher {
 
     fn is_part_ready(&self) -> bool {
         if let Some(current) = self.metadatas.first() {
-            return self.bytes_read == current.file_size;
+            self.bytes_read == current.file_size
         } else {
-            return true;
+            true
         }
     }
 }

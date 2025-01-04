@@ -21,7 +21,7 @@ use crate::{
             },
             response::{
                 delete::DeleteMessageResponse,
-                edit::{EditDraftResponse, EditIsUnreadResponse, EditMessageResponse},
+                edit::{EditDraftResponse, MarkAsReadResponse, EditMessageResponse},
                 events::{
                     DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent,
                     MarkAsReadEvent,
@@ -113,7 +113,7 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
     Ok(())
 }
 
-async fn handle_edit_unread_message(
+async fn handle_mark_as_read(
     handler: &mut JsonHandler,
     msg: &MarkAsReadRequest,
 ) -> PPResult<()> {
@@ -303,15 +303,15 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
         }
         "is_unread" => {
             let msg: MarkAsReadRequest = serde_json::from_str(content)?;
-            handle_edit_unread_message(handler, &msg).await?;
-            Ok(serde_json::to_value(EditIsUnreadResponse {
+            handle_mark_as_read(handler, &msg).await?;
+            Ok(serde_json::to_value(MarkAsReadResponse {
                 ok: true,
                 method: "edit_is_unread".into(),
                 chat_id: msg.chat_id,
             })
             .unwrap())
         }
-        _ => Err("Unknown what field! Known what fields for edit: 'message', 'self'".into()),
+        _ => Err("Unknown what field! Known what fields for edit: 'message', 'self', 'draft', 'is_unread'".into()),
     }
 }
 

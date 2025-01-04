@@ -1,7 +1,7 @@
 use crate::{
     db::internal::error::{PPError, PPResult},
     fs::{
-        document::DocumentFetcher,
+        document::{fetch_metadata, DocumentFetcher},
         media::{is_media, MediaFetcher},
         FsFetcher,
     },
@@ -89,12 +89,13 @@ impl FileFetcher {
 
     pub async fn fetch_metadata_only(sha256_hash: String) -> PPResult<Vec<Metadata>> {
         let is_media = is_media(sha256_hash.as_str()).await?;
-        let mut fetcher = if is_media {
-            Fetcher::Media(MediaFetcher::new(&sha256_hash))
-        } else {
-            Fetcher::Document(DocumentFetcher::new(&sha256_hash))
-        };
-        let metadata = fetcher.fetch_metadata().await?;
+        let mut metadata = fetch_metadata(&sha256_hash).await?;
+
+        // drain previews
+        if is_media {
+            metadata.drain(..1);
+        }
+
         Ok(metadata)
     }
 

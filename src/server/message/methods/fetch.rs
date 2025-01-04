@@ -1,4 +1,3 @@
-use log::debug;
 use serde_json::Value;
 
 use crate::db::chat::chats::ChatsDB;
@@ -6,41 +5,18 @@ use crate::db::chat::drafts::DraftsDB;
 use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
-use crate::fs::{document, media, FsFetcher};
 use crate::server::message::methods::macros;
-use crate::server::message::types::chat::{ChatDetails, ChatDetailsResponse};
+use crate::server::message::types::chat::ChatDetailsResponse;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{
-    FetchChatsResponse, FetchHashInfoResponse, FetchMessagesResponse, FetchSelfResponse,
+    FetchChatsResponse, FetchMessagesResponse, FetchSelfResponse,
     FetchUserResponse, FetchUsersResponse,
 };
 use crate::server::message::{
     handlers::json_handler::JsonHandler,
     types::user::{User, UserId},
 };
-
-async fn on_hash_info(
-    handler: &mut JsonHandler
-) -> PPResult<FetchHashInfoResponse> {
-    let content = handler.utf8_content_unchecked();
-    let msg: FetchHashInfoRequest = serde_json::from_str(content)?;
-
-    let is_media = media::is_media(&msg.sha256_hash).await?;
-    let mut metadata = document::fetch_metadata(msg.sha256_hash.as_str()).await?;
-
-    // remove preview if exists
-    if is_media {
-        metadata.drain(..1);
-    }
-
-    Ok(FetchHashInfoResponse {
-        ok: true,
-        method: "fetch_hash_info".into(),
-        is_media,
-        metadata: metadata.remove(0),
-    })
-}
 
 async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsResponse>> {
     let self_user_id = {
@@ -225,9 +201,6 @@ async fn handle_json_message(handler: &mut JsonHandler) -> PPResult<Value> {
             .await
             .map(|v| serde_json::to_value(v).unwrap()),
         "users" => on_users(handler)
-            .await
-            .map(|v| serde_json::to_value(v).unwrap()),
-        "hash_info" => on_hash_info(handler)
             .await
             .map(|v| serde_json::to_value(v).unwrap()),
         _ => Err(PPError::from("Unknown 'what' field provided!")),

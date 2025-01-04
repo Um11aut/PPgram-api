@@ -7,7 +7,7 @@ pub struct EditMessageResponse {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct EditIsUnreadResponse {
+pub struct MarkAsReadResponse {
     pub ok: bool,
     pub method: String,
     pub chat_id: i32

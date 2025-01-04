@@ -136,7 +136,7 @@ impl FsFetcher for DocumentFetcher {
 
                 if self.metadatas.is_empty() {return Ok(self.read_buf[..read].to_vec())}
 
-                if let Some(metadata) = self.metadatas.iter().next() {
+                if let Some(metadata) = self.metadatas.first() {
                     info!("Opening new file: {}!", metadata.file_path);
                     self.current_file = Some(File::open(&metadata.file_path).await?);
                     self.bytes_read = 0;
@@ -151,16 +151,16 @@ impl FsFetcher for DocumentFetcher {
 
     fn is_part_ready(&self) -> bool {
         if let Some(current) = self.metadatas.first() {
-            return self.bytes_read == current.file_size;
+            self.bytes_read == current.file_size
         } else {
-            return true;
+            true
         }
     }
 }
 
 pub async fn fetch_metadata(sha256_hash: &str) -> PPResult<Vec<Metadata>> {
     let mut metadatas: Vec<Metadata> = Vec::with_capacity(2);
-    let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(&sha256_hash)).await?;
+    let mut entries = tokio::fs::read_dir(PathBuf::from(FS_BASE).join(sha256_hash)).await?;
 
     while let Ok(Some(entry)) = entries.next_entry().await {
         let path = entry.path().canonicalize()?;
