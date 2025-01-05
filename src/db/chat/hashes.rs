@@ -112,15 +112,15 @@ impl HashesDB {
     ) -> PPResult<()> {
         let query = r#"
             INSERT INTO ksp.hashes (hash, is_media, file_name, file_path, preview_path)
-            VALUES (?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?);
         "#;
 
         let mut statement = self.session.statement(query);
 
         statement.bind_string(0, sha256_hash)?; // Bind the hash
         statement.bind_bool(1, is_media)?;
-        statement.bind_string(2, file_path)?;
-        statement.bind_string(3, file_name)?;
+        statement.bind_string(2, file_name)?;
+        statement.bind_string(3, file_path)?;
         statement.bind_string(4, preview_path.unwrap_or(""))?;
 
         statement.execute().await?;
