@@ -36,7 +36,7 @@ services:
     volumes:
       - .:/usr/src/app/
       - /usr/src/app/target
-      - .:/server_data/
+      - ./server_data/:/server_data/
 
 volumes:
   cassandra_data:
