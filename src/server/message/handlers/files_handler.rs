@@ -272,15 +272,14 @@ impl FilesHandler {
                     loop {
                         // As we have Metadatas, we may not include the size of the next binary frame
                         let data_frame = file_fetcher.fetch_data_frame().await?;
-                        if data_frame.is_empty() {
-                            self.reset();
-                            return Ok(());
+
+                        if !data_frame.is_empty() {
+                            trace!(
+                                "[Download] Sending data frame back! Data Frame size: {}",
+                                data_frame.len()
+                            );
+                            self.output_connection.write(data_frame).await;
                         }
-                        trace!(
-                            "[Download] Sending data frame back! Data Frame size: {}",
-                            data_frame.len()
-                        );
-                        self.output_connection.write(data_frame).await;
 
                         if file_fetcher.is_finished() {
                             self.reset();

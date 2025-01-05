@@ -1,3 +1,4 @@
+use log::debug;
 use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::{
@@ -80,7 +81,7 @@ impl FileFetcher {
 
     /// Fetch bytes part
     pub async fn fetch_data_frame(&mut self) -> PPResult<&[u8]> {
-        let bytes_read = if self.metadatas.1.is_some() {
+        if self.metadatas.1.is_some() {
             let bytes_read = self.current_file.read(&mut self.read_buf[..]).await?;
 
             if bytes_read == 0 {
@@ -90,7 +91,7 @@ impl FileFetcher {
                 }
             }
 
-            bytes_read
+            Ok(&self.read_buf[..bytes_read])
         } else if self.metadatas.0.is_some() {
             let bytes_read = self.current_file.read(&mut self.read_buf[..]).await?;
 
@@ -98,12 +99,10 @@ impl FileFetcher {
                 self.metadatas.0.take();
             }
 
-            bytes_read
+            Ok(&self.read_buf[..bytes_read])
         } else {
-            0
-        };
-
-        Ok(&self.read_buf[..bytes_read])
+            Ok(&self.read_buf[..0])
+        }
     }
 
     pub fn is_finished(&self) -> bool {
