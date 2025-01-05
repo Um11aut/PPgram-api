@@ -91,7 +91,16 @@ impl FsUploader for DocumentUploader {
         let file_path = target_doc_directory.join(&self.doc_name);
 
         tokio::fs::create_dir(&target_doc_directory).await?;
-        tokio::fs::rename(&self.temp_file_path, &file_path).await?;
+
+        // TODO: Feature to rename instead of copying
+        tokio::fs::copy(
+            &self.temp_file_path,
+            &file_path,
+        )
+        .await?;
+        tokio::fs::remove_file(&self.temp_file_path).await?;
+
+        //tokio::fs::rename(&self.temp_file_path, &file_path).await?;
 
         db.add_hash(
             false,

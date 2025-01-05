@@ -138,11 +138,20 @@ impl FsUploader for MediaUploader {
         }
 
         tokio::fs::create_dir(&target_doc_directory).await?;
-        tokio::fs::rename(
-            self.temp_file_path,
+
+        // TODO: Feature to rename instead of copying
+        tokio::fs::copy(
+            &self.temp_file_path,
             target_doc_directory.join(&self.doc_name),
         )
         .await?;
+        tokio::fs::remove_file(&self.temp_file_path).await?;
+
+        //tokio::fs::rename(
+        //    self.temp_file_path,
+        //    target_doc_directory.join(&self.doc_name),
+        //)
+        //.await?;
 
         let dot_pos = self.doc_name.rfind('.').unwrap();
         let (name, extension) = self.doc_name.split_at(dot_pos);
