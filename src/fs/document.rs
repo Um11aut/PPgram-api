@@ -94,7 +94,7 @@ impl FsUploader for DocumentUploader {
         tokio::fs::rename(&self.temp_file_path, &file_path).await?;
 
         db.add_hash(
-            true,
+            false,
             &sha256_hash,
             file_path
                 .to_str()
