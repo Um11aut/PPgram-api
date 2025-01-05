@@ -33,6 +33,7 @@ impl Database for HashesDB {
             CREATE TABLE IF NOT EXISTS ksp.hashes (
                 hash TEXT,
                 is_media boolean,
+                file_name TEXT,
                 file_path TEXT,
                 preview_path TEXT,
                 PRIMARY KEY (hash)
@@ -46,8 +47,9 @@ impl Database for HashesDB {
 
 pub struct HashInfo {
     pub is_media: bool,
+    pub file_name: String,
     pub file_path: PathBuf,
-    pub preview_path: Option<PathBuf>,
+    pub preview_path: Option<PathBuf>
 }
 
 impl HashesDB {
@@ -68,7 +70,7 @@ impl HashesDB {
 
     pub async fn fetch_hash(&self, sha256_hash: &str) -> PPResult<Option<HashInfo>> {
         let query = r#"
-            SELECT is_media, file_path, preview_path
+            SELECT is_media, file_name, file_path, preview_path
             FROM ksp.hashes
             WHERE hash = ?;
         "#;
@@ -81,11 +83,13 @@ impl HashesDB {
 
         if let Some(row) = result.first_row() {
             let is_media: bool = row.get(0)?;
-            let file_path: String = row.get(1)?;
-            let preview_path: String = row.get(2)?;
+            let file_name: String = row.get(1)?;
+            let file_path: String = row.get(2)?;
+            let preview_path: String = row.get(3)?;
 
             return Ok(Some(HashInfo {
                 is_media,
+                file_name,
                 file_path: file_path.into(),
                 preview_path: if preview_path.is_empty() {
                     None
@@ -102,11 +106,12 @@ impl HashesDB {
         &self,
         is_media: bool,
         sha256_hash: &str,
+        file_name: &str,
         file_path: &str,
         preview_path: Option<&str>,
     ) -> PPResult<()> {
         let query = r#"
-            INSERT INTO ksp.hashes (hash, is_media, file_path, preview_path)
+            INSERT INTO ksp.hashes (hash, is_media, file_name, file_path, preview_path)
             VALUES (?, ?, ?, ?);
         "#;
 
@@ -115,7 +120,8 @@ impl HashesDB {
         statement.bind_string(0, sha256_hash)?; // Bind the hash
         statement.bind_bool(1, is_media)?;
         statement.bind_string(2, file_path)?;
-        statement.bind_string(3, preview_path.unwrap_or(""))?;
+        statement.bind_string(3, file_name)?;
+        statement.bind_string(4, preview_path.unwrap_or(""))?;
 
         statement.execute().await?;
 

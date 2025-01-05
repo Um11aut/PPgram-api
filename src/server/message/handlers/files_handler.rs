@@ -64,7 +64,6 @@ impl Handler for FilesHandler {
         match self.handle(buffer).await {
             Ok(_) => {}
             Err(err) => {
-                error!("[Files] Error while performing file operation:\n {}", err);
                 err.safe_send("file_operation", &self.output_connection)
                     .await;
                 self.reset();
@@ -99,7 +98,6 @@ impl FilesHandler {
 
     async fn handle(&mut self, buffer: &[u8]) -> PPResult<()> {
         let mut do_extend = true;
-        trace!("{}", buffer.len());
         if self.is_first {
             self.request_builder = MessageBuilder::parse(buffer);
         }

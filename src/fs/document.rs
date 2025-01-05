@@ -93,11 +93,7 @@ impl FsUploader for DocumentUploader {
         tokio::fs::create_dir(&target_doc_directory).await?;
 
         // TODO: Feature to rename instead of copying
-        tokio::fs::copy(
-            &self.temp_file_path,
-            &file_path,
-        )
-        .await?;
+        tokio::fs::copy(&self.temp_file_path, &file_path).await?;
         tokio::fs::remove_file(&self.temp_file_path).await?;
 
         //tokio::fs::rename(&self.temp_file_path, &file_path).await?;
@@ -105,6 +101,7 @@ impl FsUploader for DocumentUploader {
         db.add_hash(
             false,
             &sha256_hash,
+            &self.doc_name,
             file_path
                 .to_str()
                 .ok_or("Failed to convert file path to string.")?,
@@ -121,7 +118,7 @@ pub async fn fetch_hash_metadata(
     sha256_hash: &str,
 ) -> PPResult<(Metadata, Option<Metadata>)> {
     let hash_info = db
-        .fetch_hash(&sha256_hash)
+        .fetch_hash(sha256_hash)
         .await?
         .ok_or("Provided SHA256 Hash doesn't exist")?;
 
@@ -141,12 +138,7 @@ pub async fn fetch_hash_metadata(
 
     let preview_metadata = if let Some(preview_path) = hash_info.preview_path.as_ref() {
         Some(Metadata {
-            file_name: preview_path
-                .to_string_lossy()
-                .rsplit('.')
-                .next()
-                .expect("file name to exist")
-                .into(),
+            file_name: "preview.jpg".into(),
             file_path: preview_path.to_string_lossy().into(),
             file_size: tokio::fs::metadata(preview_path).await?.len(),
         })
@@ -156,13 +148,7 @@ pub async fn fetch_hash_metadata(
 
     Ok((
         Metadata {
-            file_name: hash_info
-                .file_path
-                .to_string_lossy()
-                .rsplit('.')
-                .next()
-                .expect("file name to exist")
-                .into(),
+            file_name: hash_info.file_name,
             file_path: hash_info.file_path.to_string_lossy().into(),
             file_size: main_metadata.len(),
         },

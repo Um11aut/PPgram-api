@@ -157,7 +157,7 @@ impl FsUploader for MediaUploader {
         let (name, extension) = self.doc_name.split_at(dot_pos);
         let preview_name = format!("{}preview.{}", name, extension);
 
-        let file_path = target_doc_directory.join(self.doc_name);
+        let file_path = target_doc_directory.join(&self.doc_name);
         let preview_path = target_doc_directory.join(preview_name);
 
         compress::generate_thumbnail(&file_path, &preview_path, compress::ThumbnailQuality::Bad)?;
@@ -165,6 +165,7 @@ impl FsUploader for MediaUploader {
         db.add_hash(
             true,
             &sha256_hash,
+            &self.doc_name,
             file_path
                 .to_str()
                 .ok_or("Failed to convert file path to string.")?,

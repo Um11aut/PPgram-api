@@ -5,7 +5,7 @@ pub struct EditedMessageBuilder {
     pub is_unread: Option<bool>,
     pub reply_to: Option<i32>,
     pub content: Option<String>,
-    pub media_hashes: Option<Vec<String>>,
+    pub sha256_hashes: Option<Vec<String>>,
 }
 
 impl From<EditMessageRequest> for EditedMessageBuilder {
@@ -14,7 +14,7 @@ impl From<EditMessageRequest> for EditedMessageBuilder {
             is_unread: value.is_unread,
             reply_to: value.reply_to,
             content: value.content,
-            media_hashes: value.sha256_hashes,
+            sha256_hashes: value.sha256_hashes,
         }
     }
 }
@@ -33,15 +33,15 @@ impl EditedMessageBuilder {
             Some(content)
         } else {msg.content};
 
-        let media_hashes_changed = if let Some(media_hashes) = self.media_hashes {
-            media_hashes
+        let hashes = if let Some(hashes) = self.sha256_hashes {
+            hashes
         } else {msg.sha256_hashes};
 
         Message {
             is_unread: unread_changed,
             reply_to: reply_to_changed,
             content: content_changed,
-            sha256_hashes: media_hashes_changed,
+            sha256_hashes: hashes,
             ..msg
         }
     }
