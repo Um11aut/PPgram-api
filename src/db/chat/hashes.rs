@@ -32,7 +32,7 @@ impl Database for HashesDB {
         let create_table_query = r#"
             CREATE TABLE IF NOT EXISTS ksp.hashes (
                 hash TEXT,
-                is_media bool,
+                is_media boolean,
                 file_path TEXT,
                 preview_path TEXT,
                 PRIMARY KEY (hash)
