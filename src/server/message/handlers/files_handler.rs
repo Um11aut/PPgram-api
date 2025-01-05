@@ -185,11 +185,8 @@ impl FilesHandler {
                         "download_metadata" => {
                             let req: DownloadMetadataRequest =
                                 serde_json::from_str(request_content)?;
-                            let (main_metadata, maybe_metadata) = fetch_hash_metadata(
-                                self.get_db(),
-                                &req.sha256_hash,
-                            )
-                            .await?;
+                            let (main_metadata, maybe_metadata) =
+                                fetch_hash_metadata(self.get_db(), &req.sha256_hash).await?;
 
                             write_json!(
                                 &self.output_connection,
@@ -275,7 +272,7 @@ impl FilesHandler {
                     );
 
                     loop {
-                        // As we have an Vector of Metadatas, we may not include the size of the next binary frame
+                        // As we have Metadatas, we may not include the size of the next binary frame
                         let data_frame = file_fetcher.fetch_data_frame().await?;
                         if data_frame.is_empty() {
                             self.reset();
@@ -285,7 +282,7 @@ impl FilesHandler {
                             "[Download] Sending data frame back! Data Frame size: {}",
                             data_frame.len()
                         );
-                        self.output_connection.write(&data_frame).await;
+                        self.output_connection.write(data_frame).await;
 
                         if file_fetcher.is_finished() {
                             self.reset();

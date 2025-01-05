@@ -59,10 +59,10 @@ impl FileFetcher {
             (Some(main_metadata), None)
         };
 
-        let current_file = if let Some(main_metadata) = metadatas.0.as_ref() {
-            File::open(&main_metadata.file_path).await?
-        } else if let Some(preview_metadata) = metadatas.1.as_ref() {
-            File::open(&preview_metadata.file_path).await?
+        let current_file = if let Some(preview_mt) = metadatas.1.as_ref() {
+            File::open(&preview_mt.file_path).await?
+        } else if let Some(main_mt) = metadatas.0.as_ref() {
+            File::open(&main_mt.file_path).await?
         } else {
             unreachable!()
         };
@@ -80,22 +80,22 @@ impl FileFetcher {
 
     /// Fetch bytes part
     pub async fn fetch_data_frame(&mut self) -> PPResult<&[u8]> {
-        let bytes_read = if self.metadatas.0.is_some() {
-            let bytes_read = self.current_file.read(&mut self.read_buf[..]).await?;
-
-            if bytes_read == 0 {
-                self.metadatas.0.take();
-                if let Some(preview_metadata) = self.metadatas.1.as_ref() {
-                    self.current_file = File::open(&preview_metadata.file_path).await?;
-                }
-            }
-
-            bytes_read
-        } else if self.metadatas.1.is_some() {
+        let bytes_read = if self.metadatas.1.is_some() {
             let bytes_read = self.current_file.read(&mut self.read_buf[..]).await?;
 
             if bytes_read == 0 {
                 self.metadatas.1.take();
+                if let Some(main_mt) = self.metadatas.0.as_ref() {
+                    self.current_file = File::open(&main_mt.file_path).await?;
+                }
+            }
+
+            bytes_read
+        } else if self.metadatas.0.is_some() {
+            let bytes_read = self.current_file.read(&mut self.read_buf[..]).await?;
+
+            if bytes_read == 0 {
+                self.metadatas.0.take();
             }
 
             bytes_read

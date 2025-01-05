@@ -8,8 +8,8 @@ services:
       driver: none
     ports:
       - "9042:9042"
-    networks: 
-      - cassandra 
+    networks:
+      - cassandra
     environment:
       CASSANDRA_START_RPC: 'true'
     volumes:
@@ -23,8 +23,8 @@ services:
     container_name: rust-app
     depends_on:
       - cassandra
-    networks: 
-      - cassandra 
+    networks:
+      - cassandra
     ports:
       - "8080:8080/tcp"
       - "3000:3000/tcp"
@@ -36,6 +36,7 @@ services:
     volumes:
       - .:/usr/src/app/
       - /usr/src/app/target
+      - .:/server_data/
 
 volumes:
   cassandra_data:
