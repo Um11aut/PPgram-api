@@ -68,7 +68,7 @@ impl HashesDB {
 
     pub async fn fetch_hash(&self, sha256_hash: &str) -> PPResult<Option<HashInfo>> {
         let query = r#"
-            SELECT (is_media, file_path, preview_path)
+            SELECT is_media, file_path, preview_path
             FROM ksp.hashes
             WHERE hash = ?;
         "#;
@@ -83,6 +83,7 @@ impl HashesDB {
             let is_media: bool = row.get(0)?;
             let file_path: String = row.get(1)?;
             let preview_path: String = row.get(2)?;
+
             return Ok(Some(HashInfo {
                 is_media,
                 file_path: file_path.into(),
