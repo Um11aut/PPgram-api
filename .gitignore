@@ -3,4 +3,4 @@
 examples/__pycache__/
 benchmark/.zig-cache
 benchmark/zig-out
-
+server_data/

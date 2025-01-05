@@ -1,29 +1,31 @@
 use std::error::Error;
 
-use common::{nok, ok, TestConnection};
+use common::{generate_random_string, nok, ok, TestConnection};
 use serde_json::{json, Value};
 
 mod common;
 
 #[tokio::test]
 async fn register() -> Result<(), Box<dyn Error>> {
-    let mut con = TestConnection::new().await?;
+    let first_random = generate_random_string(5);
+
+    let mut con = TestConnection::new("3000").await?;
     con.send_message(&json!({
         "method": "register",
-        "username": "@fsdfsd",
+        "username": format!("@{}", first_random),
         "name": "I am gay",
         "password": "asd"
     })).await?;
     let response = con.receive_response().await?;
     println!("{}", response);
     drop(con);
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
 
     ok(response)?;
 
     con.send_message(&json!({
         "method": "register",
-        "username": "@fsdfsd",
+        "username": format!("@{}", first_random),
         "name": "I am gay",
         "password": "asd"
     })).await?;
@@ -32,7 +34,7 @@ async fn register() -> Result<(), Box<dyn Error>> {
     println!("{}", response);
     nok(response)?;
     drop(con);
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
 
     con.send_message(&json!({
         "method": "register",
@@ -45,10 +47,12 @@ async fn register() -> Result<(), Box<dyn Error>> {
     println!("{}", response);
     nok(response)?;
     drop(con);
-    let mut con = TestConnection::new().await?; 
+    let mut con = TestConnection::new("3000").await?;
+
+    let username = generate_random_string(8);
     con.send_message(&json!({
         "method": "register",
-        "username": "@fdf",
+        "username": format!("@{}", username),
         "name": "I am gay",
         "password": "asd"
     })).await?;
@@ -62,11 +66,12 @@ async fn register() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn login() -> Result<(), Box<dyn Error>> {
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
+    let username = generate_random_string(8);
 
     con.send_message(&json!({
         "method": "register",
-        "username": "@asdadassdasd",
+        "username": format!("@{}", username),
         "name": "I am gay",
         "password": "asd"
     })).await?;
@@ -75,10 +80,10 @@ async fn login() -> Result<(), Box<dyn Error>> {
     ok(response)?;
     drop(con);
 
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
     con.send_message(&json!({
         "method": "login",
-        "username": "@asdadassdasd",
+        "username": format!("@{}", username),
         "password": "asd"
     })).await?;
     let response = con.receive_response().await?;
@@ -88,10 +93,10 @@ async fn login() -> Result<(), Box<dyn Error>> {
     ok(response)?;
     drop(con);
 
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
     con.send_message(&json!({
         "method": "login",
-        "username": "@asdadassdasd",
+        "username": format!("@{}", username),
         "password": "asd"
     })).await?;
     let response = con.receive_response().await?;
@@ -108,11 +113,12 @@ async fn login() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn auth() -> Result<(), Box<dyn Error>> {
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
+    let username = generate_random_string(8);
 
     con.send_message(&json!({
         "method": "register",
-        "username": "@aaa",
+        "username": format!("@{}", username),
         "name": "I am gay",
         "password": "asd"
     })).await?;
@@ -125,7 +131,7 @@ async fn auth() -> Result<(), Box<dyn Error>> {
 
     drop(con);
 
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
     con.send_message(&json!({
         "method": "auth",
         "session_id": session_id,
@@ -136,7 +142,7 @@ async fn auth() -> Result<(), Box<dyn Error>> {
     ok(response)?;
     drop(con);
 
-    let mut con = TestConnection::new().await?;
+    let mut con = TestConnection::new("3000").await?;
     con.send_message(&json!({
         "method": "auth",
         "session_id": session_id,

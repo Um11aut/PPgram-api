@@ -155,12 +155,18 @@ impl FsUploader for MediaUploader {
 
         let dot_pos = self.doc_name.rfind('.').unwrap();
         let (name, extension) = self.doc_name.split_at(dot_pos);
-        let preview_name = format!("{}preview.{}", name, extension);
+        let preview_name = format!("{}.preview{}", name, extension);
 
         let file_path = target_doc_directory.join(&self.doc_name);
         let preview_path = target_doc_directory.join(preview_name);
 
-        compress::generate_thumbnail(&file_path, &preview_path, compress::ThumbnailQuality::Bad)?;
+        compress::generate_thumbnail(
+            file_path
+                .to_str()
+                .ok_or("Failed to make str from file_path")?,
+            &preview_path,
+            compress::ThumbnailQuality::Bad,
+        )?;
 
         db.add_hash(
             true,

@@ -19,6 +19,8 @@ async-trait = "0.1.83"
 moro = "0.4.0"
 dashmap = "6.1.0"
 ffmpeg-sys-next = "7.1.0"
+mozjpeg = {version = "0.10.12", features = ["with_simd"] }
+image = "0.25.5"
 
 [profile.release]
 strip=true

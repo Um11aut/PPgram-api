@@ -311,3 +311,9 @@ impl FilesHandler {
         }
     }
 }
+
+impl Drop for FilesHandler {
+    fn drop(&mut self) {
+        self.bucket.decrement_rc();
+    }
+}

@@ -1,3 +1,4 @@
+use core::slice;
 use std::{ffi::CString, fs::File, io::Write, path::Path};
 
 use crate::db::internal::error::{PPError, PPResult};
@@ -12,6 +13,7 @@ use ffmpeg_sys_next::{
     AVCodec, AVCodecContext, AVCodecID, AVCodecParameters, AVColorRange, AVFormatContext, AVFrame,
     AVMediaType, AVPacket, AVPixelFormat, AVRational, SwsContext, SWS_BILINEAR,
 };
+use image::{imageops::FilterType, ImageBuffer, RgbImage};
 
 pub enum ThumbnailQuality {
     Good,
@@ -21,7 +23,7 @@ pub enum ThumbnailQuality {
 
 #[allow(unused_assignments)]
 pub fn generate_thumbnail(
-    input_path: impl AsRef<Path>,
+    input_path: &str,
     output_path: impl AsRef<Path>,
     quality: ThumbnailQuality,
 ) -> PPResult<()> {
@@ -29,6 +31,8 @@ pub fn generate_thumbnail(
     let mut codec_ctx: *mut AVCodecContext = std::ptr::null_mut();
     let mut codec: *const AVCodec = std::ptr::null_mut();
     let mut frame: *mut AVFrame = std::ptr::null_mut();
+    let mut rgb_frame: *mut AVFrame = std::ptr::null_mut();
+
     let mut packet: *mut AVPacket = std::ptr::null_mut();
     let mut sws_context: *mut SwsContext = std::ptr::null_mut();
     let mut video_stream_idx: isize = -1;
@@ -37,8 +41,8 @@ pub fn generate_thumbnail(
     unsafe { avdevice_register_all() }
 
     // Open input file
-    let input_cstr = CString::new(input_path.as_ref().to_str().unwrap().as_bytes().to_vec())
-        .map_err(|err| PPError::from(err.to_string()))?;
+    let input_cstr =
+        CString::new(input_path).map_err(|_| PPError::from("Failed to create CString"))?;
     if unsafe {
         avformat_open_input(
             &mut format_ctx,
@@ -109,12 +113,14 @@ pub fn generate_thumbnail(
 
     // Allocate frames and packet
     frame = unsafe { av_frame_alloc() };
+    rgb_frame = unsafe { av_frame_alloc() };
     packet = unsafe { av_packet_alloc() };
 
     if frame.is_null() || frame.is_null() || packet.is_null() {
         println!();
         unsafe {
             av_frame_free(&mut frame);
+            av_frame_free(&mut rgb_frame);
             av_packet_free(&mut packet);
             avcodec_free_context(&mut codec_ctx);
             avformat_close_input(&mut format_ctx);
@@ -143,6 +149,7 @@ pub fn generate_thumbnail(
     if sws_context.is_null() {
         unsafe {
             av_frame_free(&mut frame);
+            av_frame_free(&mut rgb_frame);
             av_packet_free(&mut packet);
             avcodec_free_context(&mut codec_ctx);
             avformat_close_input(&mut format_ctx);
@@ -158,6 +165,7 @@ pub fn generate_thumbnail(
         unsafe {
             sws_freeContext(sws_context);
             av_frame_free(&mut frame);
+            av_frame_free(&mut rgb_frame);
             av_packet_free(&mut packet);
             avcodec_free_context(&mut codec_ctx);
             avformat_close_input(&mut format_ctx);
@@ -167,8 +175,8 @@ pub fn generate_thumbnail(
 
     unsafe {
         av_image_fill_arrays(
-            (*frame).data.as_mut_ptr(),
-            (*frame).linesize.as_mut_ptr(),
+            (*rgb_frame).data.as_mut_ptr(),
+            (*rgb_frame).linesize.as_mut_ptr(),
             buffer,
             AVPixelFormat::AV_PIX_FMT_RGB24,
             width,
@@ -194,13 +202,13 @@ pub fn generate_thumbnail(
                     (*frame).linesize.as_ptr(),
                     0,
                     height,
-                    (*frame).data.as_mut_ptr(),
-                    (*frame).linesize.as_mut_ptr(),
+                    (*rgb_frame).data.as_mut_ptr(),
+                    (*rgb_frame).linesize.as_mut_ptr(),
                 );
             }
 
             // Save the frame as a JPEG (or any other format you prefer)
-            save_thumbnail(frame, width, height, output_path.as_ref(), quality)?;
+            save_thumbnail(rgb_frame, width, height, output_path, quality)?;
 
             break;
         }
@@ -212,6 +220,7 @@ pub fn generate_thumbnail(
         av_free(buffer as *mut _);
         sws_freeContext(sws_context);
         av_frame_free(&mut frame);
+        av_frame_free(&mut rgb_frame);
         av_packet_free(&mut packet);
         avcodec_free_context(&mut codec_ctx);
         avformat_close_input(&mut format_ctx);
@@ -226,154 +235,68 @@ fn save_thumbnail(
     output_path: impl AsRef<Path>,
     quality: ThumbnailQuality,
 ) -> PPResult<()> {
-    unsafe {
-        // Find JPEG codec
-        let codec = avcodec_find_encoder(AVCodecID::AV_CODEC_ID_MJPEG);
-        if codec.is_null() {
-            return Err("JPEG codec not found".into());
-        }
+    let buffer =
+        unsafe { std::slice::from_raw_parts((*frame).data[0], (width * height * 3) as usize) };
 
-        // Allocate codec context for JPEG encoder
-        let mut codec_ctx = avcodec_alloc_context3(codec);
-        if codec_ctx.is_null() {
-            return Err("Failed to allocate codec context".into());
-        }
+    let input_image = RgbImage::from_raw(width as u32, height as u32, buffer.to_vec()).ok_or(
+        std::io::Error::new(std::io::ErrorKind::Other, "Invalid buffer size"),
+    )?;
 
-        (*codec_ctx).width = width;
-        (*codec_ctx).height = height;
-        (*codec_ctx).pix_fmt = AVPixelFormat::AV_PIX_FMT_YUVJ420P; // Set the pixel format to YUVJ420p
-        (*codec_ctx).time_base = AVRational { num: 1, den: 25 };
+    // Calculate new dimensions
+    let (new_width, new_height) = match quality {
+        ThumbnailQuality::Good => (width, height),
+        ThumbnailQuality::Medium => (width / 2, height / 2),
+        ThumbnailQuality::Bad => (width / 4, height / 4),
+    };
+
+    // Resize the image
+    let resized_image = image::imageops::resize(
+        &input_image,
+        new_width as u32,
+        new_height as u32,
+        FilterType::CatmullRom,
+    );
+
+    let res = std::panic::catch_unwind(|| -> std::io::Result<Vec<u8>> {
+        let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+
+        comp.set_size(
+            new_width.try_into().unwrap(),
+            new_height.try_into().unwrap(),
+        );
         match quality {
             ThumbnailQuality::Good => {
-                (*codec_ctx).qcompress = 0.8;
-                (*codec_ctx).qmax = 32;
-                (*codec_ctx).qmin = 20;
+                comp.set_quality(60.0);
             }
             ThumbnailQuality::Medium => {
-                (*codec_ctx).qcompress = 0.5;
-                (*codec_ctx).qmax = 32;
-                (*codec_ctx).qmin = 25;
-            },
+                comp.set_quality(40.0);
+            }
             ThumbnailQuality::Bad => {
-                (*codec_ctx).qcompress = 0.1;
-                (*codec_ctx).qmax = 32;
-                (*codec_ctx).qmin = 30;
-            },
+                comp.set_quality(20.0);
+            }
         }
+        let mut comp = comp.start_compress(Vec::new())?;
 
-        if avcodec_open2(codec_ctx, codec, std::ptr::null_mut()) < 0 {
-            avcodec_free_context(&mut codec_ctx);
-            return Err("Failed to open codec".into());
+        comp.write_scanlines(&resized_image)?;
+
+        let writer = comp.finish()?;
+        Ok(writer)
+    });
+
+    match res {
+        Ok(Ok(jpeg_data)) => {
+            // Save the JPEG directly to the output path
+            std::fs::write(output_path, jpeg_data)?;
         }
-
-        // Allocate a new frame for YUVJ420p format
-        let mut yuv_frame = av_frame_alloc();
-        if yuv_frame.is_null() {
-            avcodec_free_context(&mut codec_ctx);
-            return Err("Failed to allocate YUV frame".into());
+        Ok(Err(io_err)) => {
+            eprintln!("I/O error during JPEG compression: {:?}", io_err);
+            return Err(io_err.into());
         }
-
-        // Set up the frame to hold YUVJ420p data
-        (*yuv_frame).format = AVPixelFormat::AV_PIX_FMT_YUVJ420P as i32;
-        (*yuv_frame).width = width;
-        (*yuv_frame).height = height;
-
-        // Allocate memory for the YUV frame
-        let buffer_size =
-            av_image_get_buffer_size(AVPixelFormat::AV_PIX_FMT_YUVJ420P, width, height, 1);
-        let buffer = av_malloc(buffer_size as usize);
-        if buffer.is_null() {
-            av_frame_free(&mut yuv_frame);
-            avcodec_free_context(&mut codec_ctx);
-            return Err("Failed to allocate buffer for YUV frame".into());
+        Err(panic_err) => {
+            eprintln!("Panic during thumbnail generation: {:?}", panic_err);
+            return Err("Panic occurred during thumbnail generation".into());
         }
-
-        // Fill the YUV frame with data
-        av_image_fill_arrays(
-            (*yuv_frame).data.as_mut_ptr(),
-            (*yuv_frame).linesize.as_mut_ptr(),
-            buffer as *mut u8,
-            AVPixelFormat::AV_PIX_FMT_YUVJ420P,
-            width,
-            height,
-            1,
-        );
-
-        // Create SWS context to convert RGB frame to YUVJ420p
-        #[allow(unused_assignments)]
-        let mut sws_context: *mut SwsContext = std::ptr::null_mut();
-        sws_context = sws_getContext(
-            width,
-            height,
-            AVPixelFormat::AV_PIX_FMT_RGB24, // Input format is RGB24
-            width,
-            height,
-            AVPixelFormat::AV_PIX_FMT_YUVJ420P, // Output format is YUVJ420p
-            SWS_BILINEAR,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
-
-        if sws_context.is_null() {
-            av_free(buffer);
-            av_frame_free(&mut yuv_frame);
-            avcodec_free_context(&mut codec_ctx);
-            return Err("Failed to create SWS context".into());
-        }
-
-        // Convert the frame from RGB to YUVJ420p
-        sws_scale(
-            sws_context,
-            (*frame).data.as_ptr() as *const *const u8,
-            (*frame).linesize.as_ptr(),
-            0,
-            height,
-            (*yuv_frame).data.as_mut_ptr(),
-            (*yuv_frame).linesize.as_mut_ptr(),
-        );
-
-        // Free the SWS context
-        sws_freeContext(sws_context);
-
-        // Now send the YUVJ420p frame to the JPEG encoder
-        let mut packet = av_packet_alloc();
-        if packet.is_null() {
-            av_free(buffer);
-            av_frame_free(&mut yuv_frame);
-            avcodec_free_context(&mut codec_ctx);
-            return Err("Failed to allocate packet".into());
-        }
-
-        if avcodec_send_frame(codec_ctx, yuv_frame) < 0 {
-            av_packet_free(&mut packet);
-            av_free(buffer);
-            av_frame_free(&mut yuv_frame);
-            avcodec_free_context(&mut codec_ctx);
-            return Err("Failed to send frame to encoder".into());
-        }
-
-        if avcodec_receive_packet(codec_ctx, packet) < 0 {
-            av_packet_free(&mut packet);
-            av_free(buffer);
-            av_frame_free(&mut yuv_frame);
-            avcodec_free_context(&mut codec_ctx);
-            return Err("Failed to receive packet from encoder".into());
-        }
-
-        // Write the packet data to a file
-        let mut file = File::create(output_path)?;
-        file.write_all(std::slice::from_raw_parts(
-            (*packet).data,
-            (*packet).size as usize,
-        ))?;
-
-        // Free resources
-        av_packet_free(&mut packet);
-        av_free(buffer);
-        av_frame_free(&mut yuv_frame);
-        avcodec_free_context(&mut codec_ctx);
-    }
+    };
 
     Ok(())
 }
