@@ -86,7 +86,7 @@ impl MediaUploader {
             .take(15)
             .map(char::from)
             .collect();
-        let temp_path = std::env::temp_dir().join(temp_file).canonicalize()?;
+        let temp_path = std::env::temp_dir().join(temp_file);
         info!(
             "Creating new temp file for media uploading: {}",
             temp_path.display()
