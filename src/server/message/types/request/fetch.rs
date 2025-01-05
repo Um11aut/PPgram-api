@@ -15,6 +15,13 @@ pub struct FetchUserRequest {
 }
 
 #[derive(Deserialize, Serialize)]
+pub struct FetchChatInfoRequest {
+    pub method: String,
+    pub what: String,
+    pub chat_id: i32
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct FetchMessagesRequest {
     pub method: String,
     pub what: String,

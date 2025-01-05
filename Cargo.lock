@@ -368,17 +368,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 
 [[package]]
-name = "ffmpeg-next"
-version = "7.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da02698288e0275e442a47fc12ca26d50daf0d48b15398ba5906f20ac2e2a9f9"
-dependencies = [
- "bitflags",
- "ffmpeg-sys-next",
- "libc",
-]
-
-[[package]]
 name = "ffmpeg-sys-next"
 version = "7.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -765,7 +754,7 @@ dependencies = [
  "cassandra-cpp",
  "dashmap",
  "env_logger",
- "ffmpeg-next",
+ "ffmpeg-sys-next",
  "hex",
  "log",
  "moro",

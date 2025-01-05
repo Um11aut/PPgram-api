@@ -1,4 +1,7 @@
-use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use log::{error, info};
 
@@ -13,14 +16,17 @@ impl From<Arc<cassandra_cpp::Session>> for DatabaseBucket {
         let count = Arc::strong_count(&value);
         Self {
             connection: value,
-            reference_count: Arc::new(AtomicUsize::from(count))
+            reference_count: Arc::new(AtomicUsize::from(count)),
         }
     }
 }
 
 impl Clone for DatabaseBucket {
     fn clone(&self) -> Self {
-        Self { connection: self.connection.clone(), reference_count: self.reference_count.clone() }
+        Self {
+            connection: self.connection.clone(),
+            reference_count: self.reference_count.clone(),
+        }
     }
 }
 
@@ -42,7 +48,7 @@ impl DatabaseBucket {
 
         Self {
             connection: Arc::new(session),
-            reference_count: Arc::new(1.into())
+            reference_count: Arc::new(1.into()),
         }
     }
 
@@ -82,40 +88,39 @@ impl DatabaseBucket {
 }
 
 pub struct DatabaseBuilder {
-    pub bucket: DatabaseBucket
+    pub bucket: DatabaseBucket,
 }
 
 impl From<DatabaseBucket> for DatabaseBuilder {
     fn from(value: DatabaseBucket) -> Self {
-        Self {
-            bucket: value
-        }
+        Self { bucket: value }
     }
 }
 
 impl DatabaseBuilder {
     pub fn from_raw(connection: Arc<cassandra_cpp::Session>) -> Self {
         Self {
-            bucket: connection.into()
+            bucket: connection.into(),
         }
     }
 }
 
 pub struct DatabasePool {
-    buckets: Vec<DatabaseBucket>
+    buckets: Vec<DatabaseBucket>,
 }
 
 impl DatabasePool {
     pub async fn new() -> Self {
         let buckets: Vec<DatabaseBucket> = vec![DatabaseBucket::new().await];
 
-        Self {
-            buckets
-        }
+        Self { buckets }
     }
 
     pub async fn get_available_bucket(&mut self) -> DatabaseBucket {
-        info!("Getting available db bucket...\n Buckets: {:?}", self.buckets);
+        info!(
+            "Getting available db bucket...\n Buckets: {:?}",
+            self.buckets
+        );
         for (i, bucket) in self.buckets.iter_mut().enumerate() {
             if !bucket.is_full() {
                 return bucket.clone_increment_rc();
@@ -124,7 +129,7 @@ impl DatabasePool {
             //if bucket.is_rc_zero() {
             //    tokio::spawn({
             //        let i = i.clone();
-            //       async move {
+            //        async move {
             //            // Wait for 120 secs and check if the rc is still 0...
             //            // Needed because statistically, it's more likely that new user is going to
             //            // join in theese 120 secs
@@ -139,12 +144,15 @@ impl DatabasePool {
         }
 
         // Sort by reference count in ascending order
-        self.buckets.sort_by(|a, b| a.get_rc_count().cmp(&b.get_rc_count()));
+        self.buckets
+            .sort_by(|a, b| a.get_rc_count().cmp(&b.get_rc_count()));
 
         let new_bucket = DatabaseBucket::new().await;
         self.buckets.push(new_bucket.clone());
-        info!("Creating new Bucket in Database Pool!\nCurrent pool size: {}", self.buckets.len());
+        info!(
+            "Creating new Bucket in Database Pool!\nCurrent pool size: {}",
+            self.buckets.len()
+        );
         new_bucket
     }
 }
-

@@ -4,10 +4,16 @@ use log::{debug, error, info, trace};
 use tokio::{net::tcp::OwnedReadHalf, sync::Mutex};
 
 use crate::{
-    db::internal::error::{PPError, PPResult},
-    fs::helpers::{
-        fetcher::{FileFetcher, MediaFetchMode},
-        uploader::FileUploader,
+    db::{
+        bucket::{self, DatabaseBucket, DatabaseBuilder},
+        internal::error::{PPError, PPResult},
+    },
+    fs::{
+        document::fetch_hash_metadata,
+        helpers::{
+            fetcher::{FileFetcher, MediaFetchMode},
+            uploader::FileUploader,
+        },
     },
     server::{
         connection::TCPConnection,
@@ -39,6 +45,7 @@ enum FileActor {
 /// [4 bytes metadata message size] [{"name": "Test123", "is_media": false, "compress": true}] [8 bytes file message size] [message bytes]
 /// ```
 pub struct FilesHandler {
+    bucket: DatabaseBucket,
     // to put/download the file frame on fs: Media or Document will be decided at runtime
     file_actor: Option<FileActor>,
     is_first: bool,
@@ -168,6 +175,7 @@ impl FilesHandler {
                             let req: DownloadFileRequest = serde_json::from_str(request_content)?;
                             self.file_actor = Some(FileActor::Fetcher(
                                 FileFetcher::new(
+                                    DatabaseBuilder::from(self.bucket.clone()).into(),
                                     req.sha256_hash,
                                     MediaFetchMode::try_from(req.mode.as_str())?,
                                 )
@@ -177,15 +185,16 @@ impl FilesHandler {
                         "download_metadata" => {
                             let req: DownloadMetadataRequest =
                                 serde_json::from_str(request_content)?;
-                            let metadatas =
-                                FileFetcher::fetch_metadata_only(req.sha256_hash).await?;
+                            let (main_metadata, maybe_metadata) =
+                                fetch_hash_metadata(self.get_db(), &req.sha256_hash).await?;
 
                             write_json!(
                                 &self.output_connection,
                                 DownloadFileMetadataResponse {
                                     ok: true,
                                     method: "download_metadata".into(),
-                                    metadatas,
+                                    file_metadata: Some(main_metadata),
+                                    preview_metadata: maybe_metadata,
                                 }
                             );
                             self.reset();
@@ -235,7 +244,7 @@ impl FilesHandler {
                     if file_uploader.is_ready() {
                         let actor = self.file_actor.take().unwrap();
                         if let FileActor::Uploader(file_uploader) = actor {
-                            let sha256_hash = file_uploader.finalize().await;
+                            let sha256_hash = file_uploader.finalize(&self.get_db()).await?;
 
                             write_json!(
                                 &self.output_connection,
@@ -251,18 +260,19 @@ impl FilesHandler {
                     }
                 }
                 FileActor::Fetcher(file_fetcher) => {
-                    let metadatas = file_fetcher.get_metadata();
+                    let (maybe_main, maybe_preview) = file_fetcher.get_metadata();
                     write_json!(
                         &self.output_connection,
                         DownloadFileMetadataResponse {
                             ok: true,
                             method: "download_file".into(),
-                            metadatas,
+                            file_metadata: maybe_main,
+                            preview_metadata: maybe_preview
                         }
                     );
 
                     loop {
-                        // As we have an Vector of Metadatas, we may not include the size of the next binary frame
+                        // As we have Metadatas, we may not include the size of the next binary frame
                         let data_frame = file_fetcher.fetch_data_frame().await?;
                         if data_frame.is_empty() {
                             self.reset();
@@ -272,7 +282,7 @@ impl FilesHandler {
                             "[Download] Sending data frame back! Data Frame size: {}",
                             data_frame.len()
                         );
-                        self.output_connection.write(&data_frame).await;
+                        self.output_connection.write(data_frame).await;
 
                         if file_fetcher.is_finished() {
                             self.reset();
@@ -286,8 +296,15 @@ impl FilesHandler {
         Ok(())
     }
 
-    pub async fn new(connection: Arc<TCPConnection>) -> FilesHandler {
+    // Function to get any database by just passing the type
+    #[inline]
+    fn get_db<T: From<DatabaseBuilder>>(&self) -> T {
+        DatabaseBuilder::from(self.bucket.clone()).into()
+    }
+
+    pub async fn new(connection: Arc<TCPConnection>, bucket: DatabaseBucket) -> FilesHandler {
         FilesHandler {
+            bucket,
             file_actor: None,
             is_first: true,
             request_builder: None,

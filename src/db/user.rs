@@ -16,12 +16,11 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::fs::media::is_media;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
-use super::bucket::DatabaseBuilder;
+use super::{bucket::DatabaseBuilder, chat::hashes::HashesDB};
 use super::db::Database;
 use super::internal::error::PPError;
 use super::internal::error::PPResult;
@@ -347,10 +346,7 @@ impl UsersDB {
         }
     }
 
-    pub async fn update_photo(&self, self_user_id: &UserId, media_hash: &String) -> PPResult<()> {
-        if !is_media(media_hash).await? {
-            return Err("Provided SHA256 hash must be a media!".into());
-        }
+    pub async fn update_photo(&self, self_user_id: &UserId, media_hash: &str) -> PPResult<()> {
         let query = "UPDATE ksp.users SET photo = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 

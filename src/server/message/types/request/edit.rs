@@ -35,5 +35,5 @@ pub struct EditMessageRequest {
     pub is_unread: Option<bool>,
     pub reply_to: Option<i32>,
     pub content: Option<String>,
-    pub media_hashes: Option<Vec<String>>,
+    pub sha256_hashes: Option<Vec<String>>,
 }

@@ -2,15 +2,17 @@ use serde_json::Value;
 
 use crate::db::chat::chats::ChatsDB;
 use crate::db::chat::drafts::DraftsDB;
+use crate::db::chat::hashes::HashesDB;
 use crate::db::chat::messages::MessagesDB;
 use crate::db::internal::error::{PPError, PPResult};
 use crate::db::user::UsersDB;
+use crate::fs::media::MediaType;
 use crate::server::message::methods::macros;
 use crate::server::message::types::chat::ChatDetailsResponse;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::{extract_what_field, fetch::*};
 use crate::server::message::types::response::fetch::{
-    FetchChatsResponse, FetchMessagesResponse, FetchSelfResponse,
+    FetchChatInfoResponse, FetchChatsResponse, FetchMessagesResponse, FetchSelfResponse,
     FetchUserResponse, FetchUsersResponse,
 };
 use crate::server::message::{
@@ -170,6 +172,75 @@ async fn on_user(handler: &mut JsonHandler) -> PPResult<FetchUserResponse> {
     })
 }
 
+/// The most expensive function ever
+async fn on_chat_info(handler: &mut JsonHandler) -> PPResult<FetchChatInfoResponse> {
+    let self_user_id = {
+        let session = handler.session.read().await;
+        session.get_credentials_unchecked().0.to_owned()
+    };
+
+    let content = handler.utf8_content_unchecked();
+    let msg: FetchChatInfoRequest = serde_json::from_str(content)?;
+
+    let users_db: UsersDB = handler.get_db();
+    let messages_db: MessagesDB = handler.get_db();
+    let chats_db: ChatsDB = handler.get_db();
+    let hashes_db: HashesDB = handler.get_db();
+
+    let real_chat_id = users_db
+        .get_associated_chat_id(&self_user_id, msg.chat_id)
+        .await?
+        .ok_or("Provided chat_id wasn't found!")?;
+    let sha256_hashes = messages_db.fetch_all_hashes(real_chat_id).await?;
+
+    let mut photo_count = 0;
+    let mut video_count = 0;
+
+    let mut document_count = 0;
+
+    for hash in sha256_hashes {
+        let hash_info = hashes_db
+            .fetch_hash(&hash)
+            .await?
+            .ok_or("Internal error.")?;
+        if hash_info.is_media {
+            let media_extension = hash_info
+                .file_path
+                .to_str()
+                .unwrap()
+                .rsplit('.')
+                .next()
+                .ok_or(PPError::from("Internal error."))?;
+
+            let media_type = MediaType::try_from(media_extension)?;
+            match media_type {
+                MediaType::Video(_) => {
+                    video_count += 1;
+                }
+                MediaType::Photo(_) => {
+                    photo_count += 1;
+                }
+            }
+        } else {
+            document_count += 1;
+        }
+    }
+
+    let (chat, _) = chats_db
+        .fetch_chat(&self_user_id, real_chat_id)
+        .await?
+        .ok_or("Failed to find chat")?;
+
+    Ok(FetchChatInfoResponse {
+        ok: true,
+        method: "fetch_chat_info".into(),
+        photo_count,
+        video_count,
+        document_count,
+        participants: chat.participants().iter().map(|u| u.user_id()).collect(),
+    })
+}
+
 async fn on_messages(handler: &mut JsonHandler) -> PPResult<FetchMessagesResponse> {
     let content = handler.utf8_content_unchecked();
     let msg = serde_json::from_str::<FetchMessagesRequest>(content)?;
@@ -182,7 +253,6 @@ async fn on_messages(handler: &mut JsonHandler) -> PPResult<FetchMessagesRespons
     })
 }
 
-/// Needs to be wrapped in option because media directly sends the message avoiding json for the performance purpose
 async fn handle_json_message(handler: &mut JsonHandler) -> PPResult<Value> {
     let content = handler.utf8_content_unchecked();
     let what = extract_what_field(content)?;
@@ -201,6 +271,9 @@ async fn handle_json_message(handler: &mut JsonHandler) -> PPResult<Value> {
             .await
             .map(|v| serde_json::to_value(v).unwrap()),
         "users" => on_users(handler)
+            .await
+            .map(|v| serde_json::to_value(v).unwrap()),
+        "chat_info" => on_chat_info(handler)
             .await
             .map(|v| serde_json::to_value(v).unwrap()),
         _ => Err(PPError::from("Unknown 'what' field provided!")),

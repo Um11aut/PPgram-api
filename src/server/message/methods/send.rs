@@ -3,7 +3,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     db::{
-        chat::{chats::ChatsDB, messages::MessagesDB},
+        chat::{chats::ChatsDB, hashes::HashesDB, messages::MessagesDB},
         internal::error::PPError,
         user::UsersDB,
     },
@@ -58,6 +58,16 @@ async fn handle_send_message(
             false => return Err("No group found by the given chat id!".into()),
         }
     };
+
+    let hashes_db: HashesDB = handler.get_db();
+
+    if let Some(hashes) = msg.content.sha256_hashes.as_ref() {
+        for hash in hashes.iter() {
+            if !hashes_db.hash_exists(hash).await? {
+                return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into())
+            }
+        }
+    }
 
     let associated_chat = match maybe_chat {
         Some(existing_chat_id) => chats_db

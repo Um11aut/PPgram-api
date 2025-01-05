@@ -3,7 +3,6 @@ use crate::db::db::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;
 use crate::db::internal::validate::validate_range;
-use crate::fs::hash_exists;
 use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::send::*;
@@ -13,7 +12,9 @@ use cassandra_cpp::AsRustType;
 use cassandra_cpp::CassCollection;
 use cassandra_cpp::LendingIterator;
 use cassandra_cpp::List;
+use cassandra_cpp::SetIterator;
 use core::range::RangeInclusive;
+use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -136,11 +137,6 @@ impl MessagesDB {
 
                 let mut list = List::new();
                 for sha256_hash in sha256_hashes {
-                    if !hash_exists(sha256_hash).await? {
-                        return Err(
-                            format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into(),
-                        );
-                    }
                     list.append_string(sha256_hash)?;
                 }
                 statement.bind_list(11, list)?;
@@ -290,11 +286,14 @@ impl MessagesDB {
 
         let placeholders = msg_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
 
-        let update_query = format!(r#"
+        let update_query = format!(
+            r#"
             UPDATE ksp.messages
             SET is_unread = false
             WHERE chat_id = ? AND id IN ({})
-        "#, placeholders);
+        "#,
+            placeholders
+        );
 
         let mut statement = self.session.statement(update_query);
 
@@ -339,9 +338,6 @@ impl MessagesDB {
 
         let mut cass_list = List::new();
         for sha256_hash in new_message.sha256_hashes {
-            if !hash_exists(&sha256_hash).await? {
-                return Err(format!("Provided SHA256 Hash {} doesn't exist!", sha256_hash).into());
-            }
             cass_list.append_string(&sha256_hash)?;
         }
 
@@ -390,5 +386,59 @@ impl MessagesDB {
         } else {
             Err("Failed to find chat!".into())
         }
+    }
+
+    pub async fn fetch_hash_count(&self, chat_id: ChatId) -> PPResult<u32> {
+        let query = r#"
+            SELECT sha256_hashes
+            FROM ksp.messages
+            WHERE chat_id = ?;
+        "#;
+
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, chat_id)?; // Bind the chat_id
+
+        let result = statement.execute().await?;
+
+        let mut total_count: u32 = 0;
+
+        let mut iter = result.iter();
+        while let Some(row) = iter.next() {
+            let maybe_iter: Result<SetIterator, cassandra_cpp::Error>= row.get(0);
+            if let Ok(mut iter) = maybe_iter {
+                while iter.next().is_some() {
+                    total_count += 1;
+                }
+            }
+        }
+
+        Ok(total_count)
+    }
+
+    pub async fn fetch_all_hashes(&self, chat_id: ChatId) -> PPResult<Vec<String>> {
+        let query = r#"
+            SELECT sha256_hashes
+            FROM ksp.messages
+            WHERE chat_id = ?;
+        "#;
+
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, chat_id)?; // Bind the chat_id
+
+        let result = statement.execute().await?;
+
+        let mut all_hashes = Vec::new();
+
+        let mut iter = result.iter();
+        while let Some(row) = iter.next() {
+            let maybe_iter: Result<SetIterator, cassandra_cpp::Error>= row.get(0);
+            if let Ok(mut iter) = maybe_iter {
+                while let Some(hash) = iter.next() {
+                    all_hashes.push(hash.get_str()?.to_string());
+                }
+            }
+        }
+
+        Ok(all_hashes)
     }
 }
