@@ -144,8 +144,7 @@ impl DatabasePool {
         }
 
         // Sort by reference count in ascending order
-        self.buckets
-            .sort_by(|a, b| a.get_rc_count().cmp(&b.get_rc_count()));
+        self.buckets.sort_by_key(|a| a.get_rc_count());
 
         let new_bucket = DatabaseBucket::new().await;
         self.buckets.push(new_bucket.clone());

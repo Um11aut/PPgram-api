@@ -20,11 +20,11 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
-use super::{bucket::DatabaseBuilder, chat::hashes::HashesDB};
 use super::db::Database;
 use super::internal::error::PPError;
 use super::internal::error::PPResult;
 use super::internal::validate;
+use super::{bucket::DatabaseBuilder, chat::hashes::HashesDB};
 
 pub struct UsersDB {
     session: Arc<cassandra_cpp::Session>,
@@ -62,23 +62,11 @@ impl Database for UsersDB {
         "#;
 
         let username_custom_index_query = r#"
-            CREATE CUSTOM INDEX IF NOT EXISTS username_sasi_idx ON ksp.users (username)
-            USING 'org.apache.cassandra.index.sasi.SASIIndex'
-            WITH OPTIONS = {
-                'mode': 'CONTAINS',
-                'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.NonTokenizingAnalyzer',
-                'case_sensitive': 'false'
-            };
+            CREATE INDEX IF NOT EXISTS name_sai_index ON ksp.users (name);
         "#;
 
         let name_custom_index_query = r#"
-            CREATE CUSTOM INDEX IF NOT EXISTS name_sasi_idx ON ksp.users (name)
-            USING 'org.apache.cassandra.index.sasi.SASIIndex'
-            WITH OPTIONS = {
-                'mode': 'CONTAINS',
-                'analyzer_class': 'org.apache.cassandra.index.sasi.analyzer.NonTokenizingAnalyzer',
-                'case_sensitive': 'false'
-            };
+            CREATE INDEX IF NOT EXISTS username_sai_index ON ksp.users (username);
         "#;
 
         self.session.execute(create_table_query).await?;

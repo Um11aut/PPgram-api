@@ -1,0 +1,4 @@
+logging_severity: "TRACE"
+
+# If server_data is mounted, you cannot rename the files, instead, you need to delete them and copy
+use_copy_instead_rename: true
