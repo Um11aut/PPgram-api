@@ -81,3 +81,18 @@ async fn upload_file() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn download_file() -> Result<(), Box<dyn Error>> {
+    let mut c = TestConnection::new("8080").await?;
+    c.upload_file("/usr/src/app/Cargo.toml").await?;
+    let resp = c.receive_response().await?;
+    println!("{}", resp);
+    ok(resp.clone())?;
+    let val: Value = serde_json::from_str(resp.as_str())?;
+    let hash = val.get("sha256_hash").unwrap().as_str().unwrap();
+    c.download_file(hash).await?;
+
+    Ok(())
+}
+

@@ -1,11 +1,25 @@
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{error::Error, io, path::Path};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct Metadata {
+    pub file_name: String,
+    pub file_size: u64,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct DownloadFileMetadataResponse {
+    pub ok: bool,
+    pub method: String, // download_file
+    pub file_metadata: Option<Metadata>,
+    pub preview_metadata: Option<Metadata>,
+}
 
 pub struct TestConnection {
     stream: TcpStream,
@@ -27,6 +41,33 @@ impl TestConnection {
         output_vec.extend_from_slice(msg.as_bytes());
 
         self.stream.write_all(&output_vec).await?;
+        Ok(())
+    }
+
+    pub async fn download_file(&mut self, hash: &str) -> Result<(), Box<dyn Error>> {
+        let payload = json!({
+            "method": "download_file",
+            "sha256_hash": hash,
+            "mode": "full"
+        });
+        self.send_message(&payload).await?;
+
+        let metadata = self.receive_response().await?;
+        let v: DownloadFileMetadataResponse = serde_json::from_str(&metadata)?;
+        if let Some(preview) = v.preview_metadata {
+            let mut preview_buf = vec![0u8; preview.file_size.try_into().unwrap()];
+            self.stream.read_exact(&mut preview_buf).await?;
+
+            assert!(preview_buf.len() as u64 == preview.file_size);
+        }
+
+        if let Some(mt) = v.file_metadata {
+            let mut preview_buf = vec![0u8; mt.file_size.try_into().unwrap()];
+            self.stream.read_exact(&mut preview_buf).await?;
+
+            assert!(preview_buf.len() as u64 == mt.file_size);
+        }
+
         Ok(())
     }
 
