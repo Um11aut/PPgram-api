@@ -16,4 +16,4 @@ jobs:
           file: docker-compose.yml
           service: rust-app
           entrypoint: bash
-          command: '-c "cargo test"'
+          command: ["cargo", "test"]
