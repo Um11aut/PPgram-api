@@ -96,13 +96,14 @@ impl FilesHandler {
         Arc::clone(&self.output_connection.reader())
     }
 
-    async fn handle(&mut self, buffer: &[u8]) -> PPResult<()> {
+    async fn process_request(&mut self, buffer: &[u8]) -> PPResult<()> {
         let mut do_extend = true;
+
         if self.is_first {
             self.request_builder = MessageBuilder::parse(buffer);
         }
 
-        // Then request isn't loaded yet
+        // process request
         if self.file_actor.is_none() {
             if let Some(request_builder) = self.request_builder.as_mut() {
                 if request_builder.ready() {
@@ -211,81 +212,103 @@ impl FilesHandler {
         if do_extend {
             self.content_buf.extend_from_slice(buffer);
         }
+        Ok(())
+    }
 
-        if let Some(file_actor) = self.file_actor.as_mut() {
-            match file_actor {
-                FileActor::Uploader(file_uploader) => {
-                    trace!(
-                        "[Upload] Uploading datagramm. Size: {}",
-                        self.content_buf.len()
-                    );
+    async fn on_uploader(&mut self) -> PPResult<()> {
+        let actor = self.file_actor.as_mut().unwrap();
+        if let FileActor::Uploader(file_uploader) = actor {
+            trace!(
+                "[Upload] Uploading datagramm. Size: {}",
+                self.content_buf.len()
+            );
 
-                    let content_fragment = &self.content_buf;
-                    if content_fragment.is_empty() {
-                        return Ok(());
-                    }
+            let content_fragment = &self.content_buf;
+            if content_fragment.is_empty() {
+                return Ok(());
+            }
 
-                    let rest_to_upload = file_uploader.rest_to_upload() as usize;
-                    if content_fragment.len() > rest_to_upload {
-                        info!("Transmitted more than one binary at once!");
-                        // after this fragment, it's not a part of current binary anymore
-                        let to_upload =
-                            &self.content_buf[..content_fragment.len() - rest_to_upload];
-                        file_uploader.consume_data_frame(to_upload).await?;
-                        self.content_buf
-                            .drain(..content_fragment.len() - rest_to_upload);
-                    } else {
-                        file_uploader.consume_data_frame(content_fragment).await?;
-                        self.content_buf.clear();
-                    }
+            let rest_to_upload = file_uploader.rest_to_upload() as usize;
+            if content_fragment.len() > rest_to_upload {
+                info!("Transmitted more than one binary at once!");
+                // after this fragment, it's not a part of current binary anymore
+                let to_upload = &self.content_buf[..content_fragment.len() - rest_to_upload];
+                file_uploader.consume_data_frame(to_upload).await?;
+                self.content_buf
+                    .drain(..content_fragment.len() - rest_to_upload);
+            } else {
+                file_uploader.consume_data_frame(content_fragment).await?;
+                self.content_buf.clear();
+            }
 
-                    if file_uploader.is_ready() {
-                        let actor = self.file_actor.take().unwrap();
-                        if let FileActor::Uploader(file_uploader) = actor {
-                            let sha256_hash = file_uploader.finalize(&self.get_db()).await?;
+            if file_uploader.is_ready() {
+                let actor = self.file_actor.take().unwrap();
+                if let FileActor::Uploader(file_uploader) = actor {
+                    let sha256_hash = file_uploader.finalize(&self.get_db()).await?;
 
-                            write_json!(
-                                &self.output_connection,
-                                UploadFileResponse {
-                                    ok: true,
-                                    method: "upload_file".into(),
-                                    sha256_hash,
-                                }
-                            );
-
-                            self.reset();
-                        }
-                    }
-                }
-                FileActor::Fetcher(file_fetcher) => {
-                    let (maybe_main, maybe_preview) = file_fetcher.get_metadata();
                     write_json!(
                         &self.output_connection,
-                        DownloadFileMetadataResponse {
+                        UploadFileResponse {
                             ok: true,
-                            method: "download_file".into(),
-                            file_metadata: maybe_main,
-                            preview_metadata: maybe_preview
+                            method: "upload_file".into(),
+                            sha256_hash,
                         }
                     );
 
-                    loop {
-                        // As we have Metadatas, we may not include the size of the next binary frame
-                        let data_frame = file_fetcher.fetch_data_frame().await?;
+                    self.reset();
+                }
+            }
+        }
 
-                        if !data_frame.is_empty() {
-                            trace!(
-                                "[Download] Sending data frame back! Data Frame size: {}",
-                                data_frame.len()
-                            );
-                            self.output_connection.write(data_frame).await;
-                        }
+        Ok(())
+    }
 
-                        if file_fetcher.is_finished() {
-                            self.reset();
-                            break;
-                        }
-                    }
+    async fn on_fetcher(&mut self) -> PPResult<()> {
+        let file_actor = self.file_actor.as_mut().unwrap();
+        if let FileActor::Fetcher(file_fetcher) = file_actor {
+            let (maybe_main, maybe_preview) = file_fetcher.get_metadata();
+            write_json!(
+                &self.output_connection,
+                DownloadFileMetadataResponse {
+                    ok: true,
+                    method: "download_file".into(),
+                    file_metadata: maybe_main,
+                    preview_metadata: maybe_preview
+                }
+            );
+
+            loop {
+                // As we have Metadatas, we may not include the size of the next binary frame
+                let data_frame = file_fetcher.fetch_data_frame().await?;
+
+                if !data_frame.is_empty() {
+                    trace!(
+                        "[Download] Sending data frame back! Data Frame size: {}",
+                        data_frame.len()
+                    );
+                    self.output_connection.write(data_frame).await;
+                }
+
+                if file_fetcher.is_finished() {
+                    self.reset();
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle(&mut self, buffer: &[u8]) -> PPResult<()> {
+        self.process_request(buffer).await?;
+
+        if let Some(file_actor) = self.file_actor.as_ref() {
+            match file_actor {
+                FileActor::Uploader(_) => {
+                    self.on_uploader().await?;
+                }
+                FileActor::Fetcher(_) => {
+                    self.on_fetcher().await?;
                 }
             }
         }

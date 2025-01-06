@@ -39,30 +39,9 @@ pub struct Server {
 }
 
 impl Server {
-    /// Creates a server
     pub async fn new(json_port: u16, files_port: u16) -> PPResult<Server> {
         let json_listener = TcpListener::bind(format!("0.0.0.0:{}", json_port)).await?;
         let file_listener = TcpListener::bind(format!("0.0.0.0:{}", files_port)).await?;
-
-        // let mut m = MediaEngine::default();
-        // m.register_default_codecs()?;
-        // let mut registry = Registry::new();
-        // registry = register_default_interceptors(registry, &mut m)?;
-
-        // let api = APIBuilder::new()
-        //     .with_media_engine(m)
-        //     .with_interceptor_registry(registry)
-        //     .build();
-
-        // let config = RTCConfiguration {
-        //     ice_servers: vec![RTCIceServer {
-        //         urls: vec!["stun:stun.l.google.com:19302".to_owned()],
-        //         ..Default::default()
-        //     }],
-        //     ..Default::default()
-        // };
-        // let peer_connection = Arc::new(api.new_peer_connection(config).await?);
-        // let (done_tx, mut done_rx) = tokio::sync::mpsc::channel::<()>(1);
 
         info!("[JSON Messages] listening on port: {}", json_port);
         info!("[Files Messages] listening on port: {}", files_port);
@@ -89,11 +68,10 @@ impl Server {
             JsonHandler::new(Arc::clone(&session), Arc::clone(&sessions), bucket).await;
 
         let reader = handler.reader();
+        let mut buffer = Box::new([0; JSON_MESSAGE_ALLOCATION_SIZE]);
 
         loop {
-            let mut buffer = [0; JSON_MESSAGE_ALLOCATION_SIZE];
-
-            match reader.lock().await.read(&mut buffer).await {
+            match reader.lock().await.read(&mut buffer[..]).await {
                 Ok(0) => break,
                 Ok(n) => {
                     handler.handle_segmented_frame(&buffer[0..n]).await;
