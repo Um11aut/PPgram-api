@@ -95,4 +95,3 @@ async fn download_file() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
