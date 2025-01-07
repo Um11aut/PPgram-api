@@ -59,7 +59,7 @@ impl ChatsDB {
     pub async fn create_private(
         &self,
         self_user_id: &UserId,
-        participants: Vec<UserId>,
+        with_user_id: &UserId,
     ) -> PPResult<(Chat, ChatDetails)> {
         let chat_id = rand::thread_rng().gen_range(1..i32::MAX);
         let insert_query = "INSERT INTO ksp.chats (id, is_group, participants) VALUES (?, ?, ?)";
@@ -69,19 +69,25 @@ impl ChatsDB {
         statement.bind_bool(1, false)?;
 
         let mut list = cassandra_cpp::List::new();
-        for participant in participants {
-            match participant {
-                UserId::UserId(user_id) => {
-                    list.append_int32(user_id)?;
-                }
-                UserId::Username(_) => return Err(PPError::from("Cannot add chat with username!")),
+        match self_user_id {
+            UserId::UserId(user_id) => {
+                list.append_int32(*user_id)?;
             }
+            UserId::Username(_) => return Err(PPError::from("Cannot add chat with username!")),
         }
+
+        match with_user_id {
+            UserId::UserId(user_id) => {
+                list.append_int32(*user_id)?;
+            }
+            UserId::Username(_) => return Err(PPError::from("Cannot add chat with username!")),
+        }
+
         statement.bind_list(2, list)?;
 
         statement.execute().await?;
 
-        Ok(self.fetch_chat(self_user_id, chat_id).await?.unwrap())
+        Ok(self.fetch_chat(with_user_id, chat_id).await?.unwrap())
     }
 
     /// Creates new unique invitation hash for a group
