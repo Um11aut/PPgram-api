@@ -238,6 +238,10 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
         users_db.update_name(&self_user_id, name).await?;
     }
 
+    if let Some(&profile_color) = msg.profile_color.as_ref() {
+        users_db.update_profile_color(&self_user_id, profile_color).await?;
+    }
+
     if let Some(username) = msg.username.as_ref() {
         users_db.update_username(&self_user_id, username).await?;
     }
@@ -274,6 +278,7 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
                         self_profile.user_id(),
                         self_profile.username().to_string(),
                         self_profile.photo_cloned(),
+                        self_profile.profile_color()
                     ),
                 },
             );

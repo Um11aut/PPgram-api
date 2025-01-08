@@ -8,6 +8,7 @@ pub struct EditSelfRequest {
     pub username: Option<String>,
     pub photo: Option<String>,
     pub password: Option<String>,
+    pub profile_color: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]

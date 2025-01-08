@@ -50,6 +50,7 @@ impl Database for UsersDB {
                 name TEXT,
                 username TEXT,
                 photo TEXT,
+                profile_color int,
                 password_hash TEXT,
                 password_salt TEXT,
                 sessions LIST<TEXT>,
@@ -125,14 +126,17 @@ impl UsersDB {
         }
 
         let user_id: i32 = rand::thread_rng().gen_range(1..i32::MAX);
+        let profile_color: u32 = rand::thread_rng().gen_range(1..=21);
+
         let query = r#"
-            INSERT INTO ksp.users (id, name, username, password_hash, password_salt, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ksp.users (id, name, username, profile_color, password_hash, password_salt, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
         let mut statement = self.session.statement(query);
 
         statement.bind_int32(0, user_id)?;
         statement.bind_string(1, name)?;
         statement.bind_string(2, username)?;
+        statement.bind_int32(3, profile_color as i32)?;
 
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -143,12 +147,12 @@ impl UsersDB {
             .to_string();
         info!("Generated new password hash: {}", password_hash);
 
-        statement.bind_string(3, &password_hash)?;
-        statement.bind_string(4, salt.as_str())?;
+        statement.bind_string(4, &password_hash)?;
+        statement.bind_string(5, salt.as_str())?;
 
-        statement.bind_list(5, cassandra_cpp::List::new())?;
-        statement.bind_string(6, "")?;
-        statement.bind_map(7, cassandra_cpp::Map::new())?;
+        statement.bind_list(6, cassandra_cpp::List::new())?;
+        statement.bind_string(7, "")?;
+        statement.bind_map(8, cassandra_cpp::Map::new())?;
 
         statement.execute().await?;
 
@@ -197,12 +201,14 @@ impl UsersDB {
             let user_id: i32 = row.get_by_name("id")?;
             let photo: String = row.get_by_name("photo")?;
             let name: String = row.get_by_name("name")?;
+            let profile_color: i32 = row.get_by_name("profile_color")?;
 
             o.push(User::construct(
                 name,
                 user_id,
                 username,
                 if photo.is_empty() { None } else { Some(photo) },
+                profile_color as u32
             ));
         }
 
@@ -370,6 +376,18 @@ impl UsersDB {
         Ok(())
     }
 
+    pub async fn update_profile_color(&self, self_user_id: &UserId, profile_color: u32) -> PPResult<()> {
+        let query = "UPDATE ksp.users SET profile_color = ? WHERE id = ?";
+        let mut statement = self.session.statement(query);
+
+        statement.bind_int32(0, profile_color as i32)?;
+        statement.bind_int32(1, self_user_id.as_i32_unchecked())?;
+
+        statement.execute().await?;
+
+        Ok(())
+    }
+
     pub async fn update_username(&self, self_user_id: &UserId, username: &str) -> PPResult<()> {
         let query = "UPDATE ksp.users SET username = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
@@ -530,13 +548,13 @@ impl UsersDB {
     pub async fn fetch_user(&self, user_id: &UserId) -> PPResult<Option<User>> {
         let statement = match user_id {
             UserId::UserId(user_id) => {
-                let query = "SELECT id, name, photo, username FROM ksp.users WHERE id = ?";
+                let query = "SELECT id, name, photo, username, profile_color FROM ksp.users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(0, *user_id)?;
                 statement
             }
             UserId::Username(username) => {
-                let query = "SELECT id, name, photo, username FROM ksp.users WHERE username = ?";
+                let query = "SELECT id, name, photo, username, profile_color FROM ksp.users WHERE username = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_string(0, username)?;
                 statement
@@ -550,12 +568,14 @@ impl UsersDB {
             let name: String = row.get(1)?;
             let photo: String = row.get(2)?;
             let username: String = row.get(3)?;
+            let profile_color: i32 = row.get(4)?;
 
             return Ok(Some(User::construct(
                 name,
                 user_id,
                 username,
                 if photo.is_empty() { None } else { Some(photo) },
+                profile_color as u32
             )));
         }
 

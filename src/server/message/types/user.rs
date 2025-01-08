@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -10,6 +9,7 @@ pub struct User {
     user_id: i32,
     username: String,
     photo: Option<String>,
+    profile_color: u32,
 }
 
 impl User {
@@ -18,16 +18,23 @@ impl User {
 
         match user {
             Some(user) => Ok(user),
-            None => Err(PPError::from("Failed to find chat id!"))
+            None => Err(PPError::from("Failed to find chat id!")),
         }
     }
 
-    pub fn construct(name: String, user_id: i32, username: String, photo: Option<String>) -> Self {
+    pub fn construct(
+        name: String,
+        user_id: i32,
+        username: String,
+        photo: Option<String>,
+        profile_color: u32,
+    ) -> Self {
         Self {
             name,
             user_id,
             username,
-            photo
+            photo,
+            profile_color,
         }
     }
 
@@ -37,6 +44,10 @@ impl User {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn profile_color(&self) -> u32 {
+        self.profile_color
     }
 
     pub fn username(&self) -> &str {
@@ -67,7 +78,7 @@ impl User {
 #[derive(Debug)]
 pub enum UserId {
     UserId(i32),
-    Username(String)
+    Username(String),
 }
 
 impl Clone for UserId {
@@ -95,14 +106,14 @@ impl UserId {
     pub fn as_i32(&self) -> Option<i32> {
         match *self {
             UserId::UserId(user_id) => Some(user_id),
-            UserId::Username(_) => None
+            UserId::Username(_) => None,
         }
     }
 
     pub fn as_i32_unchecked(&self) -> i32 {
         match *self {
             UserId::UserId(user_id) => user_id,
-            UserId::Username(_) => panic!("UserId must be i32!")
+            UserId::Username(_) => panic!("UserId must be i32!"),
         }
     }
 }
