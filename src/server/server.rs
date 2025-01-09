@@ -35,7 +35,6 @@ pub struct Server {
     json_listener: TcpListener,
     file_listener: TcpListener,
     connections: Sessions,
-    disconnected_connections: Arc<DashMap<>>,
     pool: DatabasePool,
 }
 
@@ -106,7 +105,7 @@ impl Server {
                 Ok(n) => {
                     handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
-                Err(err) => {break;},
+                Err(_) => {break;},
             }
         }
 
