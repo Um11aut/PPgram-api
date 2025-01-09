@@ -35,6 +35,7 @@ pub struct Server {
     json_listener: TcpListener,
     file_listener: TcpListener,
     connections: Sessions,
+    disconnected_connections: Arc<DashMap<>>,
     pool: DatabasePool,
 }
 
@@ -101,11 +102,11 @@ impl Server {
 
         loop {
             match reader.lock().await.read(&mut buffer).await {
-                Ok(0) => {drop(buffer); break;},
+                Ok(0) => {break;},
                 Ok(n) => {
                     handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
-                Err(_) => {drop(buffer); break;},
+                Err(err) => {break;},
             }
         }
 

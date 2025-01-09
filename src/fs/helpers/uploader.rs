@@ -4,8 +4,8 @@ use crate::{
     server::message::types::files::FileMetadataRequest,
 };
 
-/// 4Gib - Max message size that can be transmitted
-const MAX_MSG_SIZE: u64 = 4 * (1024 * 1024 * 1024 * 1024) /* Gib */;
+/// 64Gib - Max message size that can be transmitted
+const MAX_MSG_SIZE: u64 = 64 * (1024 * 1024 * 1024) /* Gib */;
 
 enum Uploader {
     Document(DocumentUploader),
@@ -37,7 +37,7 @@ pub(crate) struct FileUploader {
 impl FileUploader {
     pub async fn new(metadata: FileMetadataRequest, file_size: u64) -> PPResult<Self> {
         if file_size > MAX_MSG_SIZE {
-            return Err(PPError::from("Max. upload size exceeded!"));
+            return Err(PPError::from("Ты че еблан? Говорили тебе максимум 64гб"));
         }
 
         let uploader: Uploader = if metadata.is_media {
