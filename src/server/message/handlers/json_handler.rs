@@ -275,7 +275,11 @@ impl JsonHandler {
     ///
     /// If user isn't connected to the server, nothing happens
     /// WARN!! DO NOT USE IN FOR LOOP!
-    pub fn send_event_to_con_detached(&self, to: i32, msg: impl Serialize + std::fmt::Debug + Send + 'static) {
+    pub fn send_event_to_con_detached(
+        &self,
+        to: i32,
+        msg: impl Serialize + std::fmt::Debug + Send + 'static,
+    ) {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
             async move {
@@ -289,22 +293,17 @@ impl JsonHandler {
     }
 
     /// same as `send_event_to_con_detached`, but multiple
-    ///
-    /// Ensure that `recv` and `msg` have the same length!
-    pub fn send_events_to_connections(
-        &self,
-        recv: Vec<i32>,
-        msgs: Vec<impl Serialize + std::fmt::Debug + Send + 'static>,
-    ) {
-        if cfg!(debug_assertions) {
-            assert!(recv.len() == msgs.len())
-        }
-
+    pub fn send_events_to_connections<I, M>(&self, recv_msgs: I)
+    where
+        I: IntoIterator<Item = (i32, M)> + Send + 'static,
+        M: Serialize + std::fmt::Debug + Send + 'static,
+        <I as std::iter::IntoIterator>::IntoIter: std::marker::Send,
+    {
         tokio::spawn({
             let connections = Arc::clone(&self.sessions);
             async move {
-                for (to, msg) in recv.iter().zip(msgs) {
-                    if let Some(receiver_session) = connections.get(to) {
+                for (to, msg) in recv_msgs {
+                    if let Some(receiver_session) = connections.get(&to) {
                         let mut target_connection = receiver_session.write().await;
 
                         target_connection.mpsc_send(msg, 0).await;

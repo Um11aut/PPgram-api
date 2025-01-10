@@ -142,16 +142,15 @@ async fn handle_send_message(
     };
 
     if associated_chat.is_group() {
-        let receivers: Vec<i32> = associated_chat
+        let receivers: Vec<_> = associated_chat
             .participants()
             .iter()
             .filter(|&u| u.user_id() != self_user_id.as_i32_unchecked())
-            .map(|u| u.user_id())
+            .map(|u| (u.user_id(), ev.clone()))
             .collect();
-        let msgs: Vec<NewMessageEvent> = receivers.clone().iter().map(|_| ev.clone()).collect();
-        let is_typing_receivers = receivers.iter().map(|&u| u.into()).collect();
+        let is_typing_receivers = receivers.iter().map(|u| u.0.into()).collect();
 
-        handler.send_events_to_connections(receivers, msgs);
+        handler.send_events_to_connections(receivers);
         handler
             .send_is_typing(interrupt_typing_ev, is_typing_receivers)
             .await;

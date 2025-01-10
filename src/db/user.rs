@@ -20,11 +20,11 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
-use super::{bucket::DatabaseBuilder, chat::hashes::HashesDB};
 use super::db::Database;
 use super::internal::error::PPError;
 use super::internal::error::PPResult;
 use super::internal::validate;
+use super::{bucket::DatabaseBuilder, chat::hashes::HashesDB};
 
 pub struct UsersDB {
     session: Arc<cassandra_cpp::Session>,
@@ -145,7 +145,6 @@ impl UsersDB {
             .hash_password(password.as_bytes(), &salt)
             .map_err(|err| PPError::from(format!("Failed to hash password: {}", err)))?
             .to_string();
-        info!("Generated new password hash: {}", password_hash);
 
         statement.bind_string(4, &password_hash)?;
         statement.bind_string(5, salt.as_str())?;
@@ -208,7 +207,7 @@ impl UsersDB {
                 user_id,
                 username,
                 if photo.is_empty() { None } else { Some(photo) },
-                profile_color as u32
+                profile_color as u32,
             ));
         }
 
@@ -376,7 +375,11 @@ impl UsersDB {
         Ok(())
     }
 
-    pub async fn update_profile_color(&self, self_user_id: &UserId, profile_color: u32) -> PPResult<()> {
+    pub async fn update_profile_color(
+        &self,
+        self_user_id: &UserId,
+        profile_color: u32,
+    ) -> PPResult<()> {
         let query = "UPDATE ksp.users SET profile_color = ? WHERE id = ?";
         let mut statement = self.session.statement(query);
 
@@ -548,7 +551,8 @@ impl UsersDB {
     pub async fn fetch_user(&self, user_id: &UserId) -> PPResult<Option<User>> {
         let statement = match user_id {
             UserId::UserId(user_id) => {
-                let query = "SELECT id, name, photo, username, profile_color FROM ksp.users WHERE id = ?";
+                let query =
+                    "SELECT id, name, photo, username, profile_color FROM ksp.users WHERE id = ?";
                 let mut statement = self.session.statement(query);
                 statement.bind_int32(0, *user_id)?;
                 statement
@@ -575,10 +579,38 @@ impl UsersDB {
                 user_id,
                 username,
                 if photo.is_empty() { None } else { Some(photo) },
-                profile_color as u32
+                profile_color as u32,
             )));
         }
 
         Ok(None)
+    }
+
+    pub async fn remove_associated_chat(
+        &self,
+        self_user_id: &UserId,
+        key_chat_id: ChatId,
+    ) -> PPResult<()> {
+        // Construct the query to remove the specific chat ID from the `chats` map
+        let query = match self_user_id {
+            UserId::UserId(_) => "DELETE chats[?] FROM ksp.users WHERE id = ?",
+            UserId::Username(_) => "DELETE chats[?] FROM ksp.users WHERE username = ?",
+        };
+
+        // Create and bind the query parameters
+        let mut statement = self.session.statement(query);
+        statement.bind_int32(0, key_chat_id)?;
+        match self_user_id {
+            UserId::UserId(user_id) => statement.bind_int32(1, *user_id)?,
+            UserId::Username(username) => statement.bind_string(1, username)?,
+        };
+
+        // Execute the query
+        statement.execute().await.map_err(|err| {
+            error!("Failed to remove associated chat: {}", err);
+            PPError::from(err)
+        })?;
+
+        Ok(())
     }
 }

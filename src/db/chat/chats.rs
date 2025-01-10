@@ -293,6 +293,18 @@ impl ChatsDB {
         }
         Ok(None)
     }
+
+    /// Deletes a specific chat by its ID
+    pub async fn delete_chat(&self, chat_id: ChatId) -> PPResult<()> {
+        let delete_query = "DELETE FROM ksp.chats WHERE id = ?";
+
+        let mut statement = self.session.statement(delete_query);
+        statement.bind_int32(0, chat_id)?;
+
+        statement.execute().await.map_err(PPError::from)?;
+
+        Ok(())
+    }
 }
 
 impl From<DatabaseBuilder> for ChatsDB {

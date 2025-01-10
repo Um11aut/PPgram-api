@@ -352,6 +352,34 @@ impl MessagesDB {
         Ok(())
     }
 
+    pub async fn delete_messages(&self, chat_id: ChatId, message_ids: &Vec<i32>) -> PPResult<()> {
+        let placeholders = message_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(", ");
+        let delete_query = format!(
+            r#"
+                DELETE FROM ksp.messages
+                WHERE chat_id = ? AND id IN ({})
+            "#,
+            placeholders
+        );
+
+        let mut statement = self.session.statement(delete_query);
+
+        // Bind the chat_id
+        statement.bind_int32(0, chat_id)?;
+
+        // Bind each message_id to its respective placeholder
+        for (i, msg_id) in message_ids.iter().enumerate() {
+            statement.bind_int32(i as usize + 1, *msg_id)?; // Bind indices start from 1
+        }
+
+        statement.execute().await?;
+        Ok(())
+    }
+
     pub async fn delete_message(&self, chat_id: ChatId, message_id: i32) -> PPResult<()> {
         let delete_query = r#"
             DELETE FROM ksp.messages
@@ -404,7 +432,7 @@ impl MessagesDB {
 
         let mut iter = result.iter();
         while let Some(row) = iter.next() {
-            let maybe_iter: Result<SetIterator, cassandra_cpp::Error>= row.get(0);
+            let maybe_iter: Result<SetIterator, cassandra_cpp::Error> = row.get(0);
             if let Ok(mut iter) = maybe_iter {
                 while iter.next().is_some() {
                     total_count += 1;
@@ -431,7 +459,7 @@ impl MessagesDB {
 
         let mut iter = result.iter();
         while let Some(row) = iter.next() {
-            let maybe_iter: Result<SetIterator, cassandra_cpp::Error>= row.get(0);
+            let maybe_iter: Result<SetIterator, cassandra_cpp::Error> = row.get(0);
             if let Ok(mut iter) = maybe_iter {
                 while let Some(hash) = iter.next() {
                     all_hashes.push(hash.get_str()?.to_string());
@@ -440,5 +468,17 @@ impl MessagesDB {
         }
 
         Ok(all_hashes)
+    }
+
+    /// Deletes all messages associated with a specific chat
+    pub async fn delete_all_messages(&self, chat_id: ChatId) -> PPResult<()> {
+        let delete_query = "DELETE FROM ksp.messages WHERE chat_id = ?";
+
+        let mut statement = self.session.statement(delete_query);
+        statement.bind_int32(0, chat_id)?;
+
+        statement.execute().await?;
+
+        Ok(())
     }
 }
