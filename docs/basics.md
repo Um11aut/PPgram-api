@@ -56,3 +56,34 @@ Each response must contain `ok` field. It indicates, if your request was success
     "user_id": "..."
 }
 ```
+If request wasn't successfully processed, you get `ok: false`, as well as error description:
+```json
+{
+    "ok": false,
+    "method": "register",
+    "error": "User with the given credentials already exists!"
+}
+```
+All the possible responses can be found in `src/message/type/response`.
+
+### Events
+To be able to get realtime updates, the event system was created. Each `TCPConnection` contains `mpsc`(Multiple Producer, Single Consumer), to be able to send events anywhere from the code!
+All the authenticated sessions are stored in according `HashMap`, which is called `Sessions`. When user authenticates, it's user_id and `Arc` session is being added there.
+If some user wants to send a message to another, after adding message to the database, API:
+* searches for the target user by the provided `user_id`
+* If found, sends the event on receiver handler task
+* Then, the `Mutex` will wait until the socket is free, and then send the intended message
+
+Events are always being sent on the first user connection
+
+Events are guaranteed to have `event` as Event Identifier.
+Example:
+```rs
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteMessageEvent {
+    pub event: String, // delete_message
+    pub chat_id: i32,
+    pub message_id: i32,
+}
+```
+All events can be found in `src/message/type/response/events.rs`
