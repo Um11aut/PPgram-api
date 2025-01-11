@@ -4,7 +4,7 @@ use futures::TryStreamExt;
 
 use crate::db::{
     bucket::DatabaseBuilder,
-    db::Database,
+    init::Database,
     internal::error::{PPError, PPResult},
 };
 

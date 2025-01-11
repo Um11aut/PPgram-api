@@ -1,5 +1,4 @@
 use log::debug;
-use serde_json::Value;
 
 use crate::{
     db::{
@@ -12,24 +11,22 @@ use crate::{
         types::{
             edit::EditedMessageBuilder,
             request::{
-                delete::DeleteMessageRequest,
-                edit::{
-                    EditDraftRequest, EditMessageRequest, EditSelfRequest, MarkAsReadRequest
-                },
+                delete::{DeleteAllMessagesRequest, DeleteChatRequest, DeleteMessagesRequest},
+                edit::{EditDraftRequest, EditMessageRequest, EditSelfRequest, MarkAsReadRequest},
                 extract_what_field,
             },
             response::{
-                delete::DeleteMessageResponse,
+                delete::{DeleteAllMessagesResponse, DeleteChatResponse, DeleteMessagesResponse},
                 edit::{EditDraftResponse, EditMessageResponse, MarkAsReadResponse},
                 events::{
-                    DeleteMessageEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent,
-                    MarkAsReadEvent,
+                    DeleteMessagesEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent, MarkAsReadEvent
                 },
             },
             user::{User, UserId},
         },
     },
 };
+use crate::server::message::types::response::events::DeleteAllMessagesEvent;
 
 use super::macros;
 
@@ -63,7 +60,7 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
     if let Some(hashes) = msg.sha256_hashes.as_ref() {
         for hash in hashes.iter() {
             if !hashes_db.hash_exists(hash).await? {
-                return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into())
+                return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into());
             }
         }
     }
@@ -105,27 +102,24 @@ async fn handle_edit_message(handler: &mut JsonHandler, msg: EditMessageRequest)
             .await?
             .unwrap();
 
-        let receivers = chat
+        let ev = EditMessageEvent {
+            event: "edit_message".into(),
+            new_message: edited_msg,
+        };
+
+        let receivers: Vec<_> = chat
             .participants()
             .iter()
             .filter(|el| el.user_id() != self_user_id.as_i32_unchecked())
-            .map(|u| u.user_id());
-
-        let msgs = receivers.clone().map(|_| EditMessageEvent {
-            event: "edit_message".into(),
-            new_message: edited_msg.clone(),
-        });
-
-        handler.send_events_to_connections(receivers.collect(), msgs.collect());
+            .map(|u| (u.user_id(), ev.clone()))
+            .collect();
+        handler.send_events_to_connections(receivers);
     }
 
     Ok(())
 }
 
-async fn handle_mark_as_read(
-    handler: &mut JsonHandler,
-    msg: &MarkAsReadRequest,
-) -> PPResult<()> {
+async fn handle_mark_as_read(handler: &mut JsonHandler, msg: &MarkAsReadRequest) -> PPResult<()> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials_unchecked();
@@ -152,20 +146,21 @@ async fn handle_mark_as_read(
     if msg.chat_id.is_positive() {
         handler.send_event_to_con_detached(msg.chat_id, ev);
     } else {
+        let mut ev = ev;
         let (group, _) = chats_db
             .fetch_chat(&self_user_id, chat_id)
             .await?
             .expect("chat to exist");
+        ev.chat_id = msg.chat_id;
 
-        let receivers: Vec<i32> = group
+        let receivers: Vec<_> = group
             .participants()
             .iter()
-            .filter(|&u| u.user_id() != self_user_id.as_i32_unchecked())
-            .map(|u| u.user_id())
+            .filter(|u| u.user_id() != self_user_id.as_i32_unchecked())
+            .map(|u| (u.user_id(), ev.clone()))
             .collect();
-        let msgs: Vec<MarkAsReadEvent> = receivers.clone().iter().map(|_| ev.clone()).collect();
 
-        handler.send_events_to_connections(receivers, msgs);
+        handler.send_events_to_connections(receivers);
     }
 
     Ok(())
@@ -238,6 +233,12 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
         users_db.update_name(&self_user_id, name).await?;
     }
 
+    if let Some(&profile_color) = msg.profile_color.as_ref() {
+        users_db
+            .update_profile_color(&self_user_id, profile_color)
+            .await?;
+    }
+
     if let Some(username) = msg.username.as_ref() {
         users_db.update_username(&self_user_id, username).await?;
     }
@@ -245,7 +246,7 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
     if let Some(hash) = msg.photo.as_ref() {
         let hashes_db: HashesDB = handler.get_db();
         if !hashes_db.hash_exists(hash).await? {
-            return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into())
+            return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into());
         }
         users_db.update_name(&self_user_id, hash).await?;
     }
@@ -272,6 +273,7 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
                     new_profile: User::construct(
                         self_profile.name().to_string(),
                         self_profile.user_id(),
+                        self_profile.profile_color(),
                         self_profile.username().to_string(),
                         self_profile.photo_cloned(),
                     ),
@@ -283,7 +285,7 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
     Ok(())
 }
 
-async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_json::Value> {
+async fn handle_edit(handler: &mut JsonHandler, content: &str) -> PPResult<serde_json::Value> {
     let what_field = extract_what_field(content)?;
 
     match what_field.as_str() {
@@ -328,9 +330,10 @@ async fn on_edit(handler: &mut JsonHandler, content: &String) -> PPResult<serde_
     }
 }
 
-async fn on_delete(handler: &mut JsonHandler, content: &str) -> PPResult<DeleteMessageResponse> {
-    let msg: DeleteMessageRequest = serde_json::from_str(content)?;
-
+async fn on_delete_msgs(
+    handler: &mut JsonHandler,
+    msg: &DeleteMessagesRequest,
+) -> PPResult<DeleteMessagesResponse> {
     let self_user_id = {
         let session = handler.session.read().await;
         let (user_id, _) = session.get_credentials_unchecked();
@@ -345,71 +348,180 @@ async fn on_delete(handler: &mut JsonHandler, content: &str) -> PPResult<DeleteM
         .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?
         .ok_or("Chat with the given chat_id doesn't exist!")?;
-    if messages_db
-        .message_exists(real_chat_id, msg.message_id)
-        .await?
-    {
-        let is_group = real_chat_id.is_negative();
-        if is_group {
-            let message_info = messages_db
-                .fetch_messages(real_chat_id, msg.message_id..0)
-                .await?;
+
+    for &msg_id in msg.message_ids.iter() {
+        if !messages_db.message_exists(real_chat_id, msg_id).await? {
+            return Err("Message with the given message_id wasn't found!".into());
+        }
+    }
+
+    let is_group = real_chat_id.is_negative();
+    if is_group {
+        for &msg_id in msg.message_ids.iter() {
+            let message_info = messages_db.fetch_messages(real_chat_id, msg_id..0).await?;
             if message_info[0].from_id != self_user_id.as_i32_unchecked() {
                 return Err("You aren't authorized to delete not yours message!".into());
             }
         }
+    }
 
-        messages_db
-            .delete_message(real_chat_id, msg.message_id)
-            .await?;
-        if !is_group {
+    messages_db
+        .delete_messages(real_chat_id, &msg.message_ids)
+        .await?;
+    if !is_group {
+        handler.send_event_to_con_detached(
+            msg.chat_id,
+            DeleteMessagesEvent {
+                event: "delete_message".into(),
+                chat_id: self_user_id.as_i32_unchecked(),
+                message_ids: msg.message_ids.clone(),
+            },
+        );
+    } else {
+        let (chat, _) = chats_db
+            .fetch_chat(&self_user_id, real_chat_id)
+            .await?
+            .unwrap();
+
+        #[cfg(debug_assertions)]
+        assert!(chat.is_group());
+
+        // filter self
+        for participant in chat
+            .participants()
+            .iter()
+            .filter(|el| el.user_id() != self_user_id.as_i32_unchecked())
+        {
+            // send real chat id for everyone
             handler.send_event_to_con_detached(
-                msg.chat_id,
-                DeleteMessageEvent {
+                participant.user_id(),
+                DeleteMessagesEvent{
                     event: "delete_message".into(),
-                    chat_id: self_user_id.as_i32_unchecked(),
-                    message_id: msg.message_id,
+                    chat_id: msg.chat_id,
+                    message_ids: msg.message_ids.clone(),
                 },
             );
-        } else {
-            let (chat, _) = chats_db
-                .fetch_chat(&self_user_id, real_chat_id)
-                .await?
-                .unwrap();
-            // assert!(chat_details.is_group());
-
-            // filter self
-            for participant in chat
-                .participants()
-                .iter()
-                .filter(|el| el.user_id() != self_user_id.as_i32_unchecked())
-            {
-                // send real chat id for everyone
-                handler.send_event_to_con_detached(
-                    participant.user_id(),
-                    DeleteMessageEvent {
-                        event: "delete_message".into(),
-                        chat_id: msg.chat_id,
-                        message_id: msg.message_id,
-                    },
-                );
-            }
         }
+    }
 
-        Ok(DeleteMessageResponse {
-            ok: true,
-            method: "delete_message".into(),
-        })
+    Ok(DeleteMessagesResponse {
+        ok: true,
+        method: "delete_message".into(),
+        chat_id: msg.chat_id,
+        message_ids: msg.message_ids.clone(),
+    })
+}
+
+async fn on_delete_all_messages(
+    handler: &mut JsonHandler,
+    msg: &DeleteAllMessagesRequest,
+) -> PPResult<DeleteAllMessagesResponse> {
+    let self_user_id = {
+        let session = handler.session.read().await;
+        let (user_id, _) = session.get_credentials_unchecked();
+        user_id
+    };
+
+    let users_db: UsersDB = handler.get_db();
+    let messages_db: MessagesDB = handler.get_db();
+    let chats_db: ChatsDB = handler.get_db();
+
+    let real_chat_id = users_db
+        .get_associated_chat_id(&self_user_id, msg.chat_id)
+        .await?
+        .ok_or("Chat with the given chat_id doesn't exist!")?;
+
+    messages_db.delete_all_messages(real_chat_id).await?;
+
+    let event = DeleteAllMessagesEvent {
+        event: "delete_all_messages".into(),
+        chat_id: self_user_id.as_i32_unchecked(),
+    };
+
+    if msg.chat_id.is_positive() {
+        handler.send_event_to_con_detached(msg.chat_id, event);
     } else {
-        Err("Message with the given message_id wasn't found!".into())
+        let mut event = event;
+        let (group, _) = chats_db
+            .fetch_chat(&self_user_id, real_chat_id)
+            .await?
+            .ok_or("Group wasn't found. WTF?")?;
+        event.chat_id = msg.chat_id;
+
+        let receivers: Vec<_> = group
+            .participants()
+            .iter()
+            .filter(|u| u.user_id() != self_user_id.as_i32_unchecked())
+            .map(|u| (u.user_id(), event.clone()))
+            .collect();
+        handler.send_events_to_connections(receivers);
+    }
+
+    Ok(DeleteAllMessagesResponse {
+        ok: true,
+        method: "delete_all_messages".into(),
+        chat_id: msg.chat_id,
+    })
+}
+
+async fn on_delete_chat(
+    handler: &mut JsonHandler,
+    msg: &DeleteChatRequest,
+) -> PPResult<DeleteChatResponse> {
+    let self_user_id = {
+        let session = handler.session.read().await;
+        let (user_id, _) = session.get_credentials_unchecked();
+        user_id
+    };
+
+    let users_db: UsersDB = handler.get_db();
+    let chats_db: ChatsDB = handler.get_db();
+
+    let real_chat_id = users_db
+        .get_associated_chat_id(&self_user_id, msg.chat_id)
+        .await?
+        .ok_or("Chat with the given chat_id doesn't exist!")?;
+
+    chats_db.delete_chat(real_chat_id).await?;
+    users_db
+        .remove_associated_chat(&self_user_id, msg.chat_id)
+        .await?;
+    users_db
+        .remove_associated_chat(&msg.chat_id.into(), self_user_id.as_i32_unchecked())
+        .await?;
+
+    Ok(DeleteChatResponse {
+        ok: true,
+        method: "delete_chat".into(),
+        chat_id: msg.chat_id,
+    })
+}
+
+async fn handle_delete(handler: &mut JsonHandler, content: &str) -> PPResult<serde_json::Value> {
+    let what = extract_what_field(content)?;
+
+    match what.as_str() {
+        "all_messages" => Ok(serde_json::to_value(
+            on_delete_all_messages(handler, &serde_json::from_str(content)?).await?,
+        )
+        .unwrap()),
+        "chat" => Ok(serde_json::to_value(
+            on_delete_chat(handler, &serde_json::from_str(content)?).await?,
+        )
+        .unwrap()),
+        "messages" => Ok(serde_json::to_value(
+            on_delete_msgs(handler, &serde_json::from_str(content)?).await?,
+        )
+        .unwrap()),
+        _ => Err("Unknown what field provided!".into()),
     }
 }
 
-async fn handle_messages(handler: &mut JsonHandler, method: &str) -> PPResult<Value> {
+async fn handle_messages(handler: &mut JsonHandler, method: &str) -> PPResult<serde_json::Value> {
     let content = handler.utf8_content_unchecked().to_owned();
     match method {
-        "edit" => Ok(serde_json::to_value(on_edit(handler, &content).await?).unwrap()),
-        "delete" => Ok(serde_json::to_value(on_delete(handler, &content).await?).unwrap()),
+        "edit" => Ok(handle_edit(handler, &content).await?),
+        "delete" => Ok(handle_delete(handler, &content).await?),
         _ => Err("Unknown method".into()),
     }
 }

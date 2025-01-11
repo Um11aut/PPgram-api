@@ -7,6 +7,7 @@ pub struct EditSelfRequest {
     pub name: Option<String>,
     pub username: Option<String>,
     pub photo: Option<String>,
+    pub profile_color: Option<u32>,
     pub password: Option<String>,
 }
 

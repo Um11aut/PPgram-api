@@ -8,7 +8,7 @@ use db::internal::error::PPError;
 
 use crate::db;
 use crate::db::bucket::DatabaseBuilder;
-use crate::db::db::Database;
+use crate::db::init::Database;
 use crate::db::internal::error::PPResult;
 use crate::db::user::UsersDB;
 use crate::server::message::types::chat::Chat;
@@ -55,24 +55,26 @@ impl ChatsDB {
     pub async fn create_private(
         &self,
         self_user_id: &UserId,
-        participants: Vec<UserId>,
+        with_user_id: &UserId,
     ) -> PPResult<(Chat, ChatDetails)> {
         let chat_id = rand::thread_rng().gen_range(1..i32::MAX);
         let insert_query = "INSERT INTO ksp.chats (id, is_group, participants) VALUES (?, ?, ?)";
         let prepared = self.session.prepare(insert_query).await?;
-        self.session.execute_unpaged(
-            &prepared,
-            (
-                chat_id,
-                false,
-                participants
-                    .iter()
-                    .map(|u| u.as_i32_unchecked())
-                    .collect::<Vec<i32>>()
-            ),
-        ).await?;
+        self.session
+            .execute_unpaged(
+                &prepared,
+                (
+                    chat_id,
+                    false,
+                    vec![
+                        self_user_id.as_i32_unchecked(),
+                        with_user_id.as_i32_unchecked(),
+                    ],
+                ),
+            )
+            .await?;
 
-        Ok(self.fetch_chat(self_user_id, chat_id).await?.unwrap())
+        Ok(self.fetch_chat(with_user_id, chat_id).await?.unwrap())
     }
 
     /// Creates new unique invitation hash for a group
@@ -185,7 +187,9 @@ impl ChatsDB {
     ) -> Result<(), PPError> {
         let update_query = "UPDATE ksp.chats SET participants = participants + ? WHERE id = ?;";
         let prepared = self.session.prepare(update_query).await?;
-        self.session.execute_unpaged(&prepared, (vec![participant.as_i32_unchecked()], chat_id)).await?;
+        self.session
+            .execute_unpaged(&prepared, (vec![participant.as_i32_unchecked()], chat_id))
+            .await?;
 
         Ok(())
     }
@@ -253,6 +257,14 @@ impl ChatsDB {
         }
 
         Ok(None)
+    }
+
+    /// Deletes a specific chat by its ID
+    pub async fn delete_chat(&self, chat_id: ChatId) -> PPResult<()> {
+        let delete_query = "DELETE FROM ksp.chats WHERE id = ?";
+        let prepared = self.session.prepare(delete_query).await?;
+        self.session.execute_unpaged(&prepared, (chat_id,)).await?;
+        Ok(())
     }
 }
 

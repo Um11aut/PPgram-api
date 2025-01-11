@@ -18,7 +18,7 @@ pub struct NewMessageEvent {
     pub new_message: Message,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EditMessageEvent {
     pub event: String,
     pub new_message: Message,
@@ -37,9 +37,22 @@ pub struct EditSelfEvent {
     pub new_profile: User,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeleteAllMessagesEvent {
+    pub event: String,
+    pub chat_id: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteMessagesEvent {
+    pub event: String,
+    pub chat_id: i32,
+    pub message_ids: Vec<i32>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteMessageEvent {
-    pub event: String,
+    pub event: String, // delete_message
     pub chat_id: i32,
     pub message_id: i32,
 }

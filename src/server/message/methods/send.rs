@@ -64,7 +64,7 @@ async fn handle_send_message(
     if let Some(hashes) = msg.content.sha256_hashes.as_ref() {
         for hash in hashes.iter() {
             if !hashes_db.hash_exists(hash).await? {
-                return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into())
+                return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into());
             }
         }
     }
@@ -88,10 +88,7 @@ async fn handle_send_message(
 
             let (chat, mut chat_details) = handler
                 .get_db::<ChatsDB>()
-                .create_private(
-                    &self_user_id,
-                    vec![self_user_id.clone(), msg.common.to.into()],
-                )
+                .create_private(&self_user_id, &msg.common.to.into())
                 .await?;
             users_db
                 .add_associated_chat(&self_user_id, msg.common.to, chat.chat_id())
@@ -113,7 +110,7 @@ async fn handle_send_message(
                     event: "new_chat".into(),
                     new_chat: ChatDetailsResponse {
                         details: chat_details,
-                        unread_count: 1,
+                        unread_count: 0,
                         draft: "".into(),
                     },
                 },
@@ -155,7 +152,9 @@ async fn handle_send_message(
         let is_typing_receivers = receivers.iter().map(|&u| u.into()).collect();
 
         handler.send_events_to_connections(receivers, msgs);
-        handler.send_is_typing(interrupt_typing_ev, is_typing_receivers).await;
+        handler
+            .send_is_typing(interrupt_typing_ev, is_typing_receivers)
+            .await;
     } else {
         handler.send_event_to_con_detached(msg.common.to, ev);
 

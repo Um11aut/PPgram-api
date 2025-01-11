@@ -15,7 +15,7 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::user::User;
 use crate::server::message::types::user::UserId;
 
-use super::db::Database;
+use super::init::Database;
 use super::internal::error::PPError;
 use super::internal::error::PPResult;
 use super::internal::validate;
@@ -45,6 +45,7 @@ impl Database for UsersDB {
                 name TEXT,
                 username TEXT,
                 photo TEXT,
+                profile_color int,
                 password_hash TEXT,
                 password_salt TEXT,
                 sessions LIST<TEXT>,
@@ -122,8 +123,10 @@ impl UsersDB {
         }
 
         let user_id: i32 = rand::thread_rng().gen_range(1..i32::MAX);
+        let profile_color: u32 = rand::thread_rng().gen_range(1..=21);
+
         let query = r#"
-            INSERT INTO ksp.users (id, name, username, password_hash, password_salt, sessions, photo, chats) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ksp.users (id, name, username, password_hash, password_salt, sessions, photo, chats, profile_color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
         let prepared = self.session.prepare(query).await?;
 
@@ -148,6 +151,7 @@ impl UsersDB {
                     Vec::<String>::new(),
                     "",
                     HashMap::<i32, i32>::new(),
+                    profile_color as i32,
                 ),
             )
             .await?;
@@ -181,21 +185,24 @@ impl UsersDB {
                 }
                 // Drain '@' symbol
                 search_query.remove(1);
-                "SELECT username, id, photo, name FROM ksp.users WHERE username LIKE ? LIMIT 50 ALLOW FILTERING;"
+                "SELECT username, id, photo, name, profile_color FROM ksp.users WHERE username LIKE ? LIMIT 50 ALLOW FILTERING;"
             }
-            false => "SELECT username, id, photo, name FROM ksp.users WHERE name LIKE ? LIMIT 50 ALLOW FILTERING;",
+            false => "SELECT username, id, photo, name, profile_color FROM ksp.users WHERE name LIKE ? LIMIT 50 ALLOW FILTERING;",
         };
         let mut rows_stream = self
             .session
             .query_iter(scylla_query, (search_query,))
             .await?
-            .rows_stream::<(String, i32, String, String)>()?;
+            .rows_stream::<(String, i32, String, String, i32)>()?;
 
         let mut o = vec![];
-        while let Some((username, user_id, photo, name)) = rows_stream.try_next().await? {
+        while let Some((username, user_id, photo, name, profile_color)) =
+            rows_stream.try_next().await?
+        {
             o.push(User::construct(
                 name,
                 user_id,
+                profile_color as u32,
                 username,
                 if photo.is_empty() { None } else { Some(photo) },
             ));
@@ -285,6 +292,22 @@ impl UsersDB {
             .await?;
 
         Ok(new_session)
+    }
+
+    pub async fn update_profile_color(
+        &self,
+        self_user_id: &UserId,
+        profile_color: u32,
+    ) -> PPResult<()> {
+        let query = "UPDATE ksp.users SET profile_color = ? WHERE id = ?";
+        let prepared = self.session.prepare(query).await?;
+        self.session
+            .execute_unpaged(
+                &prepared,
+                (profile_color as i32, self_user_id.as_i32_unchecked()),
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn update_photo(&self, self_user_id: &UserId, media_hash: &str) -> PPResult<()> {
@@ -384,11 +407,37 @@ impl UsersDB {
             .rows_stream::<(HashMap<i32, i32>,)>()?
             .try_next()
             .await?;
-        let chat_id = maybe.and_then(|(map,)| {
-            map.get(&key_chat_id).copied()
-        });
+        let chat_id = maybe.and_then(|(map,)| map.get(&key_chat_id).copied());
 
         Ok(chat_id)
+    }
+
+    // Remove chat_id from association map
+    pub async fn remove_associated_chat(
+        &self,
+        self_user_id: &UserId,
+        key_chat_id: ChatId,
+    ) -> PPResult<()> {
+        let query = "SELECT chats FROM ksp.users WHERE id = ?";
+        let mut iter = self
+            .session
+            .query_iter(query, (self_user_id.as_i32_unchecked(),))
+            .await?
+            .rows_stream::<(HashMap<i32, i32>,)>()?;
+
+        if let Some((mut chats,)) = iter.try_next().await? {
+            // Remove the entry for the given public_chat_id
+            chats.remove(&key_chat_id);
+
+            // Update the chats map in the database
+            let query = "UPDATE ksp.users SET chats = ? WHERE id = ?";
+            let prepared = self.session.prepare(query).await?;
+            self.session
+                .execute_unpaged(&prepared, (chats, self_user_id.as_i32_unchecked()))
+                .await?;
+        }
+
+        Ok(())
     }
 
     /// Adds to a `chats` map new `Key, Value`
@@ -428,18 +477,20 @@ impl UsersDB {
     pub async fn fetch_user(&self, user_id: &UserId) -> PPResult<Option<User>> {
         Ok(match user_id {
             UserId::UserId(user_id) => {
-                let query = "SELECT id, name, photo, username FROM ksp.users WHERE id = ?";
+                let query =
+                    "SELECT id, name, photo, username, profile_color FROM ksp.users WHERE id = ?";
                 let maybe = self
                     .session
                     .query_iter(query, (*user_id,))
                     .await?
-                    .rows_stream::<(i32, String, String, String)>()?
+                    .rows_stream::<(i32, String, String, String, i32)>()?
                     .try_next()
                     .await?;
-                maybe.map(|(user_id, name, photo, username)| {
+                maybe.map(|(user_id, name, photo, username, profile_color)| {
                     User::construct(
                         name,
                         user_id,
+                        profile_color as u32,
                         username,
                         if photo.is_empty() { None } else { Some(photo) },
                     )
@@ -451,13 +502,14 @@ impl UsersDB {
                     .session
                     .query_iter(query, (username,))
                     .await?
-                    .rows_stream::<(i32, String, String, String)>()?
+                    .rows_stream::<(i32, String, String, String, i32)>()?
                     .try_next()
                     .await?;
-                maybe.map(|(user_id, name, photo, username)| {
+                maybe.map(|(user_id, name, photo, username, profile_color)| {
                     User::construct(
                         name,
                         user_id,
+                        profile_color as u32,
                         username,
                         if photo.is_empty() { None } else { Some(photo) },
                     )

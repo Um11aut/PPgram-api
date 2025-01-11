@@ -6,7 +6,7 @@ pub mod db;
 pub mod fs;
 pub mod server;
 
-use db::db::create_tables;
+use db::init::create_tables;
 use log::error;
 use server::server::Server;
 

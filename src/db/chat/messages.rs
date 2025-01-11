@@ -4,7 +4,7 @@ use scylla::DeserializeRow;
 use scylla::SerializeRow;
 
 use crate::db::bucket::DatabaseBuilder;
-use crate::db::db::Database;
+use crate::db::init::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;
 use crate::db::internal::validate::validate_range;
@@ -82,8 +82,7 @@ impl From<DatabaseBuilder> for MessagesDB {
     }
 }
 
-#[derive(Debug, DeserializeRow, SerializeRow)]
-#[derive(Default)]
+#[derive(Debug, DeserializeRow, SerializeRow, Default)]
 struct DatabaseMessage {
     id: i32,
     is_unread: bool,
@@ -98,7 +97,6 @@ struct DatabaseMessage {
     has_hashes: bool,
     sha256_hashes: Vec<String>,
 }
-
 
 impl MessagesDB {
     pub async fn add_message(
@@ -333,6 +331,13 @@ impl MessagesDB {
 
         Ok(())
     }
+    pub async fn delete_messages(&self, chat_id: ChatId, message_ids: &Vec<i32>) -> PPResult<()> {
+        for msg_id in message_ids {
+            self.delete_message(chat_id, *msg_id).await?
+        }
+
+        Ok(())
+    }
 
     pub async fn delete_message(&self, chat_id: ChatId, message_id: i32) -> PPResult<()> {
         let delete_query = r#"
@@ -345,6 +350,14 @@ impl MessagesDB {
             .execute_unpaged(&prepared, (chat_id, message_id))
             .await?;
 
+        Ok(())
+    }
+
+    /// Deletes all messages associated with a specific chat
+    pub async fn delete_all_messages(&self, chat_id: ChatId) -> PPResult<()> {
+        let delete_query = "DELETE FROM ksp.messages WHERE chat_id = ?";
+        let prepared = self.session.prepare(delete_query).await?;
+        self.session.execute_unpaged(&prepared, (chat_id,)).await?;
         Ok(())
     }
 
