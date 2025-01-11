@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cassandra_cpp::AsRustType;
+use futures::TryStreamExt;
 
 use crate::{
     db::{
@@ -12,11 +12,11 @@ use crate::{
 };
 
 pub struct DraftsDB {
-    session: Arc<cassandra_cpp::Session>,
+    session: Arc<scylla::Session>,
 }
 
 impl Database for DraftsDB {
-    fn new(session: Arc<cassandra_cpp::Session>) -> Self {
+    fn new(session: Arc<scylla::Session>) -> Self {
         Self {
             session: Arc::clone(&session),
         }
@@ -32,7 +32,7 @@ impl Database for DraftsDB {
             );
         "#;
 
-        self.session.execute(create_table_query).await?;
+        self.session.query_unpaged(create_table_query, &[]).await?;
         Ok(())
     }
 }
@@ -50,30 +50,40 @@ impl DraftsDB {
             UPDATE ksp.drafts SET content = ? WHERE user_id = ? AND chat_id = ?;
             APPLY BATCH;
         ";
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, from_user_id.as_i32_unchecked())?;
-        statement.bind_int32(1, target_chat_id)?;
-        statement.bind_string(2, content)?;
-        statement.bind_string(3, content)?;
-        statement.bind_int32(4, from_user_id.as_i32_unchecked())?;
-        statement.bind_int32(5, target_chat_id)?;
+        let prepared = self.session.prepare(query).await?;
+        self.session
+            .execute_unpaged(
+                &prepared,
+                (
+                    from_user_id.as_i32_unchecked(),
+                    target_chat_id,
+                    content.to_owned(),
+                    content.to_owned(),
+                    from_user_id.as_i32_unchecked(),
+                    target_chat_id,
+                ),
+            )
+            .await?;
 
         Ok(())
     }
 
-    pub async fn fetch_draft(&self, self_user_id: &UserId, chat_id: ChatId) -> PPResult<Option<String>> {
+    pub async fn fetch_draft(
+        &self,
+        self_user_id: &UserId,
+        chat_id: ChatId,
+    ) -> PPResult<Option<String>> {
         let query = "SELECT content FROM ksp.drafts WHERE user_id = ? AND chat_id = ?";
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, self_user_id.as_i32_unchecked())?;
-        statement.bind_int32(1, chat_id)?;
+        let prepared = self.session.prepare(query).await?;
 
-        let result = statement.execute().await?;
-        if let Some(row) = result.first_row() {
-            let draft: String = row.get(0)?;
-            Ok(Some(draft))
-        } else {
-            Ok(None)
-        }
+        Ok(self
+            .session
+            .execute_iter(prepared, (self_user_id.as_i32_unchecked(), chat_id))
+            .await?
+            .rows_stream::<(String,)>()?
+            .try_next()
+            .await?
+            .map(|v| v.0))
     }
 }
 

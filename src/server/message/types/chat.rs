@@ -48,7 +48,7 @@ impl ChatDetails {
         self.photo.as_ref()
     }
 
-    pub fn username(&self) -> Option<&String> {
+    pub fn tag(&self) -> Option<&String> {
         self.tag.as_ref()
     }
 }

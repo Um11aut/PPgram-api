@@ -33,15 +33,11 @@ impl EditedMessageBuilder {
             Some(content)
         } else {msg.content};
 
-        let hashes = if let Some(hashes) = self.sha256_hashes {
-            hashes
-        } else {msg.sha256_hashes};
-
         Message {
             is_unread: unread_changed,
             reply_to: reply_to_changed,
             content: content_changed,
-            sha256_hashes: hashes,
+            sha256_hashes: self.sha256_hashes,
             ..msg
         }
     }

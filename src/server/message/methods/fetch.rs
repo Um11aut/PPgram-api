@@ -48,7 +48,10 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsRe
             }
             chats_details.push(ChatDetailsResponse {
                 details,
-                unread_count: messages_db.fetch_unread_count(associated_chat_id).await?,
+                unread_count: messages_db
+                    .fetch_unread_count(associated_chat_id)
+                    .await?
+                    .ok_or(PPError::from("Failed to fetch chat!"))?,
                 draft: drafts_db
                     .fetch_draft(&self_user_id, associated_chat_id)
                     .await?
@@ -191,7 +194,10 @@ async fn on_chat_info(handler: &mut JsonHandler) -> PPResult<FetchChatInfoRespon
         .get_associated_chat_id(&self_user_id, msg.chat_id)
         .await?
         .ok_or("Provided chat_id wasn't found!")?;
-    let sha256_hashes = messages_db.fetch_all_hashes(real_chat_id).await?;
+    let sha256_hashes = messages_db
+        .fetch_all_hashes(real_chat_id)
+        .await?
+        .ok_or("No hashes by the given chat_id were found")?;
 
     let mut photo_count = 0;
     let mut video_count = 0;
@@ -202,7 +208,8 @@ async fn on_chat_info(handler: &mut JsonHandler) -> PPResult<FetchChatInfoRespon
         let hash_info = hashes_db
             .fetch_hash(&hash)
             .await?
-            .ok_or("Internal error.")?;
+            .ok_or("No way that happened")?;
+
         if hash_info.is_media {
             let media_extension = hash_info
                 .file_path

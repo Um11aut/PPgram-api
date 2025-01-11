@@ -8,10 +8,13 @@ use crate::{
         handlers::json_handler::JsonHandler,
         methods::macros,
         types::{
-            chat::ChatDetailsResponse, request::join::JoinGroupRequest, response::{
+            chat::ChatDetailsResponse,
+            request::join::JoinGroupRequest,
+            response::{
                 events::NewParticipantEvent,
                 join::{JoinGroupResponse, JoinLinkNotFoundResponse},
-            }, user::UserId
+            },
+            user::UserId,
         },
     },
 };
@@ -81,16 +84,21 @@ async fn on_join_group(
             let messages_db: MessagesDB = handler.get_db();
             let drafts_db: DraftsDB = handler.get_db();
 
-            let unread_count = messages_db.fetch_unread_count(chat_details.chat_id).await?;
-            let draft = drafts_db.fetch_draft(&self_user_id, chat_details.chat_id).await?;
+            let unread_count = messages_db
+                .fetch_unread_count(chat_details.chat_id)
+                .await?
+                .ok_or(PPError::from("Failed to fetch chat"))?;
+            let draft = drafts_db
+                .fetch_draft(&self_user_id, chat_details.chat_id)
+                .await?;
             Ok(JoinGroupResult::JoinGroupResponse(JoinGroupResponse {
                 ok: true,
                 method: "join_group".into(),
-                chat: ChatDetailsResponse{
+                chat: ChatDetailsResponse {
                     details: chat_details,
                     unread_count,
-                    draft: draft.unwrap_or("".to_string())
-                }
+                    draft: draft.unwrap_or("".to_string()),
+                },
             }))
         }
         None => Ok(JoinGroupResult::JoinLinkNotFoundResponse(

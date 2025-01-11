@@ -4,6 +4,7 @@ use std::{
 };
 
 use log::error;
+use scylla::{deserialize::TypeCheckError, transport::errors::QueryError};
 use serde_json::json;
 
 use crate::server::{connection::TCPConnection, message::builder::MessageBuilder};
@@ -61,8 +62,14 @@ impl From<tokio::io::Error> for PPError {
     }
 }
 
-impl From<cassandra_cpp::Error> for PPError {
-    fn from(err: cassandra_cpp::Error) -> Self {
+impl From<TypeCheckError> for PPError {
+    fn from(err: TypeCheckError) -> Self {
+        PPError::Server(Box::new(err))
+    }
+}
+
+impl From<QueryError> for PPError {
+    fn from(err: QueryError) -> Self {
         PPError::Server(Box::new(err))
     }
 }

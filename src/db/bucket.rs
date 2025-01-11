@@ -4,15 +4,16 @@ use std::sync::{
 };
 
 use log::{error, info};
+use scylla::SessionBuilder;
 
 #[derive(Debug)]
 pub struct DatabaseBucket {
-    connection: Arc<cassandra_cpp::Session>,
+    connection: Arc<scylla::Session>,
     reference_count: Arc<AtomicUsize>,
 }
 
-impl From<Arc<cassandra_cpp::Session>> for DatabaseBucket {
-    fn from(value: Arc<cassandra_cpp::Session>) -> Self {
+impl From<Arc<scylla::Session>> for DatabaseBucket {
+    fn from(value: Arc<scylla::Session>) -> Self {
         let count = Arc::strong_count(&value);
         Self {
             connection: value,
@@ -34,21 +35,19 @@ impl DatabaseBucket {
     pub async fn new() -> DatabaseBucket {
         let contact_points = std::env::var("CASSANDRA_HOST").unwrap_or(String::from("127.0.0.1"));
 
-        let mut cluster = cassandra_cpp::Cluster::default();
-        let cluster = cluster
-            .set_contact_points(contact_points.as_str())
-            .expect("Failed to set contact points");
-        cluster.set_load_balance_round_robin();
+        let cluster = SessionBuilder::new().known_node(contact_points);
 
-        while let Err(err) = cluster.connect().await {
-            error!("{}", err);
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-        let session = cluster.connect().await.unwrap();
+        loop {
+            let res = cluster.build().await;
+            if let Err(err) = res {
+                error!("{}", err);
+                continue;
+            }
 
-        Self {
-            connection: Arc::new(session),
-            reference_count: Arc::new(1.into()),
+            return Self {
+                connection: Arc::new(res.unwrap()),
+                reference_count: Arc::new(1.into()),
+            };
         }
     }
 
@@ -74,7 +73,7 @@ impl DatabaseBucket {
         current_value >= 3
     }
 
-    pub fn get_connection(&self) -> Arc<cassandra_cpp::Session> {
+    pub fn get_connection(&self) -> Arc<scylla::Session> {
         self.connection.clone()
     }
 
@@ -98,7 +97,7 @@ impl From<DatabaseBucket> for DatabaseBuilder {
 }
 
 impl DatabaseBuilder {
-    pub fn from_raw(connection: Arc<cassandra_cpp::Session>) -> Self {
+    pub fn from_raw(connection: Arc<scylla::Session>) -> Self {
         Self {
             bucket: connection.into(),
         }
