@@ -4,8 +4,8 @@ use argon2::{
     },
     Argon2,
 };
-use futures::{stream::iter, TryStreamExt};
-use log::{error, info};
+use futures::{stream::iter, StreamExt, TryStreamExt};
+use log::{debug, error, info};
 use rand::{distributions::Alphanumeric, Rng};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -83,16 +83,28 @@ impl UsersDB {
             UserId::UserId(user_id) => {
                 let query = "SELECT id FROM ksp.users WHERE id = ?";
                 let prepared = self.session.prepare(query).await?;
-                self.session.execute_unpaged(&prepared, (*user_id,)).await?
+                self.session
+                    .execute_iter(prepared, (*user_id,))
+                    .await?
+                    .rows_stream::<(i32,)>()?
+                    .try_next()
+                    .await?
+                    .map(|v| v.0)
             }
             UserId::Username(username) => {
                 let query = "SELECT id FROM ksp.users WHERE username = ?";
                 let prepared = self.session.prepare(query).await?;
-                self.session.execute_unpaged(&prepared, (username,)).await?
+                self.session
+                    .execute_iter(prepared, (username,))
+                    .await?
+                    .rows_stream::<(i32,)>()?
+                    .try_next()
+                    .await?
+                    .map(|v| v.0)
             }
         };
 
-        Ok(result.is_rows())
+        Ok(result.is_some())
     }
 
     /// Register the user in database. Returns `user_id` and `session_id` if successfull
@@ -169,9 +181,9 @@ impl UsersDB {
                 }
                 // Drain '@' symbol
                 search_query.remove(1);
-                "SELECT username, id, photo, name FROM ksp.users WHERE username LIKE ? LIMIT 50;"
+                "SELECT username, id, photo, name FROM ksp.users WHERE username LIKE ? LIMIT 50 ALLOW FILTERING;"
             }
-            false => "SELECT username, id, photo, name FROM ksp.users WHERE name LIKE ? LIMIT 50;",
+            false => "SELECT username, id, photo, name FROM ksp.users WHERE name LIKE ? LIMIT 50 ALLOW FILTERING;",
         };
         let mut rows_stream = self
             .session
@@ -364,16 +376,19 @@ impl UsersDB {
         self_user_id: &UserId,
         key_chat_id: ChatId,
     ) -> PPResult<Option<ChatId>> {
-        let query = "SELECT chats[?] FROM ksp.users WHERE id = ?";
+        let query = "SELECT chats FROM ksp.users WHERE id = ?";
         let maybe = self
             .session
-            .query_iter(query, (key_chat_id, self_user_id.as_i32_unchecked()))
+            .query_iter(query, (self_user_id.as_i32_unchecked(),))
             .await?
-            .rows_stream::<(i32,)>()?
+            .rows_stream::<(HashMap<i32, i32>,)>()?
             .try_next()
             .await?;
+        let chat_id = maybe.and_then(|(map,)| {
+            map.get(&key_chat_id).copied()
+        });
 
-        Ok(maybe.map(|(chat_id,)| chat_id))
+        Ok(chat_id)
     }
 
     /// Adds to a `chats` map new `Key, Value`
@@ -381,7 +396,7 @@ impl UsersDB {
     /// Key is public chat id that is relative and visible to the self user
     ///
     /// `private_chat_id` is the real chat id.
-    pub async fn add_chat(
+    pub async fn add_associated_chat(
         &self,
         self_user_id: &UserId,
         public_chat_id: ChatId,
@@ -394,7 +409,9 @@ impl UsersDB {
             UserId::UserId(user_id) => {
                 let query = "UPDATE ksp.users SET chats = chats + ? WHERE id = ?";
                 let prepared = self.session.prepare(query).await?;
-                self.session.execute_unpaged(&prepared, (*user_id,)).await?;
+                self.session
+                    .execute_unpaged(&prepared, (map, *user_id))
+                    .await?;
             }
             UserId::Username(username) => {
                 let query = "UPDATE ksp.users SET chats = chats + ? WHERE username = ?";

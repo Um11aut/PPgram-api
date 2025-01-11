@@ -58,7 +58,7 @@ async fn on_join_group(
                 return Err(PPError::from("You have already joined this chat!"));
             }
             users_db
-                .add_chat(&self_user_id, chat.chat_id(), chat.chat_id())
+                .add_associated_chat(&self_user_id, chat.chat_id(), chat.chat_id())
                 .await?;
             chats_db
                 .add_participant(chat.chat_id(), &self_user_id)

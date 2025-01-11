@@ -1,4 +1,5 @@
 use futures::TryStreamExt;
+use log::debug;
 use scylla::DeserializeRow;
 use scylla::SerializeRow;
 
@@ -60,6 +61,15 @@ impl Database for MessagesDB {
             )
             .await?;
 
+        self.session
+            .query_unpaged(
+                r#"
+                    CREATE INDEX IF NOT EXISTS idx_messages_id ON ksp.messages(id);
+                "#,
+                &[],
+            )
+            .await?;
+
         Ok(())
     }
 }
@@ -73,6 +83,7 @@ impl From<DatabaseBuilder> for MessagesDB {
 }
 
 #[derive(Debug, DeserializeRow, SerializeRow)]
+#[derive(Default)]
 struct DatabaseMessage {
     id: i32,
     is_unread: bool,
@@ -88,24 +99,6 @@ struct DatabaseMessage {
     sha256_hashes: Vec<String>,
 }
 
-impl Default for DatabaseMessage {
-    fn default() -> Self {
-        Self {
-            id: Default::default(),
-            is_unread: Default::default(),
-            from_id: Default::default(),
-            chat_id: Default::default(),
-            edited: Default::default(),
-            date: Default::default(),
-            has_reply: Default::default(),
-            reply_to: Default::default(),
-            has_content: Default::default(),
-            content: Default::default(),
-            has_hashes: Default::default(),
-            sha256_hashes: Default::default(),
-        }
-    }
-}
 
 impl MessagesDB {
     pub async fn add_message(
@@ -230,7 +223,7 @@ impl MessagesDB {
                 SELECT id, is_unread, from_id, chat_id, edited, date, has_reply,
                     reply_to, has_content, content, has_hashes, sha256_hashes
                     FROM ksp.messages
-                    WHERE chat_id = ? AND id >= ? AND id <= ?
+                    WHERE chat_id = ? AND id >= ? AND id <= ?;
             "#;
             let prepared = self.session.prepare(query).await?;
             self.session
@@ -242,11 +235,11 @@ impl MessagesDB {
                 SELECT id, is_unread, from_id, chat_id, edited, date, has_reply,
                     reply_to, has_content, content, has_hashes, sha256_hashes
                     FROM ksp.messages
-                    WHERE chat_id = ? AND id = ?
+                    WHERE chat_id = ? AND id = ?;
             "#;
             let prepared = self.session.prepare(query).await?;
             self.session
-                .execute_iter(prepared, (chat_id, start, end))
+                .execute_iter(prepared, (chat_id, start))
                 .await?
                 .rows_stream::<DatabaseMessage>()?
         };

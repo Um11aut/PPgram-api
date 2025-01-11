@@ -1,4 +1,5 @@
 use futures::TryStreamExt;
+use log::debug;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use std::sync::Arc;
@@ -67,9 +68,9 @@ impl ChatsDB {
                 participants
                     .iter()
                     .map(|u| u.as_i32_unchecked())
-                    .collect::<Vec<i32>>(),
+                    .collect::<Vec<i32>>()
             ),
-        );
+        ).await?;
 
         Ok(self.fetch_chat(self_user_id, chat_id).await?.unwrap())
     }
@@ -139,7 +140,7 @@ impl ChatsDB {
                     tag: tag.filter(|tag| !tag.is_empty()),
                 }
             } else {
-                chat.get_personal_chat_details(&self_user_id).await?
+                chat.get_personal_chat_details(self_user_id).await?
             };
 
             return Ok(Some((chat, details)));
@@ -227,6 +228,7 @@ impl ChatsDB {
             let users_db: UsersDB = unsafe { std::mem::transmute(self.session.clone()) };
 
             let mut users = vec![];
+
             for participant in participants {
                 let user = users_db.fetch_user(&participant.into()).await?;
                 if let Some(user) = user {
@@ -244,7 +246,7 @@ impl ChatsDB {
                     tag: tag.filter(|tag| !tag.is_empty()),
                 }
             } else {
-                chat.get_personal_chat_details(&self_user_id).await?
+                chat.get_personal_chat_details(self_user_id).await?
             };
 
             return Ok(Some((chat, details)));
