@@ -7,26 +7,9 @@ services:
         - "9042:9042"
       networks:
         - cassandra
-    # command: --seeds=scylla-node1,scylla-node2 --smp 1 --memory 750M --overprovisioned 1 --api-address 0.0.0.0
       volumes:
         - ./conf/scylla.yaml:/etc/scylla/scylla.yaml
         - scylla_data:/var/lib/scylla
-
-  #  cassandra:
-  #    image: cassandra:4.0.9
-  #    container_name: cassandra
-  #    logging:
-  #      driver: none
-  #    ports:
-  #      - "9042:9042"
-  #    networks:
-  #      - cassandra
-  #    environment:
-  #      CASSANDRA_START_RPC: 'true'
-  #    volumes:
-  #      - cassandra_data:/var/lib/cassandra
-  #      - ./conf/cassandra.yaml:/etc/cassandra/cassandra.yaml
-
   rust-app:
     build:
       context: .

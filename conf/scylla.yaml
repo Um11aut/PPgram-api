@@ -100,12 +100,11 @@ seed_provider:
 # If you leave broadcast_address (below) empty, then setting listen_address
 # to 0.0.0.0 is wrong as other nodes will not know how to reach this node.
 # If you set broadcast_address, then you can set listen_address to 0.0.0.0.
-listen_address: 0.0.0.0
+listen_address: 172.18.0.2
 
 # Address to broadcast to other Scylla nodes
 # Leaving this blank will set it to the same value as listen_address
-# broadcast_address: 1.2.3.4
-
+# broadcast_address: 172.18.0.2
 
 # When using multiple physical network interfaces, set this to true to listen on broadcast_address
 # in addition to the listen_address, allowing nodes to communicate in both interfaces.

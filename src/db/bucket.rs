@@ -6,10 +6,17 @@ use std::sync::{
 use log::{error, info};
 use scylla::SessionBuilder;
 
-#[derive(Debug)]
 pub struct DatabaseBucket {
     connection: Arc<scylla::Session>,
     reference_count: Arc<AtomicUsize>,
+}
+
+impl std::fmt::Debug for DatabaseBucket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabaseBucket")
+            .field("reference_count", &self.reference_count)
+            .finish()
+    }
 }
 
 impl From<Arc<scylla::Session>> for DatabaseBucket {
