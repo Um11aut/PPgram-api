@@ -1,16 +1,16 @@
 use std::{path::PathBuf, sync::Arc};
 
-use cassandra_cpp::AsRustType;
+use futures::TryStreamExt;
 
 use crate::db::{
     bucket::DatabaseBuilder,
-    db::Database,
+    init::Database,
     internal::error::{PPError, PPResult},
 };
 
 #[derive(Clone)]
 pub struct HashesDB {
-    session: Arc<cassandra_cpp::Session>,
+    session: Arc<scylla::Session>,
 }
 
 impl From<DatabaseBuilder> for HashesDB {
@@ -22,7 +22,7 @@ impl From<DatabaseBuilder> for HashesDB {
 }
 
 impl Database for HashesDB {
-    fn new(session: Arc<cassandra_cpp::Session>) -> Self {
+    fn new(session: Arc<scylla::Session>) -> Self {
         Self {
             session: Arc::clone(&session),
         }
@@ -40,7 +40,7 @@ impl Database for HashesDB {
             );
         "#;
 
-        self.session.execute(create_table_query).await?;
+        self.session.query_unpaged(create_table_query, &[]).await?;
         Ok(())
     }
 }
@@ -49,7 +49,7 @@ pub struct HashInfo {
     pub is_media: bool,
     pub file_name: String,
     pub file_path: PathBuf,
-    pub preview_path: Option<PathBuf>
+    pub preview_path: Option<PathBuf>,
 }
 
 impl HashesDB {
@@ -60,12 +60,12 @@ impl HashesDB {
             WHERE hash = ?;
         "#;
 
-        let mut statement = self.session.statement(query);
-        statement.bind_string(0, sha256_hash)?; // Bind the hash
+        let result = self
+            .session
+            .query_unpaged(query, (sha256_hash.to_owned(),))
+            .await?;
 
-        let result = statement.execute().await?;
-
-        Ok(result.first_row().is_some())
+        Ok(result.is_rows())
     }
 
     pub async fn fetch_hash(&self, sha256_hash: &str) -> PPResult<Option<HashInfo>> {
@@ -75,18 +75,16 @@ impl HashesDB {
             WHERE hash = ?;
         "#;
 
-        let mut statement = self.session.statement(query);
+        let prepared = self.session.prepare(query).await?;
+        let result = self
+            .session
+            .execute_iter(prepared, (sha256_hash,))
+            .await?
+            .rows_stream::<(bool, String, String, String)>()?
+            .try_next()
+            .await?;
 
-        statement.bind_string(0, sha256_hash)?;
-
-        let result = statement.execute().await?;
-
-        if let Some(row) = result.first_row() {
-            let is_media: bool = row.get(0)?;
-            let file_name: String = row.get(1)?;
-            let file_path: String = row.get(2)?;
-            let preview_path: String = row.get(3)?;
-
+        if let Some((is_media, file_name, file_path, preview_path)) = result {
             return Ok(Some(HashInfo {
                 is_media,
                 file_name,
@@ -115,15 +113,19 @@ impl HashesDB {
             VALUES (?, ?, ?, ?, ?);
         "#;
 
-        let mut statement = self.session.statement(query);
-
-        statement.bind_string(0, sha256_hash)?; // Bind the hash
-        statement.bind_bool(1, is_media)?;
-        statement.bind_string(2, file_name)?;
-        statement.bind_string(3, file_path)?;
-        statement.bind_string(4, preview_path.unwrap_or(""))?;
-
-        statement.execute().await?;
+        let prepared = self.session.prepare(query).await?;
+        self.session
+            .execute_unpaged(
+                &prepared,
+                (
+                    sha256_hash,
+                    is_media,
+                    file_name.to_owned(),
+                    file_path.to_owned(),
+                    preview_path.unwrap_or(""),
+                ),
+            )
+            .await?;
 
         Ok(())
     }

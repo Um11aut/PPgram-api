@@ -91,11 +91,11 @@ async fn handle_send_message(
                 .create_private(&self_user_id, &msg.common.to.into())
                 .await?;
             users_db
-                .add_chat(&self_user_id, msg.common.to, chat.chat_id())
+                .add_associated_chat(&self_user_id, msg.common.to, chat.chat_id())
                 .await
                 .unwrap();
             users_db
-                .add_chat(
+                .add_associated_chat(
                     &msg.common.to.into(),
                     self_user_id.as_i32_unchecked(),
                     chat.chat_id(),

@@ -19,14 +19,14 @@ use crate::{
                 delete::{DeleteAllMessagesResponse, DeleteChatResponse, DeleteMessagesResponse},
                 edit::{EditDraftResponse, EditMessageResponse, MarkAsReadResponse},
                 events::{
-                    DeleteAllMessagesEvent, DeleteMessageEvent, EditMessageEvent, EditSelfEvent,
-                    IsTypingEvent, MarkAsReadEvent,
+                    DeleteMessagesEvent, EditMessageEvent, EditSelfEvent, IsTypingEvent, MarkAsReadEvent
                 },
             },
             user::{User, UserId},
         },
     },
 };
+use crate::server::message::types::response::events::DeleteAllMessagesEvent;
 
 use super::macros;
 
@@ -273,9 +273,9 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
                     new_profile: User::construct(
                         self_profile.name().to_string(),
                         self_profile.user_id(),
+                        self_profile.profile_color(),
                         self_profile.username().to_string(),
                         self_profile.photo_cloned(),
-                        self_profile.profile_color(),
                     ),
                 },
             );
@@ -371,7 +371,7 @@ async fn on_delete_msgs(
     if !is_group {
         handler.send_event_to_con_detached(
             msg.chat_id,
-            DeleteMessageEvent {
+            DeleteMessagesEvent {
                 event: "delete_message".into(),
                 chat_id: self_user_id.as_i32_unchecked(),
                 message_ids: msg.message_ids.clone(),
@@ -395,7 +395,7 @@ async fn on_delete_msgs(
             // send real chat id for everyone
             handler.send_event_to_con_detached(
                 participant.user_id(),
-                DeleteMessageEvent {
+                DeleteMessagesEvent{
                     event: "delete_message".into(),
                     chat_id: msg.chat_id,
                     message_ids: msg.message_ids.clone(),

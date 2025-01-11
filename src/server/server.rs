@@ -101,11 +101,11 @@ impl Server {
 
         loop {
             match reader.lock().await.read(&mut buffer).await {
-                Ok(0) => {break;},
+                Ok(0) => {drop(buffer); break;},
                 Ok(n) => {
                     handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
-                Err(_) => {break;},
+                Err(_) => {drop(buffer); break;},
             }
         }
 

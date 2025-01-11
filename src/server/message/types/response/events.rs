@@ -44,10 +44,17 @@ pub struct DeleteAllMessagesEvent {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DeleteMessageEvent {
+pub struct DeleteMessagesEvent {
     pub event: String,
     pub chat_id: i32,
     pub message_ids: Vec<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteMessageEvent {
+    pub event: String, // delete_message
+    pub chat_id: i32,
+    pub message_id: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

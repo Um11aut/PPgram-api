@@ -1,5 +1,10 @@
+use futures::TryStreamExt;
+use log::debug;
+use scylla::DeserializeRow;
+use scylla::SerializeRow;
+
 use crate::db::bucket::DatabaseBuilder;
-use crate::db::db::Database;
+use crate::db::init::Database;
 use crate::db::internal::error::PPError;
 use crate::db::internal::error::PPResult;
 use crate::db::internal::validate::validate_range;
@@ -7,14 +12,7 @@ use crate::server::message::types::chat::ChatId;
 use crate::server::message::types::message::Message;
 use crate::server::message::types::request::send::*;
 use crate::server::message::types::user::UserId;
-use cassandra_cpp;
-use cassandra_cpp::AsRustType;
-use cassandra_cpp::CassCollection;
-use cassandra_cpp::LendingIterator;
-use cassandra_cpp::List;
-use cassandra_cpp::SetIterator;
 use core::range::RangeInclusive;
-use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -23,11 +21,11 @@ use std::time::UNIX_EPOCH;
 const AS_LAST_MESSAGE_IDX: i32 = -1;
 
 pub struct MessagesDB {
-    session: Arc<cassandra_cpp::Session>,
+    session: Arc<scylla::Session>,
 }
 
 impl Database for MessagesDB {
-    fn new(session: Arc<cassandra_cpp::Session>) -> Self {
+    fn new(session: Arc<scylla::Session>) -> Self {
         Self {
             session: Arc::clone(&session),
         }
@@ -52,13 +50,23 @@ impl Database for MessagesDB {
             ) WITH CLUSTERING ORDER BY (id DESC);
         "#;
 
-        self.session.execute(create_table_query).await?;
+        self.session.query_unpaged(create_table_query, &[]).await?;
 
         self.session
-            .execute(
+            .query_unpaged(
                 r#"
                     CREATE INDEX IF NOT EXISTS unread_index ON ksp.messages (is_unread);
                 "#,
+                &[],
+            )
+            .await?;
+
+        self.session
+            .query_unpaged(
+                r#"
+                    CREATE INDEX IF NOT EXISTS idx_messages_id ON ksp.messages(id);
+                "#,
+                &[],
             )
             .await?;
 
@@ -72,6 +80,22 @@ impl From<DatabaseBuilder> for MessagesDB {
             session: value.bucket.get_connection(),
         }
     }
+}
+
+#[derive(Debug, DeserializeRow, SerializeRow, Default)]
+struct DatabaseMessage {
+    id: i32,
+    is_unread: bool,
+    from_id: i32,
+    chat_id: i32,
+    edited: bool,
+    date: i64,
+    has_reply: bool,
+    reply_to: i32,
+    has_content: bool,
+    content: String,
+    has_hashes: bool,
+    sha256_hashes: Vec<String>,
 }
 
 impl MessagesDB {
@@ -89,65 +113,57 @@ impl MessagesDB {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#;
 
-        let mut statement = self.session.statement(insert_query);
-
+        let mut v: DatabaseMessage = Default::default();
         match self.get_latest(target_chat_id).await? {
             Some(id) => {
-                statement.bind_int32(0, id + 1)?; // id
+                v.id = id + 1;
             }
             None => {
-                statement.bind_int32(0, 0)?; // id
+                v.id = 0;
             }
-        }
+        };
+        let prepared = self.session.prepare(insert_query).await?;
 
-        statement.bind_bool(1, true)?; // is_unread
+        v.is_unread = true;
         match sender_id {
             UserId::UserId(user_id) => {
-                statement.bind_int32(2, *user_id)?; // from_id
+                v.from_id = *user_id;
             }
             UserId::Username(_) => {
                 return Err(PPError::from("UserId must be user_id, not username!"))
             }
         }
-        statement.bind_int32(3, target_chat_id)?; // chat_id
-        statement.bind_bool(4, false)?;
-        statement.bind_int64(
-            5, // date
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-        )?;
-        statement.bind_bool(6, msg.common.reply_to.is_some())?; // has_reply
-        statement.bind_int32(7, msg.common.reply_to.unwrap_or(0))?; // reply_to
+        v.chat_id = target_chat_id;
+        v.edited = false;
+        v.date = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        v.has_reply = msg.common.reply_to.is_some();
+        v.reply_to = msg.common.reply_to.unwrap_or(0);
 
         match &msg.content.text {
             Some(content) => {
-                statement.bind_bool(8, true)?;
-                statement.bind_string(9, content)?;
+                v.has_content = true;
+                v.content = content.into();
             }
             None => {
-                statement.bind_bool(8, false)?;
-                statement.bind_string(9, "")?;
+                v.has_content = false;
+                v.content = "".into();
             }
         }
         match &msg.content.sha256_hashes {
             Some(sha256_hashes) => {
-                statement.bind_bool(10, true)?;
-
-                let mut list = List::new();
-                for sha256_hash in sha256_hashes {
-                    list.append_string(sha256_hash)?;
-                }
-                statement.bind_list(11, list)?;
+                v.has_hashes = true;
+                v.sha256_hashes = sha256_hashes.clone();
             }
             None => {
-                statement.bind_bool(10, false)?;
-                statement.bind_list(11, List::new())?;
+                v.has_hashes = false;
+                v.sha256_hashes = vec![];
             }
         }
 
-        statement.execute().await?;
+        self.session.execute_unpaged(&prepared, v).await?;
 
         let msg = self.fetch_messages(target_chat_id, -1..0).await?;
         Ok(msg.into_iter().next().unwrap())
@@ -155,18 +171,17 @@ impl MessagesDB {
 
     pub async fn get_latest(&self, chat_id: ChatId) -> Result<Option<MessageId>, PPError> {
         let query = "SELECT id FROM ksp.messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1";
+        let prepared = self.session.prepare(query).await?;
+        let res = self
+            .session
+            .execute_iter(prepared, (chat_id,))
+            .await?
+            .rows_stream::<(i32,)>()?
+            .try_next()
+            .await?
+            .map(|v| v.0);
 
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, chat_id)?;
-
-        let result = statement.execute().await?;
-
-        if let Some(row) = result.first_row() {
-            let id: MessageId = row.get_column(0)?.get_i32()?;
-            Ok(Some(id))
-        } else {
-            Ok(None)
-        }
+        Ok(res)
     }
 
     pub async fn message_exists(
@@ -175,25 +190,20 @@ impl MessagesDB {
         message_id: MessageId,
     ) -> Result<bool, PPError> {
         let query = "SELECT id FROM ksp.messages WHERE chat_id = ? AND id = ? LIMIT 1";
+        let prepared = self.session.prepare(query).await?;
+        let res = self
+            .session
+            .execute_unpaged(&prepared, (chat_id, message_id))
+            .await?;
 
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, chat_id)?;
-        statement.bind_int32(1, message_id)?;
-
-        let result = statement.execute().await?;
-
-        if result.first_row().is_some() {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(res.is_rows())
     }
 
     pub async fn fetch_messages(
         &self,
         chat_id: ChatId,
         mut range: Range<MessageId>,
-    ) -> Result<Vec<Message>, PPError> {
+    ) -> PPResult<Vec<Message>> {
         if range.start == AS_LAST_MESSAGE_IDX {
             match self.get_latest(chat_id).await? {
                 Some(latest) => {
@@ -206,74 +216,57 @@ impl MessagesDB {
         }
         let (start, end) = validate_range(RangeInclusive::from(range.start..=range.end))?;
 
-        let statement = if end != 0 {
+        let mut iter = if end != 0 {
             let query = r#"
-                SELECT *
+                SELECT id, is_unread, from_id, chat_id, edited, date, has_reply,
+                    reply_to, has_content, content, has_hashes, sha256_hashes
                     FROM ksp.messages
-                    WHERE chat_id = ? AND id >= ? AND id <= ?
+                    WHERE chat_id = ? AND id >= ? AND id <= ?;
             "#;
-            let mut statement = self.session.statement(query);
-            statement.bind_int32(0, chat_id)?;
-            statement.bind_int32(1, start)?;
-            statement.bind_int32(2, end)?;
-            statement
+            let prepared = self.session.prepare(query).await?;
+            self.session
+                .execute_iter(prepared, (chat_id, start, end))
+                .await?
+                .rows_stream::<DatabaseMessage>()?
         } else {
             let query = r#"
-                SELECT *
+                SELECT id, is_unread, from_id, chat_id, edited, date, has_reply,
+                    reply_to, has_content, content, has_hashes, sha256_hashes
                     FROM ksp.messages
                     WHERE chat_id = ? AND id = ?;
             "#;
-            let mut statement = self.session.statement(query);
-            statement.bind_int32(0, chat_id)?;
-            statement.bind_int32(1, start)?;
-            statement
+            let prepared = self.session.prepare(query).await?;
+            self.session
+                .execute_iter(prepared, (chat_id, start))
+                .await?
+                .rows_stream::<DatabaseMessage>()?
         };
 
-        let result = statement.execute().await?;
-
         let mut output: Vec<Message> = vec![];
-        let mut iter = result.iter();
-        while let Some(row) = iter.next() {
-            let message_id: i32 = row.get_by_name("id")?;
-            let is_unread: bool = row.get_by_name("is_unread")?;
-            let from_id: i32 = row.get_by_name("from_id")?;
-            let chat_id: i32 = row.get_by_name("chat_id")?;
-            let date: i64 = row.get_by_name("date")?;
-            let has_reply: bool = row.get_by_name("has_reply")?;
-            let reply_to: i32 = row.get_by_name("reply_to")?;
-            let has_content: bool = row.get_by_name("has_content")?;
-            let content: String = row.get_by_name("content")?;
-            let has_hashes: bool = row.get_by_name("has_hashes")?;
-            let edited: bool = row.get_by_name("edited")?;
-
-            let mut sha256_hashes: Vec<String> = vec![];
-
-            if has_hashes {
-                let maybe_iter: cassandra_cpp::Result<cassandra_cpp::SetIterator> =
-                    row.get_by_name("sha256_hashes");
-                if let Ok(mut iter) = maybe_iter {
-                    while let Some(sha256_hash) = iter.next() {
-                        let hash = sha256_hash.to_string();
-                        sha256_hashes.push(hash);
-                    }
-                }
-            }
-
+        while let Some(msg) = iter.try_next().await? {
             output.push(Message {
-                message_id,
-                is_unread,
-                from_id,
-                chat_id,
-                is_edited: edited,
-                date,
-                reply_to: if has_reply { Some(reply_to) } else { None },
-                content: if has_content && !content.is_empty() {
-                    Some(content)
+                message_id: msg.id,
+                is_unread: msg.is_unread,
+                from_id: msg.from_id,
+                chat_id: msg.chat_id,
+                is_edited: msg.edited,
+                date: msg.date,
+                reply_to: if msg.has_reply {
+                    Some(msg.reply_to)
                 } else {
                     None
                 },
-                sha256_hashes,
-            })
+                content: if msg.has_content {
+                    Some(msg.content)
+                } else {
+                    None
+                },
+                sha256_hashes: if msg.has_hashes {
+                    Some(msg.sha256_hashes)
+                } else {
+                    None
+                },
+            });
         }
 
         Ok(output)
@@ -284,26 +277,16 @@ impl MessagesDB {
             return Ok(());
         }
 
-        let placeholders = msg_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-
-        let update_query = format!(
-            r#"
-            UPDATE ksp.messages
-            SET is_unread = false
-            WHERE chat_id = ? AND id IN ({})
-        "#,
-            placeholders
-        );
-
-        let mut statement = self.session.statement(update_query);
-
-        statement.bind_int32(0, chat_id)?; // chat_id
-
-        for (i, msg_id) in msg_ids.iter().enumerate() {
-            statement.bind_int32(i + 1, *msg_id)?; // Bind each msg_id
+        for msg_id in msg_ids {
+            let update_query = "
+                UPDATE ksp.messages
+                SET is_unread = false
+                WHERE chat_id = ? AND id = ?";
+            let prepared = self.session.prepare(update_query).await?;
+            self.session
+                .execute_unpaged(&prepared, (chat_id, msg_id))
+                .await?;
         }
-
-        statement.execute().await?;
 
         Ok(())
     }
@@ -327,56 +310,32 @@ impl MessagesDB {
             WHERE chat_id = ? AND id = ?
         "#;
 
-        let mut statement = self.session.statement(update_query);
-
-        statement.bind_bool(0, new_message.is_unread)?; // is_unread
-        statement.bind_bool(1, new_message.content.is_some())?; // has_content
-        statement.bind_string(2, new_message.content.unwrap_or_default().as_str())?; // content
-        statement.bind_bool(3, new_message.reply_to.is_some())?; // has_reply
-        statement.bind_int32(4, new_message.reply_to.unwrap_or(0))?; // reply_to
-        statement.bind_bool(5, !new_message.sha256_hashes.is_empty())?; // has_hashes
-
-        let mut cass_list = List::new();
-        for sha256_hash in new_message.sha256_hashes {
-            cass_list.append_string(&sha256_hash)?;
-        }
-
-        statement.bind_list(6, cass_list)?; // sha256_hashes
-        statement.bind_bool(7, true)?; // is_edited
-
-        statement.bind_int32(8, chat_id)?; // chat_id
-        statement.bind_int32(9, msg_id)?; // id
-
-        statement.execute().await?;
+        let prepared = self.session.prepare(update_query).await?;
+        self.session
+            .execute_unpaged(
+                &prepared,
+                (
+                    new_message.is_unread,
+                    new_message.content.is_some(),
+                    new_message.content.unwrap_or_default().as_str(),
+                    new_message.reply_to.is_some(),
+                    new_message.reply_to.unwrap_or(0),
+                    new_message.sha256_hashes.is_some(),
+                    new_message.sha256_hashes,
+                    true,
+                    chat_id,
+                    msg_id,
+                ),
+            )
+            .await?;
 
         Ok(())
     }
-
     pub async fn delete_messages(&self, chat_id: ChatId, message_ids: &Vec<i32>) -> PPResult<()> {
-        let placeholders = message_ids
-            .iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(", ");
-        let delete_query = format!(
-            r#"
-                DELETE FROM ksp.messages
-                WHERE chat_id = ? AND id IN ({})
-            "#,
-            placeholders
-        );
-
-        let mut statement = self.session.statement(delete_query);
-
-        // Bind the chat_id
-        statement.bind_int32(0, chat_id)?;
-
-        // Bind each message_id to its respective placeholder
-        for (i, msg_id) in message_ids.iter().enumerate() {
-            statement.bind_int32(i as usize + 1, *msg_id)?; // Bind indices start from 1
+        for msg_id in message_ids {
+            self.delete_message(chat_id, *msg_id).await?
         }
 
-        statement.execute().await?;
         Ok(())
     }
 
@@ -386,99 +345,79 @@ impl MessagesDB {
             WHERE chat_id = ? AND id = ?
         "#;
 
-        let mut statement = self.session.statement(delete_query);
-
-        statement.bind_int32(0, chat_id)?; // chat_id
-        statement.bind_int32(1, message_id)?; // message_id
-
-        statement.execute().await?;
+        let prepared = self.session.prepare(delete_query).await?;
+        self.session
+            .execute_unpaged(&prepared, (chat_id, message_id))
+            .await?;
 
         Ok(())
     }
 
-    pub async fn fetch_unread_count(&self, chat_id: ChatId) -> PPResult<u64> {
+    /// Deletes all messages associated with a specific chat
+    pub async fn delete_all_messages(&self, chat_id: ChatId) -> PPResult<()> {
+        let delete_query = "DELETE FROM ksp.messages WHERE chat_id = ?";
+        let prepared = self.session.prepare(delete_query).await?;
+        self.session.execute_unpaged(&prepared, (chat_id,)).await?;
+        Ok(())
+    }
+
+    pub async fn fetch_unread_count(&self, chat_id: ChatId) -> PPResult<Option<u64>> {
         let query = r#"
             SELECT COUNT(*)
             FROM ksp.messages
             WHERE chat_id = ? AND is_unread = true;
         "#;
 
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, chat_id)?;
+        let prepared = self.session.prepare(query).await?;
+        let count = self
+            .session
+            .execute_iter(prepared, (chat_id,))
+            .await?
+            .rows_stream::<(i64,)>()?
+            .try_next()
+            .await?
+            .map(|v| v.0 as u64);
 
-        let result = statement.execute().await?;
-
-        if let Some(row) = result.first_row() {
-            let count: i64 = row.get_column(0)?.get_i64()?;
-            Ok(count as u64)
-        } else {
-            Err("Failed to find chat!".into())
-        }
+        Ok(count)
     }
 
-    pub async fn fetch_hash_count(&self, chat_id: ChatId) -> PPResult<u32> {
+    pub async fn fetch_hash_count(&self, chat_id: ChatId) -> PPResult<Option<usize>> {
         let query = r#"
             SELECT sha256_hashes
             FROM ksp.messages
             WHERE chat_id = ?;
         "#;
 
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, chat_id)?; // Bind the chat_id
+        let prepared = self.session.prepare(query).await?;
+        let hashes = self
+            .session
+            .execute_iter(prepared, (chat_id,))
+            .await?
+            .rows_stream::<(Vec<String>,)>()?
+            .try_next()
+            .await?
+            .map(|v| v.0.iter().map(|v| v.len()).sum::<usize>());
 
-        let result = statement.execute().await?;
-
-        let mut total_count: u32 = 0;
-
-        let mut iter = result.iter();
-        while let Some(row) = iter.next() {
-            let maybe_iter: Result<SetIterator, cassandra_cpp::Error> = row.get(0);
-            if let Ok(mut iter) = maybe_iter {
-                while iter.next().is_some() {
-                    total_count += 1;
-                }
-            }
-        }
-
-        Ok(total_count)
+        Ok(hashes)
     }
 
-    pub async fn fetch_all_hashes(&self, chat_id: ChatId) -> PPResult<Vec<String>> {
+    pub async fn fetch_all_hashes(&self, chat_id: ChatId) -> PPResult<Option<Vec<String>>> {
         let query = r#"
             SELECT sha256_hashes
             FROM ksp.messages
             WHERE chat_id = ?;
         "#;
 
-        let mut statement = self.session.statement(query);
-        statement.bind_int32(0, chat_id)?; // Bind the chat_id
-
-        let result = statement.execute().await?;
-
-        let mut all_hashes = Vec::new();
-
-        let mut iter = result.iter();
-        while let Some(row) = iter.next() {
-            let maybe_iter: Result<SetIterator, cassandra_cpp::Error> = row.get(0);
-            if let Ok(mut iter) = maybe_iter {
-                while let Some(hash) = iter.next() {
-                    all_hashes.push(hash.get_str()?.to_string());
-                }
-            }
-        }
+        let prepared = self.session.prepare(query).await?;
+        let all_hashes = self
+            .session
+            .execute_iter(prepared, (chat_id,))
+            .await?
+            .rows_stream::<(Vec<String>,)>()?
+            .try_next()
+            .await?
+            .map(|v| v.0);
 
         Ok(all_hashes)
-    }
-
-    /// Deletes all messages associated with a specific chat
-    pub async fn delete_all_messages(&self, chat_id: ChatId) -> PPResult<()> {
-        let delete_query = "DELETE FROM ksp.messages WHERE chat_id = ?";
-
-        let mut statement = self.session.statement(delete_query);
-        statement.bind_int32(0, chat_id)?;
-
-        statement.execute().await?;
-
-        Ok(())
     }
 }

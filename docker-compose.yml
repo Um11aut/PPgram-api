@@ -1,35 +1,29 @@
-version: '3.8'
-
 services:
-  cassandra:
-    image: cassandra:4.0.9
-    container_name: cassandra
-    logging:
-      driver: none
-    ports:
-      - "9042:9042"
-    networks:
-      - cassandra
-    environment:
-      CASSANDRA_START_RPC: 'true'
-    volumes:
-      - cassandra_data:/var/lib/cassandra
-      - ./conf/cassandra.yaml:/etc/cassandra/cassandra.yaml
-
+  scylla-node:
+      container_name: scylla-node
+      image: scylladb/scylla:5.2.0
+      restart: always
+      ports:
+        - "9042:9042"
+      networks:
+        - cassandra
+      volumes:
+        - ./conf/scylla.yaml:/etc/scylla/scylla.yaml
+        - scylla_data:/var/lib/scylla
   rust-app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: rust-app
     depends_on:
-      - cassandra
+      - scylla-node
     networks:
       - cassandra
     ports:
       - "8080:8080/tcp"
       - "3000:3000/tcp"
     environment:
-      CASSANDRA_HOST: cassandra
+      CASSANDRA_HOST: 172.24.0.2
     stdin_open: true
     tty: true
     command: ["bash"]
@@ -37,10 +31,11 @@ services:
       - .:/usr/src/app/
       - /usr/src/app/target
       - ./server_data/:/server_data/
-
-volumes:
-  cassandra_data:
+      - ./log/:/tmp/log/
 
 networks:
   cassandra:
     driver: bridge
+
+volumes:
+  scylla_data:

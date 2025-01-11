@@ -8,8 +8,8 @@ pub struct User {
     name: String,
     user_id: i32,
     username: String,
-    photo: Option<String>,
     profile_color: u32,
+    photo: Option<String>,
 }
 
 impl User {
@@ -25,16 +25,16 @@ impl User {
     pub fn construct(
         name: String,
         user_id: i32,
+        profile_color: u32,
         username: String,
         photo: Option<String>,
-        profile_color: u32,
     ) -> Self {
         Self {
             name,
             user_id,
             username,
-            photo,
             profile_color,
+            photo,
         }
     }
 
@@ -46,16 +46,16 @@ impl User {
         &self.name
     }
 
-    pub fn profile_color(&self) -> u32 {
-        self.profile_color
-    }
-
     pub fn username(&self) -> &str {
         &self.username
     }
 
     pub fn photo_cloned(&self) -> Option<String> {
         self.photo.clone()
+    }
+
+    pub fn profile_color(&self) -> u32 {
+        self.profile_color
     }
 
     pub fn photo(&self) -> Option<&String> {

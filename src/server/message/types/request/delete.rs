@@ -21,4 +21,3 @@ pub struct DeleteMessagesRequest {
     pub chat_id: i32,
     pub message_ids: Vec<i32>
 }
-

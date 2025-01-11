@@ -11,5 +11,5 @@ pub struct Message {
     pub date: i64,
     pub reply_to: Option<i32>,
     pub content: Option<String>,
-    pub sha256_hashes: Vec<String>,
+    pub sha256_hashes: Option<Vec<String>>,
 }

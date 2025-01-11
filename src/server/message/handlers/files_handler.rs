@@ -218,15 +218,15 @@ impl FilesHandler {
     async fn on_uploader(&mut self) -> PPResult<()> {
         let actor = self.file_actor.as_mut().unwrap();
         if let FileActor::Uploader(file_uploader) = actor {
-            let content_fragment = &self.content_buf;
-            if content_fragment.is_empty() {
-                return Ok(());
-            }
-
             trace!(
                 "[Upload] Uploading datagramm. Size: {}",
                 self.content_buf.len()
             );
+
+            let content_fragment = &self.content_buf;
+            if content_fragment.is_empty() {
+                return Ok(());
+            }
 
             let rest_to_upload = file_uploader.rest_to_upload() as usize;
             if content_fragment.len() > rest_to_upload {
