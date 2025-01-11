@@ -45,3 +45,14 @@ Request will look like this:
 Note: It's recommended to use non-space format of JSON to save data traffic.
 
 Now you write to the TCP buffer the length of this message and then the message itself.
+
+### Response
+Each response must contain `ok` field. It indicates, if your request was successfully processed.
+```json
+{
+    "ok": true,
+    "method": "register",
+    "session_id": "...",
+    "user_id": "..."
+}
+```
