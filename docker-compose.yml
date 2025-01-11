@@ -23,7 +23,7 @@ services:
       - "8080:8080/tcp"
       - "3000:3000/tcp"
     environment:
-      CASSANDRA_HOST: 172.18.0.2
+      CASSANDRA_HOST: 172.24.0.2
     stdin_open: true
     tty: true
     command: ["bash"]
