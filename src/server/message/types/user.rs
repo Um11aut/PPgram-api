@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 
 use crate::db::{internal::error::PPError, user::UsersDB};
 
@@ -65,14 +64,6 @@ impl User {
     pub fn photo_moved(self) -> Option<String> {
         self.photo
     }
-
-    pub fn build_response(&self, method: &str) -> Value {
-        json!({
-            "ok": true,
-            "method": method,
-            "data": self
-        })
-    }
 }
 
 #[derive(Debug)]
@@ -84,7 +75,7 @@ pub enum UserId {
 impl Clone for UserId {
     fn clone(&self) -> Self {
         match self {
-            Self::UserId(user_id) => Self::UserId(user_id.clone()),
+            Self::UserId(user_id) => Self::UserId(*user_id),
             Self::Username(username) => Self::Username(username.clone()),
         }
     }

@@ -18,6 +18,7 @@ pub struct FetchUserResponse {
     pub name: String,
     pub user_id: i32,
     pub username: String,
+    pub profile_color: u32,
     pub photo: Option<String>,
 }
 

@@ -86,10 +86,7 @@ async fn on_users(handler: &mut JsonHandler) -> PPResult<FetchUsersResponse> {
 }
 
 async fn fetch_user(identifier: &UserId, db: UsersDB) -> PPResult<User> {
-    match db.fetch_user(identifier).await {
-        Ok(details) => details.ok_or("User wasn't found!".into()),
-        Err(err) => Err(err),
-    }
+    db.fetch_user(identifier).await?.ok_or("User wasn't found!".into())
 }
 
 async fn handle_fetch_self(handler: &JsonHandler) -> PPResult<User> {
@@ -146,6 +143,7 @@ async fn on_self(handler: &JsonHandler) -> PPResult<FetchSelfResponse> {
         ok: true,
         method: "fetch_self".into(),
         name: self_info.name().into(),
+        profile_color: self_info.profile_color(),
         user_id: self_info.user_id(),
         username: self_info.username().into(),
         photo: self_info.photo_moved(),
@@ -169,6 +167,7 @@ async fn on_user(handler: &mut JsonHandler) -> PPResult<FetchUserResponse> {
         ok: true,
         method: "fetch_user".into(),
         name: self_info.name().into(),
+        profile_color: self_info.profile_color(),
         user_id: self_info.user_id(),
         username: self_info.username().into(),
         photo: self_info.photo_moved(),

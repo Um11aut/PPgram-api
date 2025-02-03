@@ -248,7 +248,7 @@ async fn handle_edit_self(handler: &mut JsonHandler, msg: &EditSelfRequest) -> P
         if !hashes_db.hash_exists(hash).await? {
             return Err(format!("Provided SHA256 Hash: {} doesn't exist!", hash).into());
         }
-        users_db.update_name(&self_user_id, hash).await?;
+        users_db.update_photo(&self_user_id, hash).await?;
     }
 
     if let Some(password) = msg.password.as_ref() {
