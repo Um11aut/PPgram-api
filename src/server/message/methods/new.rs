@@ -47,6 +47,7 @@ async fn handle_new_group(
             ChatDetails {
                 name: msg.name,
                 chat_id: Default::default(),
+                color: None,
                 is_group: true,
                 tag: msg.username,
                 photo: msg.avatar_hash,

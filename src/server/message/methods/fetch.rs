@@ -31,8 +31,7 @@ async fn handle_fetch_chats(handler: &JsonHandler) -> PPResult<Vec<ChatDetailsRe
     let messages_db: MessagesDB = handler.get_db();
     let drafts_db: DraftsDB = handler.get_db();
 
-    let (user_id, _) = handler.session.read().await.get_credentials_unchecked();
-    let chat_ids = users_db.fetch_chats(&user_id).await?;
+    let chat_ids = users_db.fetch_chats(&self_user_id).await?;
 
     let mut chats_details: Vec<ChatDetailsResponse> = vec![];
     for (chat_id, associated_chat_id) in chat_ids {

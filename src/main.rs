@@ -20,13 +20,14 @@ fn init_logging() {
 
 #[cfg(not(debug_assertions))]
 fn init_logging() {
-    use std::io::Write;
     use chrono::Local;
     use log::LevelFilter;
+    use std::io::Write;
 
     let now = Local::now().format("%Y-%m-%d-%H-%M");
-    let target =
-        Box::new(std::fs::File::create(format!("/tmp/{}.log", now)).expect("Can't create file"));
+    let target = Box::new(
+        std::fs::File::create(format!("/tmp/log/{}.log", now)).expect("Can't create file"),
+    );
 
     env_logger::Builder::new()
         .format(|buf, record| {

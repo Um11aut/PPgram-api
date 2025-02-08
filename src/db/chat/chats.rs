@@ -138,6 +138,7 @@ impl ChatsDB {
                     name: name.unwrap_or("".into()),
                     chat_id,
                     is_group: true,
+                    color: None,
                     photo: avatar_hash.filter(|hash| !hash.is_empty()),
                     tag: tag.filter(|tag| !tag.is_empty()),
                 }
@@ -246,6 +247,7 @@ impl ChatsDB {
                     name: name.unwrap_or("".into()),
                     chat_id,
                     is_group: true,
+                    color: None,
                     photo: avatar_hash.filter(|hash| !hash.is_empty()),
                     tag: tag.filter(|tag| !tag.is_empty()),
                 }

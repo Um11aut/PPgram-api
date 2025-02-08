@@ -11,6 +11,7 @@ pub struct ChatDetails {
     pub name: String,
     pub chat_id: ChatId,
     pub is_group: bool,
+    pub color: Option<u32>,
     pub photo: Option<String>,
     pub tag: Option<String>,
 }
@@ -29,12 +30,14 @@ impl ChatDetails {
         chat_id: ChatId,
         is_group: bool,
         photo: Option<String>,
+        color: Option<u32>,
         tag: Option<String>,
     ) -> Self {
         Self {
             name,
             chat_id,
             is_group,
+            color,
             photo,
             tag,
         }
@@ -94,6 +97,7 @@ impl Chat {
                         name: peer.name().into(),
                         chat_id: self.chat_id,
                         is_group: self.is_group,
+                        color: Some(peer.profile_color()),
                         photo: peer.photo().cloned(),
                         tag: Some(peer.username().into()),
                     })
