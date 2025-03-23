@@ -17,6 +17,8 @@ use crate::server::message::Handler;
 use crate::server::server::Sessions;
 use crate::server::session::Session;
 
+use super::reqid_tracker;
+
 pub type SessionArcRwLock = Arc<RwLock<Session>>;
 
 const IS_TYPING_SLEEP_DURATION: std::time::Duration = std::time::Duration::from_millis(1000);
@@ -42,6 +44,8 @@ pub struct JsonHandler {
     /// Mpsc Sender on receiver task for is_typing event
     /// TODO: Maybe better 'is_typing' event sending?
     is_typing_tx: mpsc::Sender<TypingEventMsg>,
+
+    last_req_id: Option<i64>,
 }
 
 #[async_trait::async_trait]
@@ -212,7 +216,12 @@ impl JsonHandler {
             is_message_first: true,
             bucket,
             is_typing_tx: tx,
+            last_req_id: None,
         }
+    }
+
+    pub fn set_latest_req_id(&mut self, new_req_id: i64) {
+        self.last_req_id = Some(new_req_id)
     }
 
     /// Later, we need to retreive the content of the `self.builder`
@@ -233,29 +242,9 @@ impl JsonHandler {
     /// ok: false,
     /// method as `str`,
     /// err as `str`
+    /// req_id as `i64`
     pub async fn send_error(&self, method: &str, err: PPError) {
-        err.safe_send(method, &self.output_connection).await;
-    }
-
-    /// Sending message with tokio::spawn.
-    /// Necessary for large objects, so the read operations won't be stopped
-    pub fn send_raw_detached(&self, data: Arc<[u8]>) {
-        tokio::spawn({
-            let connection = Arc::clone(&self.output_connection);
-            let data = Arc::clone(&data);
-            info!("Sending media back: {}", data.len());
-            async move {
-                connection
-                    .write(&MessageBuilder::build_from_slice(&data).packed())
-                    .await
-            }
-        });
-    }
-
-    /// Instead of json, sends raw buffer directly to the connection
-    pub async fn send_raw(&self, data: &[u8]) {
-        self.output_connection
-            .write(&MessageBuilder::build_from_slice(data).packed())
+        err.safe_send(method, self.last_req_id.clone(), &self.output_connection)
             .await;
     }
 
@@ -264,9 +253,17 @@ impl JsonHandler {
     }
 
     pub async fn send_message<T: ?Sized + Serialize>(&self, message: &T) {
+        let mut json_value = serde_json::to_value(message).unwrap();
+        if let Some(req_id) = &self.last_req_id {
+            if let Some(object) = json_value.as_object_mut() {
+                object.insert("req_id".into(), (*req_id).into());
+            }
+        }
+
         self.output_connection
             .write(
-                &MessageBuilder::build_from_str(serde_json::to_string(&message).unwrap()).packed(),
+                &MessageBuilder::build_from_str(serde_json::to_string(&json_value).unwrap())
+                    .packed(),
             )
             .await;
     }
@@ -327,30 +324,41 @@ impl JsonHandler {
         }
         let message = message.unwrap();
 
-        match serde_json::from_str::<Value>(message) {
-            Ok(value) => match value.get("method").and_then(Value::as_str) {
-                Some(method) => match method {
-                    "login" | "auth" | "register" => auth::handle(self, method).await,
-                    "send_message" => send::handle(self, method).await,
-                    "edit" | "delete" => edit::handle(self, method).await,
-                    "fetch" => fetch::handle(self, method).await,
-                    "check" => check::handle(self, method).await,
-                    "bind" => bind::handle(self, method).await,
-                    "new" => new::handle(self, method).await,
-                    "join" => join::handle(self, method).await,
-                    _ => {
-                        self.send_error(method, "Unknown method given!".into())
-                            .await
+        let value = serde_json::from_str::<Value>(message);
+        match value {
+            Ok(value) => {
+                if value.get("req_id").is_some() {
+                    let res = reqid_tracker::handle_request_id(self);
+                    if let Err(err) = res {
+                        self.send_error("none", err).await;
+                        return;
                     }
-                },
-                None => {
-                    self.send_error(
-                        "none",
-                        "Failed to get the method from the json message!".into(),
-                    )
-                    .await
                 }
-            },
+
+                match value.get("method").and_then(Value::as_str) {
+                    Some(method) => match method {
+                        "login" | "auth" | "register" => auth::handle(self, method).await,
+                        "send_message" => send::handle(self, method).await,
+                        "edit" | "delete" => edit::handle(self, method).await,
+                        "fetch" => fetch::handle(self, method).await,
+                        "check" => check::handle(self, method).await,
+                        "bind" => bind::handle(self, method).await,
+                        "new" => new::handle(self, method).await,
+                        "join" => join::handle(self, method).await,
+                        _ => {
+                            self.send_error(method, "Unknown method given!".into())
+                                .await
+                        }
+                    },
+                    None => {
+                        self.send_error(
+                            "none",
+                            "Failed to get the method from the json message!".into(),
+                        )
+                        .await
+                    }
+                }
+            }
             Err(err) => {
                 self.send_error("none", err.to_string().into()).await;
             }

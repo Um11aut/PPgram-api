@@ -90,8 +90,7 @@ impl Server {
         bucket: DatabaseBucket,
     ) {
         debug!("[Files] Connection established: {}", addr);
-        let mut handler =
-            FilesHandler::new(Arc::new(TCPConnection::new(socket)), bucket).await;
+        let mut handler = FilesHandler::new(Arc::new(TCPConnection::new(socket)), bucket).await;
 
         let reader = handler.reader();
 
@@ -101,11 +100,17 @@ impl Server {
 
         loop {
             match reader.lock().await.read(&mut buffer).await {
-                Ok(0) => {drop(buffer); break;},
+                Ok(0) => {
+                    drop(buffer);
+                    break;
+                }
                 Ok(n) => {
                     handler.handle_segmented_frame(&buffer[0..n]).await;
                 }
-                Err(_) => {drop(buffer); break;},
+                Err(_) => {
+                    drop(buffer);
+                    break;
+                }
             }
         }
 

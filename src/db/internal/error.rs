@@ -12,15 +12,20 @@ use crate::server::{connection::TCPConnection, message::builder::MessageBuilder}
 async fn send_str_as_err<T: Into<Cow<'static, str>>>(
     method: &str,
     what: T,
+    req_id: Option<i64>,
     connection: &TCPConnection,
 ) {
     let what: String = what.into().to_string();
 
-    let error = json!({
+    let mut error = json!({
         "ok": false,
         "method": method,
-        "error": what
+        "error": what,
     });
+    let obj = error.as_object_mut().unwrap();
+    if let Some(req_id) = req_id {
+        obj.insert("req_id".into(), req_id.into());
+    }
 
     let builder = MessageBuilder::build_from_str(serde_json::to_string(&error).unwrap());
 
@@ -93,10 +98,15 @@ impl From<&str> for PPError {
 }
 
 impl PPError {
-    /// if Cassandra error, writes error to console and sends 'Internal error.' to user.
+    /// if Server error, writes error to console and sends 'Internal error.' to user.
     ///
     /// if Client error, sends error to the client
-    pub async fn safe_send(&self, method: &str, output_connection: &TCPConnection) {
+    pub async fn safe_send(
+        &self,
+        method: &str,
+        req_id: Option<i64>,
+        output_connection: &TCPConnection,
+    ) {
         let err: String = match self {
             PPError::Server(internal) => {
                 error!("{}", internal);
@@ -104,8 +114,7 @@ impl PPError {
             }
             PPError::Client(_) => self.to_string(),
         };
-        send_str_as_err(method, err, output_connection).await;
+        send_str_as_err(method, err, req_id, output_connection).await;
     }
 }
 pub type PPResult<T> = Result<T, PPError>;
-

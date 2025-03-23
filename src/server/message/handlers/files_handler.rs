@@ -64,7 +64,7 @@ impl Handler for FilesHandler {
         match self.handle(buffer).await {
             Ok(_) => {}
             Err(err) => {
-                err.safe_send("file_operation", &self.output_connection)
+                err.safe_send("file_operation", None, &self.output_connection)
                     .await;
                 self.reset();
             }
