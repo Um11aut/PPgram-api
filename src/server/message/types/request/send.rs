@@ -15,7 +15,6 @@ pub struct MessageContent {
 
 /// a struct to represent the complete message
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct SendMessageRequest {
     #[serde(flatten)]
     pub common: CommonFields,
